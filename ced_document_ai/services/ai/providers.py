@@ -12,6 +12,11 @@ from typing import Any, Sequence
 import requests
 
 from ced_document_ai.config.settings import Settings
+from ced_document_ai.services.ai.document_workflow import (
+    DokumentErgebnis,
+    WORKFLOW_PROMPT,
+    parse_dokumentantwort,
+)
 
 
 class AIProviderError(RuntimeError):
@@ -30,6 +35,10 @@ class DocumentAI(ABC):
         prompt_config: dict[str, Any],
     ) -> str:
         """Analysiert Dokumentseiten und liefert die unbearbeitete Textantwort."""
+
+    @abstractmethod
+    def process_document(self, document: Sequence[Path]) -> DokumentErgebnis:
+        """Verarbeitet alle Seiten zu genau einem gemeinsamen Ergebnis."""
 
 
 @dataclass
@@ -105,6 +114,86 @@ class OpenAICompatibleProvider(DocumentAI):
             for index, answer in enumerate(answers, start=1)
         )
 
+    def process_document(self, document: Sequence[Path]) -> DokumentErgebnis:
+        """Führt den Workflow aus, bei vielen Seiten bewusst in zwei Phasen.
+
+        Passt das Dokument in eine Anfrage, erhält das Modell direkt den zentralen
+        Auftrag. Andernfalls werden zunächst ausschließlich Transkriptionen der
+        Seitenblöcke erstellt. Erst danach erzeugt eine einzige Textanfrage Typ,
+        Struktur und KIS-Vorschlag für das Gesamtdokument. Es gibt weder einen
+        Anbieterwechsel noch eine Ersatzantwort bei einem Parserfehler.
+        """
+        if not document:
+            raise ValueError("Mindestens eine Dokumentseite ist erforderlich.")
+        if self.max_images < 1:
+            raise AIProviderError("Die maximale Bildanzahl des Anbieters muss mindestens 1 sein.")
+
+        if len(document) <= self.max_images:
+            rohantwort = self._request(WORKFLOW_PROMPT, document)
+        else:
+            transkriptionen: list[str] = []
+            teile = [
+                document[index : index + self.max_images]
+                for index in range(0, len(document), self.max_images)
+            ]
+            for nummer, seiten in enumerate(teile, start=1):
+                erster_index = (nummer - 1) * self.max_images + 1
+                letzter_index = erster_index + len(seiten) - 1
+                # Diese Phase darf ausdrücklich noch nicht klassifizieren oder
+                # zusammenfassen, damit technische Blöcke kein eigenes Ergebnis bilden.
+                auftrag = (
+                    "Lies ausschließlich die bereitgestellten Seiten vollständig und "
+                    "originalgetreu aus. Nicht klassifizieren, strukturieren oder kürzen. "
+                    "Keine Angaben ergänzen. Unleserliches als `unleserlich` markieren. "
+                    f"Kennzeichne die Seiten {erster_index} bis {letzter_index} einzeln "
+                    "und erhalte ihre Reihenfolge."
+                )
+                transkriptionen.append(self._request(auftrag, seiten))
+            gesamtauslesung = "\n\n".join(
+                f"--- Seitenblock {nummer} ---\n{text}"
+                for nummer, text in enumerate(transkriptionen, start=1)
+            )
+            rohantwort = self._request(
+                WORKFLOW_PROMPT
+                + "\n\nNachfolgend steht die bereits in korrekter Seitenreihenfolge erfasste "
+                "Auslesung des gesamten Dokuments. Verarbeite alle Blöcke gemeinsam:\n\n"
+                + gesamtauslesung,
+                (),
+            )
+        return parse_dokumentantwort(rohantwort)
+
+    # Alias für Aufrufer, die eine explizit benannte Workflow-Methode bevorzugen.
+    analyze_workflow = process_document
+
+    def _request(self, prompt: str, paths: Sequence[Path]) -> str:
+        """Sendet genau eine Anfrage; sensible Payloads werden nie protokolliert."""
+        content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+        content.extend(self._image_content(path) for path in paths)
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": content}],
+            "temperature": 0,
+        }
+        try:
+            response = requests.post(
+                self.endpoint,
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+                timeout=self.timeout_seconds,
+            )
+            response.raise_for_status()
+            return str(response.json()["choices"][0]["message"]["content"])
+        except (requests.RequestException, KeyError, IndexError, TypeError, ValueError) as error:
+            # Zum lokalen Debuggen nur Exception-Typ und HTTP-Status prüfen. Niemals
+            # Prompt, Antwort, Bilder, Authorization-Header oder Patientendaten loggen.
+            raise AIProviderError(
+                f"Die Anfrage an {self.provider_name} ist fehlgeschlagen: "
+                f"{type(error).__name__}. Bitte Endpunkt, Modell-ID und Secret prüfen."
+            ) from error
+
     @staticmethod
     def _image_content(path: Path) -> dict[str, Any]:
         mime_type = mimetypes.guess_type(path.name)[0] or "image/png"
@@ -141,4 +230,3 @@ class CloudAPIProvider(OpenAICompatibleProvider):
             timeout_seconds=settings.request_timeout_seconds,
             max_images=settings.max_images_per_request,
         )
-

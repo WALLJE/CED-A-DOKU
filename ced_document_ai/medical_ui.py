@@ -25,6 +25,7 @@ from ced_document_ai.services.ai.providers import (
     CloudAPIProvider,
     LocalAPIProvider,
 )
+from ced_document_ai.services.ai.document_workflow import DokumentAntwortFehler
 from ced_document_ai.services.documents.converter import (
     DocumentConversionError,
     DocumentConverter,
@@ -44,6 +45,13 @@ class Sitzungszustand:
     arbeitsmodus: str = LESEMODUS
     anbieter: str = "uk"
     seiten: list[Path] = field(default_factory=list)
+    # Die vier Werte gehören immer zu genau demselben Dokument. Sie werden beim
+    # nächsten Upload gemeinsam gelöscht, sodass keine alten Ergebnisse stehen bleiben.
+    dokumenttyp: str = ""
+    ausgelesener_inhalt: str = ""
+    strukturierte_darstellung: str = ""
+    kis_vorschlag: str = ""
+    letzter_fehler: str = ""
     temporaerer_ordner: tempfile.TemporaryDirectory[str] = field(
         default_factory=lambda: tempfile.TemporaryDirectory(prefix="ced_nicegui_")
     )
@@ -189,14 +197,42 @@ def zeige_hauptseite() -> None:
                 with ui.card().classes("arbeitskarte flex-1 min-w-[320px] p-5"):
                     with ui.row().classes("items-center gap-2"):
                         ui.icon("clinical_notes").classes("text-teal-700")
-                        ui.label("Ausgelesener Reintext").classes("bereichstitel")
-                    ausgabe = ui.textarea(
-                        label="Ungeprüfte KI-Ausgabe",
-                        placeholder="Nach der KI-Auslesung erscheint der Dokumentinhalt hier.",
-                    ).props("outlined readonly").classes("w-full min-h-[430px]")
+                        ui.label("Verarbeitung").classes("bereichstitel")
+                    dokumenttyp_ausgabe = ui.input(
+                        "Erkannter Dokumenttyp", value=""
+                    ).props("outlined readonly").classes("w-full")
+                    fehler_ausgabe = ui.label("").classes(
+                        "w-full bg-red-50 border border-red-300 text-red-900 p-3 rounded-lg"
+                    )
+                    fehler_ausgabe.set_visibility(False)
                     lesen_schalter = ui.button(
                         "Dokument auslesen", icon="document_scanner"
                     ).props("color=teal-8 unelevated").classes("w-full")
+
+            # Original und KIS-Text stehen nebeneinander. So lassen sich Aussagen und
+            # insbesondere Zahlen oder Negationen ohne Seitenwechsel vergleichen.
+            with ui.row().classes("w-full gap-5 items-stretch"):
+                with ui.card().classes("arbeitskarte flex-1 min-w-[360px] p-5"):
+                    ui.label("Ausgelesener Originalinhalt").classes("bereichstitel")
+                    original_ausgabe = ui.textarea(
+                        placeholder="Die vollständige Auslesung erscheint hier."
+                    ).props("outlined readonly").classes("w-full min-h-[360px]")
+                with ui.card().classes("arbeitskarte flex-1 min-w-[360px] p-5"):
+                    ui.label("KIS-Vorschlag").classes("bereichstitel")
+                    kis_ausgabe = ui.textarea(
+                        placeholder="Der gekürzte KIS-Vorschlag erscheint hier."
+                    ).props("outlined").classes("w-full min-h-[360px]")
+                    kopieren_schalter = ui.button(
+                        "KIS-Vorschlag kopieren", icon="content_copy"
+                    ).props("color=teal-8 unelevated").classes("w-full")
+
+            with ui.card().classes("arbeitskarte w-full p-5"):
+                ui.label("Dokumenttypspezifisch strukturierte Darstellung").classes(
+                    "bereichstitel"
+                )
+                struktur_ausgabe = ui.textarea(
+                    placeholder="Die dokumenttypspezifische Struktur erscheint hier."
+                ).props("outlined readonly").classes("w-full min-h-[320px]")
 
     anbieter_hinweis = ui.label("● UK-API · UK_API_KEY").classes("anbieter-hinweis")
     anbieter_hinweis.style("background: #16833b")
@@ -247,6 +283,20 @@ def zeige_hauptseite() -> None:
 
     def uebernehme_datei(ereignis: events.UploadEventArguments) -> None:
         """Konvertiert genau den erhaltenen Upload und meldet Fehler unverfälscht."""
+        # Ein neuer Upload beginnt zwingend eine neue Ergebnismenge. Auch frühere
+        # Fehler verschwinden; Ersatztexte werden in keines der vier Felder geschrieben.
+        zustand.seiten.clear()
+        zustand.dokumenttyp = ""
+        zustand.ausgelesener_inhalt = ""
+        zustand.strukturierte_darstellung = ""
+        zustand.kis_vorschlag = ""
+        zustand.letzter_fehler = ""
+        dokumenttyp_ausgabe.value = ""
+        original_ausgabe.value = ""
+        struktur_ausgabe.value = ""
+        kis_ausgabe.value = ""
+        fehler_ausgabe.text = ""
+        fehler_ausgabe.set_visibility(False)
         try:
             wurzel = Path(zustand.temporaerer_ordner.name)
             quellpfad = wurzel / Path(ereignis.name).name
@@ -268,7 +318,7 @@ def zeige_hauptseite() -> None:
         ui.notify(f"{len(zustand.seiten)} Seite(n) vorbereitet", type="positive")
 
     def lese_dokument() -> None:
-        """Sendet Seiten ausschließlich an den sichtbar gewählten Anbieter."""
+        """Ordnet die vier geprüften Ergebnisbereiche ohne stillen Fallback zu."""
         if not zustand.seiten:
             ui.notify("Bitte zuerst ein Dokument auswählen.", type="warning")
             return
@@ -278,13 +328,30 @@ def zeige_hauptseite() -> None:
                 if zustand.anbieter == "uk"
                 else CloudAPIProvider(einstellungen)
             )
-            ausgabe.value = ki_anbieter.analyze(
-                zustand.seiten, "noch nicht klassifiziert", [], {}
-            )
-        except (ConfigurationError, AIProviderError, OSError, ValueError) as fehler:
+            ergebnis = ki_anbieter.process_document(zustand.seiten)
+            zustand.dokumenttyp = ergebnis.dokumenttyp.value
+            zustand.ausgelesener_inhalt = ergebnis.ausgelesener_inhalt
+            zustand.strukturierte_darstellung = ergebnis.strukturierte_darstellung
+            zustand.kis_vorschlag = ergebnis.kis_vorschlag
+            dokumenttyp_ausgabe.value = zustand.dokumenttyp
+            original_ausgabe.value = zustand.ausgelesener_inhalt
+            struktur_ausgabe.value = zustand.strukturierte_darstellung
+            kis_ausgabe.value = zustand.kis_vorschlag
+            fehler_ausgabe.set_visibility(False)
+        except (ConfigurationError, AIProviderError, DokumentAntwortFehler, OSError, ValueError) as fehler:
             # Debugging: Endpunkt, Modell und Secret-Verfügbarkeit prüfen. Es gibt
             # absichtlich keinen Fallback; Schlüssel und Dokumentinhalt nie loggen.
+            zustand.letzter_fehler = str(fehler)
+            fehler_ausgabe.text = zustand.letzter_fehler
+            fehler_ausgabe.set_visibility(True)
             ui.notify(str(fehler), type="negative", timeout=10000)
+
+    def kopiere_kis_vorschlag() -> None:
+        """Kopiert unmittelbar den sichtbaren, eventuell manuell editierten Text."""
+        # Bewusst keine medizinische Freigabe oder Sperre: NiceGUI schreibt exakt den
+        # aktuellen Feldwert über die Browser-Zwischenablage und bestätigt nur kurz.
+        ui.clipboard.write(kis_ausgabe.value or "")
+        ui.notify("KIS-Vorschlag kopiert", type="positive", timeout=1800)
 
     anbieter_auswahl.on_value_change(lambda _: aktualisiere_anbieter())
     datenbank_schalter.text = "CED-Datenbank aktivieren"
@@ -292,6 +359,7 @@ def zeige_hauptseite() -> None:
     seiten_auswahl.on_value_change(lambda _: zeige_seite())
     upload.on_upload(uebernehme_datei)
     lesen_schalter.on_click(lese_dokument)
+    kopieren_schalter.on_click(kopiere_kis_vorschlag)
 
 
 def _pruefe_port(port: int) -> None:
