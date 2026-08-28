@@ -33,8 +33,26 @@ Die Browseroberfläche benötigt keine grafische Linux-Desktop-Sitzung. Im Termi
 des Codespace ausführen:
 
 ```bash
-python -m pip install -r requirements.txt
-python -m streamlit run streamlit_app.py --server.address 0.0.0.0
+/usr/local/python/3.12.1/bin/python -m pip install -r requirements.txt
+/usr/local/python/3.12.1/bin/python -m streamlit run streamlit_app.py --server.address 0.0.0.0
+```
+
+Wichtig: `streamlit_app.py` ist der Einstiegspunkt für den Streamlit-Server, aber
+keine eigenständig mit `python streamlit_app.py` zu startende Konsolenanwendung.
+Der folgende Aufruf ist deshalb **nicht** der richtige Startbefehl:
+
+```bash
+/usr/local/python/3.12.1/bin/python streamlit_app.py
+```
+
+Installation und Start müssen außerdem mit demselben Python-Interpreter erfolgen.
+Andernfalls kann trotz einer vorhandenen Streamlit-Installation die Meldung
+`ModuleNotFoundError: No module named 'streamlit'` erscheinen. Nach erfolgreicher
+Installation kann mit folgendem Befehl geprüft werden, welches Streamlit-Modul
+genau dieser Interpreter beim Start verwenden wird:
+
+```bash
+/usr/local/python/3.12.1/bin/python -m pip show streamlit
 ```
 
 Streamlit verwendet standardmäßig Port 8501. Codespaces zeigt nach dem Start eine
@@ -122,6 +140,9 @@ Für die Entwicklung muss `pytest` gegebenenfalls separat mit
   kontrollieren, ob die virtuelle Umgebung aktiv ist.
 - **`libGL.so.1` in Codespaces:** Nicht `ced_document_ai/app.py`, sondern die
   Browseroberfläche mit `python -m streamlit run streamlit_app.py` starten.
+- **`No module named 'streamlit'`:** Zuerst mit genau demselben Python-Interpreter
+  `-m pip install -r requirements.txt` ausführen, der danach für `-m streamlit run`
+  verwendet wird. Nicht über den ▶-Button „Python-Datei ausführen“ starten.
 - **Port 8501 öffnet sich nicht:** Codespaces-Bereich **Ports** öffnen, Port manuell
   hinzufügen und dessen Sichtbarkeit auf „Privat“ belassen.
 - **API-Fehler genauer untersuchen:** Nur lokal den HTTP-Status protokollieren.
