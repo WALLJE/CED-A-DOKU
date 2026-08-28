@@ -18,9 +18,9 @@ class DocumentConverter:
     """Erzeugt geordnete Bildseiten in einem temporären oder vorgegebenen Ordner."""
 
     def __init__(self, output_directory: Path | None = None) -> None:
-        # Die Desktop-App benötigt einen selbst verwalteten temporären Ordner. Die
-        # Browser-App besitzt bereits einen sitzungsgebundenen Ordner und übergibt
-        # diesen, damit die Dateien über Streamlit-Neuläufe hinweg verfügbar bleiben.
+        # Ohne Zielangabe wird ein eigener temporärer Ordner verwaltet. Die NiceGUI-
+        # Oberfläche übergibt ihren sitzungsgebundenen Ordner, damit die Dateien
+        # während der geöffneten Browserseite verfügbar bleiben.
         self._temporary_directory: tempfile.TemporaryDirectory[str] | None = None
         if output_directory is None:
             self._temporary_directory = tempfile.TemporaryDirectory(prefix="ced_doku_")

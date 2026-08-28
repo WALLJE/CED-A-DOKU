@@ -1,12 +1,11 @@
 # CED-A-DOKU
 
-CED-A-DOKU ist eine lokal installierbare Desktop-Anwendung zur assistierten
+CED-A-DOKU ist eine lokal ausführbare Browseranwendung zur assistierten
 Auswertung medizinischer Dokumente bei chronisch-entzündlichen Darmerkrankungen.
 Die aktuelle **Phase-1-Testversion** legt das flexible SQLite-Datenmodell an und
 ermöglicht, Bilder sowie PDFs an eine multimodale KI zu senden. Das Ergebnis wird
 zunächst ausschließlich als ungeprüfter Reintext angezeigt. Für GitHub Codespaces
-steht eine Browseroberfläche bereit; die PySide6-Desktopoberfläche bleibt zusätzlich
-für eine spätere lokale Windows-Nutzung erhalten.
+steht eine NiceGUI-Browseroberfläche bereit.
 
 > **Medizinischer Sicherheitshinweis:** KI-Ausgaben sind Vorschläge und dürfen
 > nicht ungeprüft als medizinische Fakten oder Therapieentscheidung übernommen
@@ -16,20 +15,19 @@ für eine spätere lokale Windows-Nutzung erhalten.
 
 - Startmodus „Nur Dokument einlesen“
 - passwortgeschützter zukünftiger Datenbankmodus über `CED_DATA_PASS`
-- Dateiimport und Drag & Drop für PDF, PNG, JPG und JPEG
+- Dateiimport für PDF, PNG, JPG und JPEG
 - mehrere Seiten und Bilder in einer gemeinsamen Dokumentanalyse
-- Bildimport aus der Zwischenablage
 - PDF-Seitenvorschau
 - UK-Halle-API mit Modell `gemma4-31b`
 - maximal fünf Bilder je Anfrage; größere Dokumente werden geordnet aufgeteilt
 - manuell wählbare OpenAI-Anbindung, **kein automatischer stiller Fallback**
 - farbige Provider-Anzeige unten rechts: UK-API grün, OpenAI rot
 - lokales SQLite-Grundschema mit SQLAlchemy
-- browserfähige Streamlit-Oberfläche ohne Linux-Desktop oder `libGL.so.1`
+- browserfähige NiceGUI-Oberfläche ohne Linux-Desktop oder `libGL.so.1`
 
 ## Direkt in GitHub Codespaces starten
 
-Die Browseroberfläche benötigt keine grafische Linux-Desktop-Sitzung. Streamlit
+Die Browseroberfläche benötigt keine grafische Linux-Desktop-Sitzung. NiceGUI
 muss im Codespace einmalig installiert werden:
 
 ```bash
@@ -39,35 +37,33 @@ muss im Codespace einmalig installiert werden:
 Danach genügt dieser kurze Startbefehl:
 
 ```bash
-python streamlit_app.py
+python nicegui_app.py
 ```
 
-Alternativ kann die geöffnete Datei `streamlit_app.py` über den ▶-Knopf
-**Python-Datei ausführen** oben rechts gestartet werden. Die Startdatei erkennt den
-direkten Python-Aufruf und startet den benötigten Streamlit-Webserver selbst. Es
-werden dabei keine Pakete automatisch installiert und keine Fehler verschluckt.
+Alternativ kann die geöffnete Datei `nicegui_app.py` über den ▶-Knopf
+**Python-Datei ausführen** oben rechts gestartet werden.
 
 Installation und Start müssen außerdem mit demselben Python-Interpreter erfolgen.
-Andernfalls kann trotz einer vorhandenen Streamlit-Installation die Meldung
-`ModuleNotFoundError: No module named 'streamlit'` erscheinen. Nach erfolgreicher
-Installation kann mit folgendem Befehl geprüft werden, welches Streamlit-Modul
+Andernfalls kann trotz einer vorhandenen NiceGUI-Installation die Meldung
+`ModuleNotFoundError: No module named 'nicegui'` erscheinen. Nach erfolgreicher
+Installation kann mit folgendem Befehl geprüft werden, welches NiceGUI-Modul
 genau dieser Interpreter beim Start verwenden wird:
 
 ```bash
-/usr/local/python/3.12.1/bin/python -m pip show streamlit
+/usr/local/python/3.12.1/bin/python -m pip show nicegui
 ```
 
-Streamlit verwendet standardmäßig Port 8501. Codespaces zeigt nach dem Start eine
+NiceGUI verwendet hier Port 8501. Codespaces zeigt nach dem Start eine
 Meldung zum weitergeleiteten Port an. Dort **Im Browser öffnen** auswählen. Falls
 keine Meldung erscheint, in VS Code den Bereich **Ports** öffnen, Port `8501`
 hinzufügen und anschließend das Globus-Symbol anklicken.
 
 Der frühere Fehler `ImportError: libGL.so.1` tritt bei diesem Startweg nicht auf,
-weil `streamlit_app.py` weder PySide6 noch die Qt-Desktopbibliotheken importiert.
+weil `nicegui_app.py` keine Qt-Desktopbibliotheken importiert.
 Die drei Repository-Secrets müssen für den Codespace freigegeben und der Codespace
 nach einer Änderung der Secrets neu erstellt beziehungsweise neu gestartet werden.
 
-## 1. Installation unter Windows
+## Installation unter Windows
 
 Voraussetzung ist Python 3.11 oder neuer. In PowerShell im Projektordner:
 
@@ -82,7 +78,7 @@ Falls PowerShell die Aktivierung blockiert, kann für den aktuellen Prozess vorh
 `Set-ExecutionPolicy -Scope Process Bypass` ausgeführt werden. Die Umgebung ist
 erfolgreich aktiv, wenn links in der Eingabezeile `(.venv)` erscheint.
 
-## 2. Secrets für den aktuellen Terminalprozess setzen
+## Secrets für den aktuellen Terminalprozess setzen
 
 GitHub-Codespaces-Secrets stehen in einem Codespace als Umgebungsvariablen bereit.
 Auf einem lokalen Windows-PC müssen sie vor dem Start gesetzt werden:
@@ -97,15 +93,15 @@ Die Werte gelten nur für das aktuelle PowerShell-Fenster. Sie gehören niemals 
 Quellcode, `.env.example`, Bildschirmfotos oder Git. Für reines Einlesen über die
 UK-API sind `OPENAI_API_KEY` und `CED_DATA_PASS` nicht erforderlich.
 
-## 3. Desktopanwendung unter Windows starten
+## Browseranwendung unter Windows starten
 
 ```powershell
-python -m ced_document_ai.app
+python nicegui_app.py
 ```
 
 Danach erscheint zuerst die Modusauswahl. Der Datenbankmodus verlangt das Passwort
-aus `CED_DATA_PASS`. Im Hauptfenster können Dokumente ausgewählt, abgelegt oder als
-Zwischenablagebild eingefügt werden. Nach „Dokument auslesen“ erscheint rechts der
+aus `CED_DATA_PASS`. Im Browser können Dokumente ausgewählt werden. Nach
+„Dokument auslesen“ erscheint der
 ungeprüfte Reintext. Unten rechts ist immer der tatsächlich gewählte API-Provider
 sichtbar; der Schlüssel selbst wird nie dargestellt.
 
@@ -138,11 +134,10 @@ Für die Entwicklung muss `pytest` gegebenenfalls separat mit
   `OPENAI_API_KEY` setzen.
 - **PDF lässt sich nicht öffnen:** Prüfen, ob sie beschädigt oder kennwortgeschützt
   ist; die App überspringt fehlerhafte Seiten nicht still.
-- **PowerShell findet `python` nicht:** `py -3 -m ced_document_ai.app` verwenden und
+- **PowerShell findet `python` nicht:** `py -3 nicegui_app.py` verwenden und
   kontrollieren, ob die virtuelle Umgebung aktiv ist.
-- **`libGL.so.1` in Codespaces:** Nicht `ced_document_ai/app.py`, sondern die
-  Browseroberfläche mit `python streamlit_app.py` starten.
-- **`No module named 'streamlit'`:** Zuerst mit genau demselben Python-Interpreter
+- **`libGL.so.1` in Codespaces:** Die Browseroberfläche mit `python nicegui_app.py` starten.
+- **`No module named 'nicegui'`:** Zuerst mit genau demselben Python-Interpreter
   `-m pip install -r requirements.txt` ausführen, der danach die Datei startet.
 - **Port 8501 öffnet sich nicht:** Codespaces-Bereich **Ports** öffnen, Port manuell
   hinzufügen und dessen Sichtbarkeit auf „Privat“ belassen.
@@ -154,14 +149,12 @@ Für die Entwicklung muss `pytest` gegebenenfalls separat mit
 
 ```text
 ced_document_ai/
-├── app.py
 ├── config/settings.py
 ├── database/{database.py,models.py}
 ├── services/ai/providers.py
 ├── services/documents/converter.py
-├── ui/main_window.py
-└── web_app.py
-streamlit_app.py
+└── nicegui_app.py
+nicegui_app.py
 tests/
 requirements.txt
 ```
