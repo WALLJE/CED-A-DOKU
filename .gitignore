@@ -1,0 +1,16 @@
+# Lokale Python-Umgebung und erzeugte Zwischendateien
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Lokale Daten und Geheimnisse dürfen niemals versioniert werden.
+data/
+.env
+.env.*
+!.env.example
+
+# Entwicklungswerkzeuge
+.idea/
+.vscode/
+
