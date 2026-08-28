@@ -40,10 +40,10 @@ Abhängigkeiten müssen im Codespace einmalig installiert werden:
 Danach genügt dieser kurze Startbefehl:
 
 ```bash
-python nicegui_app.py
+python main.py
 ```
 
-Alternativ kann die geöffnete Datei `nicegui_app.py` über den ▶-Knopf
+Alternativ kann die geöffnete Datei `main.py` über den ▶-Knopf
 **Python-Datei ausführen** oben rechts gestartet werden.
 
 Installation und Start müssen außerdem mit demselben Python-Interpreter erfolgen.
@@ -62,7 +62,7 @@ keine Meldung erscheint, in VS Code den Bereich **Ports** öffnen, Port `8501`
 hinzufügen und anschließend das Globus-Symbol anklicken.
 
 Der frühere Fehler `ImportError: libGL.so.1` tritt bei diesem Startweg nicht auf,
-weil `nicegui_app.py` keine Qt-Desktopbibliotheken importiert.
+weil `main.py` keine Qt-Desktopbibliotheken importiert.
 Die drei Repository-Secrets müssen für den Codespace freigegeben und der Codespace
 nach einer Änderung der Secrets neu erstellt beziehungsweise neu gestartet werden.
 
@@ -99,7 +99,7 @@ UK-API sind `OPENAI_API_KEY` und `CED_DATA_PASS` nicht erforderlich.
 ## Browseranwendung unter Windows starten
 
 ```powershell
-python nicegui_app.py
+python main.py
 ```
 
 Die Anwendung öffnet direkt die Funktion „Nur Dokument einlesen“. Die Auswahl des
@@ -140,16 +140,16 @@ Für die Entwicklung muss `pytest` gegebenenfalls separat mit
   den Datenschutzhinweis bestätigen und `OPENAI_API_KEY` setzen.
 - **PDF lässt sich nicht öffnen:** Prüfen, ob sie beschädigt oder kennwortgeschützt
   ist; die App überspringt fehlerhafte Seiten nicht still.
-- **PowerShell findet `python` nicht:** `py -3 nicegui_app.py`
+- **PowerShell findet `python` nicht:** `py -3 main.py`
   verwenden und
   kontrollieren, ob die virtuelle Umgebung aktiv ist.
 - **`libGL.so.1` in Codespaces:** Die Browseroberfläche mit
-  `python nicegui_app.py` starten.
+  `python main.py` starten.
 - **`No module named 'nicegui'`:** Zuerst mit genau demselben Python-Interpreter
   `-m pip install -r requirements.txt` ausführen, der danach die Datei startet.
 - **`address already in use` / Port 8501 bereits belegt:** Mit `lsof -i :8501`
   den noch laufenden Webserver ermitteln und beenden. Alternativ bewusst mit
-  `CED_WEB_PORT=8502 python nicegui_app.py` einen anderen Port starten und genau
+  `CED_WEB_PORT=8502 python main.py` einen anderen Port starten und genau
   diesen Port in Codespaces freigeben. Die Anwendung wechselt nicht unbemerkt.
 - **Port öffnet sich nicht:** Codespaces-Bereich **Ports** öffnen, den verwendeten
   Port manuell hinzufügen und dessen Sichtbarkeit auf „Privat“ belassen.
@@ -165,8 +165,8 @@ ced_document_ai/
 ├── database/{database.py,models.py}
 ├── services/ai/providers.py
 ├── services/documents/converter.py
-└── nicegui_app.py
-nicegui_app.py
+└── medical_ui.py
+main.py
 tests/
 requirements.txt
 ```
