@@ -36,7 +36,9 @@ DATABASE_MODE = "Einlesen und in CED-Datenbank verarbeiten"
 def _initialize_session() -> None:
     """Legt ausschließlich technische Zustände für die aktuelle Browsersitzung an."""
     if "work_mode" not in st.session_state:
-        st.session_state.work_mode = None
+        # Das sichere reine Einlesen ist der Standard. Der Datenbankmodus kann
+        # ausschließlich im gekennzeichneten Administrationsbereich aktiviert werden.
+        st.session_state.work_mode = READ_MODE
     if "database_unlocked" not in st.session_state:
         st.session_state.database_unlocked = False
     if "analysis_result" not in st.session_state:
@@ -51,18 +53,32 @@ def _initialize_session() -> None:
         st.session_state.temporary_directory = tempfile.TemporaryDirectory(
             prefix="ced_web_"
         )
+    if "provider" not in st.session_state:
+        # Die UK-API ist unabhängig von einer optionalen Umgebungsvariable immer
+        # die datenschutzfreundliche Vorauswahl der Oberfläche.
+        st.session_state.provider = "uk"
+    if "openai_warning_pending" not in st.session_state:
+        st.session_state.openai_warning_pending = False
 
 
 def _apply_layout() -> None:
     """Setzt das Seitenlayout und die stets sichtbare Provider-Markierung."""
     st.set_page_config(
         page_title="CED-A-DOKU",
-        page_icon="📄",
+        page_icon="⚕️",
         layout="wide",
     )
     st.markdown(
         """
         <style>
+        .stApp { background: #f4f8f8; }
+        [data-testid="stHeader"] { background: rgba(244, 248, 248, 0.92); }
+        h1, h2, h3 { color: #123f43; }
+        [data-testid="stSidebar"] { background: #e5f0ef; border-right: 1px solid #bdd4d2; }
+        .medical-header { border-left: 6px solid #168078; padding: .25rem 0 .25rem 1rem;
+          margin-bottom: 1rem; }
+        .medical-kicker { color: #168078; font-weight: 700; letter-spacing: .08em;
+          text-transform: uppercase; font-size: .76rem; }
         .provider-badge {
             position: fixed;
             right: 1.25rem;
@@ -81,6 +97,18 @@ def _apply_layout() -> None:
     )
 
 
+@st.dialog("Datenschutzhinweis")
+def _show_openai_warning() -> None:
+    """Verlangt eine bewusste Bestätigung vor der Nutzung von OpenAI."""
+    st.warning(
+        "Bei Verwendung von OpenAI dürfen keine personenbezogenen Daten oder "
+        "Dokumente mit identifizierbaren Patientendaten übermittelt werden."
+    )
+    if st.button("O. K.", type="primary", use_container_width=True):
+        st.session_state.openai_warning_pending = False
+        st.rerun()
+
+
 def _show_provider_badge(provider: str) -> None:
     """Zeigt Provider und Secret-Namen, aber niemals den geheimen Schlüsselwert."""
     if provider == "uk":
@@ -95,54 +123,51 @@ def _show_provider_badge(provider: str) -> None:
     )
 
 
-def _show_mode_selection(settings: Settings) -> bool:
-    """Fordert vor der Dokumentansicht den gewünschten Arbeitsmodus an."""
-    st.title("CED-A-DOKU")
-    st.info(
-        "KI-Ergebnisse sind ungeprüfte Vorschläge und dürfen nicht automatisch als "
-        "medizinische Fakten oder Therapieentscheidungen übernommen werden."
-    )
-    st.subheader("Arbeitsmodus auswählen")
-    selected_mode = st.radio(
-        "Wie soll die Anwendung gestartet werden?",
-        (READ_MODE, DATABASE_MODE),
-        index=0,
-    )
-
-    if selected_mode == DATABASE_MODE:
-        password = st.text_input(
-            "Passwort für den CED-Datenbankmodus",
-            type="password",
-            help="Das Passwort wird mit CED_DATA_PASS verglichen und nicht gespeichert.",
+def _show_admin_area(settings: Settings) -> str:
+    """Zeigt geschützte Datenbank- und Modellauswahl getrennt in der Seitenleiste."""
+    with st.sidebar:
+        st.markdown("### ⚙️ Steuerung / Administration")
+        st.caption("Zugriff auf sensible Verarbeitungsfunktionen")
+        provider = st.selectbox(
+            "LLM auswählen",
+            options=("uk", "openai"),
+            format_func=lambda value: "UK-API (Standard)" if value == "uk" else "OpenAI",
+            key="provider",
         )
-        if st.button("Datenbankzugang prüfen", type="primary"):
-            try:
-                expected_password = settings.ced_database_password()
-            except ConfigurationError as error:
-                st.error(str(error))
-                return False
-            if not hmac.compare_digest(password, expected_password):
-                st.error("Das Passwort ist falsch.")
-                return False
-            st.session_state.database_unlocked = True
-            st.session_state.work_mode = DATABASE_MODE
-            st.rerun()
-        return False
+        if (
+            provider == "openai"
+            and st.session_state.get("previous_provider") != "openai"
+        ):
+            st.session_state.openai_warning_pending = True
+        st.session_state.previous_provider = provider
 
-    if st.button("Nur Einlesen starten", type="primary"):
-        st.session_state.work_mode = READ_MODE
-        st.rerun()
-    return False
-
-
-def _reset_mode() -> None:
-    """Beendet den aktuellen Modus, ohne Zugangsdaten oder Dokumente zu behalten."""
-    st.session_state.work_mode = None
-    st.session_state.database_unlocked = False
-    st.session_state.analysis_result = ""
-    st.session_state.page_files = []
-    st.session_state.upload_signature = None
-    st.rerun()
+        st.divider()
+        st.markdown("#### CED-Datenbank")
+        if st.session_state.work_mode == DATABASE_MODE:
+            st.success("Datenbankmodus aktiv")
+            if st.button("Datenbankmodus beenden", use_container_width=True):
+                st.session_state.work_mode = READ_MODE
+                st.session_state.database_unlocked = False
+                st.rerun()
+        else:
+            st.caption("Nur für autorisierte Mitarbeitende")
+            password = st.text_input(
+                "Administrationspasswort",
+                type="password",
+                help="Das Passwort wird mit CED_DATA_PASS verglichen und nicht gespeichert.",
+            )
+            if st.button("CED-Datenbank aktivieren", use_container_width=True):
+                try:
+                    expected_password = settings.ced_database_password()
+                except ConfigurationError as error:
+                    st.error(str(error))
+                else:
+                    if hmac.compare_digest(password, expected_password):
+                        st.session_state.database_unlocked = True
+                        st.session_state.work_mode = DATABASE_MODE
+                        st.rerun()
+                    st.error("Das Passwort ist falsch.")
+    return provider
 
 
 def _prepare_uploaded_pages(uploaded_files: list) -> list[Path]:
@@ -181,13 +206,17 @@ def _create_provider(provider: str, settings: Settings) -> DocumentAI:
 
 def _show_document_workspace(settings: Settings) -> None:
     """Zeigt Upload, Seitenvorschau und KI-Reintext nebeneinander."""
-    heading, mode_column = st.columns([4, 1])
-    with heading:
-        st.title("CED-A-DOKU – Dokument einlesen")
-        st.caption(f"Aktiver Modus: {st.session_state.work_mode}")
-    with mode_column:
-        if st.button("Modus wechseln"):
-            _reset_mode()
+    provider = _show_admin_area(settings)
+    st.markdown(
+        '<div class="medical-header"><div class="medical-kicker">Medizinische Dokumentation</div>'
+        '<h1>CED-A-DOKU</h1><div>Assistierte Dokumentauslesung</div></div>',
+        unsafe_allow_html=True,
+    )
+    st.caption(f"Aktiver Bereich: {st.session_state.work_mode}")
+    st.info(
+        "KI-Ergebnisse sind ungeprüfte Vorschläge und dürfen nicht automatisch als "
+        "medizinische Fakten oder Therapieentscheidungen übernommen werden."
+    )
 
     if st.session_state.work_mode == DATABASE_MODE:
         st.warning(
@@ -195,15 +224,9 @@ def _show_document_workspace(settings: Settings) -> None:
             "und Speicherung wird erst in einer nachfolgenden Phase implementiert."
         )
 
-    provider = st.selectbox(
-        "KI-Anbieter",
-        options=("uk", "openai"),
-        format_func=lambda value: (
-            "UK-API (gemma4-31b)" if value == "uk" else "OpenAI"
-        ),
-        index=1 if settings.provider == "openai" else 0,
-    )
     _show_provider_badge(provider)
+    if st.session_state.openai_warning_pending:
+        _show_openai_warning()
 
     uploaded_files = st.file_uploader(
         "PDF-, JPG- oder PNG-Dokumente auswählen",
@@ -281,14 +304,4 @@ def main() -> None:
     settings = Settings.from_environment()
     initialize_database(settings)
 
-    if st.session_state.work_mode is None:
-        _show_mode_selection(settings)
-        return
-    if (
-        st.session_state.work_mode == DATABASE_MODE
-        and not st.session_state.database_unlocked
-    ):
-        st.session_state.work_mode = None
-        st.rerun()
     _show_document_workspace(settings)
-
