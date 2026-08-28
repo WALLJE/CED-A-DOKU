@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from enum import Enum
 from pathlib import Path
 
@@ -263,7 +262,7 @@ class MainWindow(QMainWindow):
         if image.isNull():
             QMessageBox.information(self, "Zwischenablage", "Die Zwischenablage enthält kein Bild.")
             return
-        target = Path(self.converter._temporary_directory.name) / f"clipboard_{len(self.pages) + 1}.png"
+        target = self.converter.temporary_file(f"clipboard_{len(self.pages) + 1}.png")
         if not image.save(str(target), "PNG"):
             QMessageBox.critical(self, "Zwischenablage", "Das Bild konnte nicht übernommen werden.")
             return
@@ -316,4 +315,3 @@ class MainWindow(QMainWindow):
         self.output.clear()
         self.analyze_button.setEnabled(True)
         QMessageBox.critical(self, "KI-Auslesung fehlgeschlagen", message)
-

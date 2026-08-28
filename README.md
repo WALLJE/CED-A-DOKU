@@ -4,7 +4,9 @@ CED-A-DOKU ist eine lokal installierbare Desktop-Anwendung zur assistierten
 Auswertung medizinischer Dokumente bei chronisch-entzündlichen Darmerkrankungen.
 Die aktuelle **Phase-1-Testversion** legt das flexible SQLite-Datenmodell an und
 ermöglicht, Bilder sowie PDFs an eine multimodale KI zu senden. Das Ergebnis wird
-zunächst ausschließlich als ungeprüfter Reintext angezeigt.
+zunächst ausschließlich als ungeprüfter Reintext angezeigt. Für GitHub Codespaces
+steht eine Browseroberfläche bereit; die PySide6-Desktopoberfläche bleibt zusätzlich
+für eine spätere lokale Windows-Nutzung erhalten.
 
 > **Medizinischer Sicherheitshinweis:** KI-Ausgaben sind Vorschläge und dürfen
 > nicht ungeprüft als medizinische Fakten oder Therapieentscheidung übernommen
@@ -23,6 +25,27 @@ zunächst ausschließlich als ungeprüfter Reintext angezeigt.
 - manuell wählbare OpenAI-Anbindung, **kein automatischer stiller Fallback**
 - farbige Provider-Anzeige unten rechts: UK-API grün, OpenAI rot
 - lokales SQLite-Grundschema mit SQLAlchemy
+- browserfähige Streamlit-Oberfläche ohne Linux-Desktop oder `libGL.so.1`
+
+## Direkt in GitHub Codespaces starten
+
+Die Browseroberfläche benötigt keine grafische Linux-Desktop-Sitzung. Im Terminal
+des Codespace ausführen:
+
+```bash
+python -m pip install -r requirements.txt
+python -m streamlit run streamlit_app.py --server.address 0.0.0.0
+```
+
+Streamlit verwendet standardmäßig Port 8501. Codespaces zeigt nach dem Start eine
+Meldung zum weitergeleiteten Port an. Dort **Im Browser öffnen** auswählen. Falls
+keine Meldung erscheint, in VS Code den Bereich **Ports** öffnen, Port `8501`
+hinzufügen und anschließend das Globus-Symbol anklicken.
+
+Der frühere Fehler `ImportError: libGL.so.1` tritt bei diesem Startweg nicht auf,
+weil `streamlit_app.py` weder PySide6 noch die Qt-Desktopbibliotheken importiert.
+Die drei Repository-Secrets müssen für den Codespace freigegeben und der Codespace
+nach einer Änderung der Secrets neu erstellt beziehungsweise neu gestartet werden.
 
 ## 1. Installation unter Windows
 
@@ -54,7 +77,7 @@ Die Werte gelten nur für das aktuelle PowerShell-Fenster. Sie gehören niemals 
 Quellcode, `.env.example`, Bildschirmfotos oder Git. Für reines Einlesen über die
 UK-API sind `OPENAI_API_KEY` und `CED_DATA_PASS` nicht erforderlich.
 
-## 3. Anwendung starten
+## 3. Desktopanwendung unter Windows starten
 
 ```powershell
 python -m ced_document_ai.app
@@ -66,14 +89,15 @@ Zwischenablagebild eingefügt werden. Nach „Dokument auslesen“ erscheint rec
 ungeprüfte Reintext. Unten rechts ist immer der tatsächlich gewählte API-Provider
 sichtbar; der Schlüssel selbst wird nie dargestellt.
 
-## Funktion testen
+## Browserfunktion testen
 
-1. „Nur Dokument einlesen“ wählen.
-2. Ein Testbild **ohne echte Patientendaten** auswählen.
-3. Unten rechts die grüne Anzeige `UK-API · UK_API_KEY` kontrollieren.
-4. „Dokument auslesen“ anklicken.
-5. Prüfen, ob rechts ein Reintext erscheint.
-6. Optional sechs Testbilder auswählen. Die Anwendung sendet automatisch zwei
+1. Die von Codespaces bereitgestellte URL für Port 8501 öffnen.
+2. „Nur Dokument einlesen“ wählen.
+3. Ein Testbild **ohne echte Patientendaten** auswählen.
+4. Unten rechts die grüne Anzeige `UK-API · UK_API_KEY` kontrollieren.
+5. „Dokument auslesen“ anklicken.
+6. Prüfen, ob rechts ein Reintext erscheint.
+7. Optional sechs Testbilder auswählen. Die Anwendung sendet automatisch zwei
    geordnete Anfragen mit fünf und einem Bild.
 
 Automatisierte Tests werden mit folgendem Windows-Befehl ausgeführt:
@@ -96,6 +120,10 @@ Für die Entwicklung muss `pytest` gegebenenfalls separat mit
   ist; die App überspringt fehlerhafte Seiten nicht still.
 - **PowerShell findet `python` nicht:** `py -3 -m ced_document_ai.app` verwenden und
   kontrollieren, ob die virtuelle Umgebung aktiv ist.
+- **`libGL.so.1` in Codespaces:** Nicht `ced_document_ai/app.py`, sondern die
+  Browseroberfläche mit `python -m streamlit run streamlit_app.py` starten.
+- **Port 8501 öffnet sich nicht:** Codespaces-Bereich **Ports** öffnen, Port manuell
+  hinzufügen und dessen Sichtbarkeit auf „Privat“ belassen.
 - **API-Fehler genauer untersuchen:** Nur lokal den HTTP-Status protokollieren.
   Authorization-Header, Anfrageinhalt und Antworttext dürfen wegen Schlüssel- und
   Patientendatenschutz niemals in Debug-Logs geschrieben werden.
@@ -109,7 +137,9 @@ ced_document_ai/
 ├── database/{database.py,models.py}
 ├── services/ai/providers.py
 ├── services/documents/converter.py
-└── ui/main_window.py
+├── ui/main_window.py
+└── web_app.py
+streamlit_app.py
 tests/
 requirements.txt
 ```

@@ -15,10 +15,24 @@ class DocumentConversionError(RuntimeError):
 
 
 class DocumentConverter:
-    """Besitzt temporäre PDF-Seitenbilder bis zum Schließen der Anwendung."""
+    """Erzeugt geordnete Bildseiten in einem temporären oder vorgegebenen Ordner."""
 
-    def __init__(self) -> None:
-        self._temporary_directory = tempfile.TemporaryDirectory(prefix="ced_doku_")
+    def __init__(self, output_directory: Path | None = None) -> None:
+        # Die Desktop-App benötigt einen selbst verwalteten temporären Ordner. Die
+        # Browser-App besitzt bereits einen sitzungsgebundenen Ordner und übergibt
+        # diesen, damit die Dateien über Streamlit-Neuläufe hinweg verfügbar bleiben.
+        self._temporary_directory: tempfile.TemporaryDirectory[str] | None = None
+        if output_directory is None:
+            self._temporary_directory = tempfile.TemporaryDirectory(prefix="ced_doku_")
+            self.output_directory = Path(self._temporary_directory.name)
+        else:
+            self.output_directory = output_directory
+            self.output_directory.mkdir(parents=True, exist_ok=True)
+
+    def temporary_file(self, filename: str) -> Path:
+        """Liefert einen sicheren Zielpfad für ein temporäres Zwischenablagebild."""
+        safe_filename = Path(filename).name
+        return self.output_directory / safe_filename
 
     def convert(self, source_paths: list[Path]) -> list[Path]:
         """Übernimmt Bilder direkt und rendert jede PDF-Seite als PNG."""
@@ -33,9 +47,7 @@ class DocumentConverter:
             try:
                 with fitz.open(source) as pdf:
                     for page_index, page in enumerate(pdf):
-                        target = Path(self._temporary_directory.name) / (
-                            f"{source.stem}_{page_index + 1}.png"
-                        )
+                        target = self.output_directory / f"{source.stem}_{page_index + 1}.png"
                         # 144 dpi liefern lesbaren Text, ohne Anfragen unnötig groß zu machen.
                         page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False).save(target)
                         pages.append(target)
@@ -44,4 +56,3 @@ class DocumentConverter:
                     f"Die PDF-Datei {source.name} konnte nicht gelesen werden."
                 ) from error
         return pages
-
