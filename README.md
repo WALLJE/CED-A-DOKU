@@ -5,7 +5,7 @@ Auswertung medizinischer Dokumente bei chronisch-entzündlichen Darmerkrankungen
 Die aktuelle **Phase-1-Testversion** legt das flexible SQLite-Datenmodell an und
 ermöglicht, Bilder sowie PDFs an eine multimodale KI zu senden. Das Ergebnis wird
 zunächst ausschließlich als ungeprüfter Reintext angezeigt. Für GitHub Codespaces
-steht eine medizinisch gestaltete NiceGUI-Browseroberfläche bereit.
+steht eine NiceGUI-Browseroberfläche bereit.
 
 > **Medizinischer Sicherheitshinweis:** KI-Ausgaben sind Vorschläge und dürfen
 > nicht ungeprüft als medizinische Fakten oder Therapieentscheidung übernommen
@@ -13,25 +13,22 @@ steht eine medizinisch gestaltete NiceGUI-Browseroberfläche bereit.
 
 ## Aktueller Funktionsumfang
 
-- direkter Start im Standardbereich „Nur Dokument einlesen“
-- medizinisch gestaltete Arbeitsfläche mit getrenntem Steuerungs-/Adminbereich
-- passwortgeschützte Aktivierung des Datenbankmodus über `CED_DATA_PASS`
+- Startmodus „Nur Dokument einlesen“
+- passwortgeschützter zukünftiger Datenbankmodus über `CED_DATA_PASS`
 - Dateiimport für PDF, PNG, JPG und JPEG
 - mehrere Seiten und Bilder in einer gemeinsamen Dokumentanalyse
 - PDF-Seitenvorschau
 - UK-Halle-API mit Modell `gemma4-31b`
 - maximal fünf Bilder je Anfrage; größere Dokumente werden geordnet aufgeteilt
-- UK-API als feste Vorauswahl und manuell wählbare OpenAI-Anbindung, **kein
-  automatischer stiller Fallback**
-- bestätigungspflichtiger Datenschutzhinweis beim Wechsel zu OpenAI
+- manuell wählbare OpenAI-Anbindung, **kein automatischer stiller Fallback**
 - farbige Provider-Anzeige unten rechts: UK-API grün, OpenAI rot
 - lokales SQLite-Grundschema mit SQLAlchemy
 - browserfähige NiceGUI-Oberfläche ohne Linux-Desktop oder `libGL.so.1`
 
 ## Direkt in GitHub Codespaces starten
 
-Die Browseroberfläche benötigt keine grafische Linux-Desktop-Sitzung. Die
-Abhängigkeiten müssen im Codespace einmalig installiert werden:
+Die Browseroberfläche benötigt keine grafische Linux-Desktop-Sitzung. NiceGUI
+muss im Codespace einmalig installiert werden:
 
 ```bash
 /usr/local/python/3.12.1/bin/python -m pip install -r requirements.txt
@@ -40,17 +37,17 @@ Abhängigkeiten müssen im Codespace einmalig installiert werden:
 Danach genügt dieser kurze Startbefehl:
 
 ```bash
-python main.py
+python nicegui_app.py
 ```
 
-Alternativ kann die geöffnete Datei `main.py` über den ▶-Knopf
+Alternativ kann die geöffnete Datei `nicegui_app.py` über den ▶-Knopf
 **Python-Datei ausführen** oben rechts gestartet werden.
 
 Installation und Start müssen außerdem mit demselben Python-Interpreter erfolgen.
 Andernfalls kann trotz einer vorhandenen NiceGUI-Installation die Meldung
-`No module named nicegui` erscheinen. Nach erfolgreicher Installation kann mit
-folgendem Befehl geprüft werden, welches NiceGUI-Modul genau dieser Interpreter
-beim Start verwenden wird:
+`ModuleNotFoundError: No module named 'nicegui'` erscheinen. Nach erfolgreicher
+Installation kann mit folgendem Befehl geprüft werden, welches NiceGUI-Modul
+genau dieser Interpreter beim Start verwenden wird:
 
 ```bash
 /usr/local/python/3.12.1/bin/python -m pip show nicegui
@@ -62,7 +59,7 @@ keine Meldung erscheint, in VS Code den Bereich **Ports** öffnen, Port `8501`
 hinzufügen und anschließend das Globus-Symbol anklicken.
 
 Der frühere Fehler `ImportError: libGL.so.1` tritt bei diesem Startweg nicht auf,
-weil `main.py` keine Qt-Desktopbibliotheken importiert.
+weil `nicegui_app.py` keine Qt-Desktopbibliotheken importiert.
 Die drei Repository-Secrets müssen für den Codespace freigegeben und der Codespace
 nach einer Änderung der Secrets neu erstellt beziehungsweise neu gestartet werden.
 
@@ -99,14 +96,11 @@ UK-API sind `OPENAI_API_KEY` und `CED_DATA_PASS` nicht erforderlich.
 ## Browseranwendung unter Windows starten
 
 ```powershell
-python main.py
+python nicegui_app.py
 ```
 
-Die Anwendung öffnet direkt die Funktion „Nur Dokument einlesen“. Die Auswahl des
-LLM und die Aktivierung des CED-Datenbankmodus befinden sich getrennt in der linken
-Seitenleiste „Steuerung / Administration“. Der Datenbankmodus verlangt das Passwort
-aus `CED_DATA_PASS`. Beim Wechsel zu OpenAI muss zunächst der Hinweis bestätigt
-werden, dass keine personenbezogenen Daten gesendet werden dürfen. Nach
+Danach erscheint zuerst die Modusauswahl. Der Datenbankmodus verlangt das Passwort
+aus `CED_DATA_PASS`. Im Browser können Dokumente ausgewählt werden. Nach
 „Dokument auslesen“ erscheint der
 ungeprüfte Reintext. Unten rechts ist immer der tatsächlich gewählte API-Provider
 sichtbar; der Schlüssel selbst wird nie dargestellt.
@@ -114,7 +108,7 @@ sichtbar; der Schlüssel selbst wird nie dargestellt.
 ## Browserfunktion testen
 
 1. Die von Codespaces bereitgestellte URL für Port 8501 öffnen.
-2. Kontrollieren, dass direkt „Nur Dokument einlesen“ aktiv ist.
+2. „Nur Dokument einlesen“ wählen.
 3. Ein Testbild **ohne echte Patientendaten** auswählen.
 4. Unten rechts die grüne Anzeige `UK-API · UK_API_KEY` kontrollieren.
 5. „Dokument auslesen“ anklicken.
@@ -136,23 +130,17 @@ Für die Entwicklung muss `pytest` gegebenenfalls separat mit
 - **`UK_API_KEY fehlt`:** Secret im selben Terminal setzen und die App neu starten.
 - **HTTP-/API-Fehler:** Endpunktzugriff, Modell-ID `gemma4-31b` und Berechtigung des
   Keys prüfen. Es erfolgt absichtlich kein versteckter Wechsel zu OpenAI.
-- **OpenAI soll verwendet werden:** Provider im Administrationsbereich umstellen,
-  den Datenschutzhinweis bestätigen und `OPENAI_API_KEY` setzen.
+- **OpenAI soll verwendet werden:** Provider sichtbar im Auswahlfeld umstellen und
+  `OPENAI_API_KEY` setzen.
 - **PDF lässt sich nicht öffnen:** Prüfen, ob sie beschädigt oder kennwortgeschützt
   ist; die App überspringt fehlerhafte Seiten nicht still.
-- **PowerShell findet `python` nicht:** `py -3 main.py`
-  verwenden und
+- **PowerShell findet `python` nicht:** `py -3 nicegui_app.py` verwenden und
   kontrollieren, ob die virtuelle Umgebung aktiv ist.
-- **`libGL.so.1` in Codespaces:** Die Browseroberfläche mit
-  `python main.py` starten.
+- **`libGL.so.1` in Codespaces:** Die Browseroberfläche mit `python nicegui_app.py` starten.
 - **`No module named 'nicegui'`:** Zuerst mit genau demselben Python-Interpreter
   `-m pip install -r requirements.txt` ausführen, der danach die Datei startet.
-- **`address already in use` / Port 8501 bereits belegt:** Mit `lsof -i :8501`
-  den noch laufenden Webserver ermitteln und beenden. Alternativ bewusst mit
-  `CED_WEB_PORT=8502 python main.py` einen anderen Port starten und genau
-  diesen Port in Codespaces freigeben. Die Anwendung wechselt nicht unbemerkt.
-- **Port öffnet sich nicht:** Codespaces-Bereich **Ports** öffnen, den verwendeten
-  Port manuell hinzufügen und dessen Sichtbarkeit auf „Privat“ belassen.
+- **Port 8501 öffnet sich nicht:** Codespaces-Bereich **Ports** öffnen, Port manuell
+  hinzufügen und dessen Sichtbarkeit auf „Privat“ belassen.
 - **API-Fehler genauer untersuchen:** Nur lokal den HTTP-Status protokollieren.
   Authorization-Header, Anfrageinhalt und Antworttext dürfen wegen Schlüssel- und
   Patientendatenschutz niemals in Debug-Logs geschrieben werden.
@@ -165,8 +153,8 @@ ced_document_ai/
 ├── database/{database.py,models.py}
 ├── services/ai/providers.py
 ├── services/documents/converter.py
-└── medical_ui.py
-main.py
+└── nicegui_app.py
+nicegui_app.py
 tests/
 requirements.txt
 ```
