@@ -29,21 +29,23 @@ für eine spätere lokale Windows-Nutzung erhalten.
 
 ## Direkt in GitHub Codespaces starten
 
-Die Browseroberfläche benötigt keine grafische Linux-Desktop-Sitzung. Im Terminal
-des Codespace ausführen:
+Die Browseroberfläche benötigt keine grafische Linux-Desktop-Sitzung. Streamlit
+muss im Codespace einmalig installiert werden:
 
 ```bash
 /usr/local/python/3.12.1/bin/python -m pip install -r requirements.txt
-/usr/local/python/3.12.1/bin/python -m streamlit run streamlit_app.py --server.address 0.0.0.0
 ```
 
-Wichtig: `streamlit_app.py` ist der Einstiegspunkt für den Streamlit-Server, aber
-keine eigenständig mit `python streamlit_app.py` zu startende Konsolenanwendung.
-Der folgende Aufruf ist deshalb **nicht** der richtige Startbefehl:
+Danach genügt dieser kurze Startbefehl:
 
 ```bash
-/usr/local/python/3.12.1/bin/python streamlit_app.py
+python streamlit_app.py
 ```
+
+Alternativ kann die geöffnete Datei `streamlit_app.py` über den ▶-Knopf
+**Python-Datei ausführen** oben rechts gestartet werden. Die Startdatei erkennt den
+direkten Python-Aufruf und startet den benötigten Streamlit-Webserver selbst. Es
+werden dabei keine Pakete automatisch installiert und keine Fehler verschluckt.
 
 Installation und Start müssen außerdem mit demselben Python-Interpreter erfolgen.
 Andernfalls kann trotz einer vorhandenen Streamlit-Installation die Meldung
@@ -139,10 +141,9 @@ Für die Entwicklung muss `pytest` gegebenenfalls separat mit
 - **PowerShell findet `python` nicht:** `py -3 -m ced_document_ai.app` verwenden und
   kontrollieren, ob die virtuelle Umgebung aktiv ist.
 - **`libGL.so.1` in Codespaces:** Nicht `ced_document_ai/app.py`, sondern die
-  Browseroberfläche mit `python -m streamlit run streamlit_app.py` starten.
+  Browseroberfläche mit `python streamlit_app.py` starten.
 - **`No module named 'streamlit'`:** Zuerst mit genau demselben Python-Interpreter
-  `-m pip install -r requirements.txt` ausführen, der danach für `-m streamlit run`
-  verwendet wird. Nicht über den ▶-Button „Python-Datei ausführen“ starten.
+  `-m pip install -r requirements.txt` ausführen, der danach die Datei startet.
 - **Port 8501 öffnet sich nicht:** Codespaces-Bereich **Ports** öffnen, Port manuell
   hinzufügen und dessen Sichtbarkeit auf „Privat“ belassen.
 - **API-Fehler genauer untersuchen:** Nur lokal den HTTP-Status protokollieren.
