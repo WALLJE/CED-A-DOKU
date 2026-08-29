@@ -96,10 +96,10 @@ def zeige_hauptseite() -> None:
           .admin-drawer .q-drawer__content { display: flex; flex-direction: column; }
           .admin-trenner { border-top: 1px solid #bed2d0; margin: 18px 0; }
           .steuerungs-meldungen { margin-top: auto; background: #d6e5e3;
-            border-top: 1px solid #aac6c3; padding: 14px 20px 18px; width: 100%; }
-          .anbieter-hinweis { color: #075c5b; font-weight: 700; }
-          .arbeitsstatus { color: #183638; font-size: .85rem; line-height: 1.35; }
-          .bedienhinweis { color: #475569; font-size: .76rem; line-height: 1.35; }
+            border-top: 1px solid #aac6c3; padding: 14px 20px 18px; width: 100%;
+            color: #334e50; font-size: .8rem; font-weight: 400; line-height: 1.4; }
+          .status-titel { color: #334e50; font-size: .8rem; font-weight: 500; }
+          .anbieter-hinweis, .arbeitsstatus { color: #334e50; font: inherit; }
           .meldungsfehler { color: #991b1b; font-weight: 600; }
           .referenzspalte, .ergebnisspalte { min-width: 320px; }
           .ergebnistext textarea { min-height: 330px !important;
@@ -136,7 +136,7 @@ def zeige_hauptseite() -> None:
         with ui.column().classes("steuerungs-meldungen gap-2"):
             with ui.row().classes("items-center gap-2"):
                 ui.icon("info", size="xs").classes("text-teal-800")
-                ui.label("Status und Hinweise").classes("font-bold text-teal-900")
+                ui.label("Status und Hinweise").classes("status-titel")
             anbieter_hinweis = ui.label("● UK-API · UK_API_KEY").classes(
                 "anbieter-hinweis"
             )
@@ -146,10 +146,6 @@ def zeige_hauptseite() -> None:
             arbeitsstatus = ui.label(
                 "Bereit · noch kein Dokument geladen"
             ).classes("arbeitsstatus")
-            bedienhinweis = ui.label(
-                "Kein automatischer Anbieterwechsel. KI-Ergebnisse müssen "
-                "medizinisch geprüft werden."
-            ).classes("bedienhinweis")
 
     with ui.column().classes("w-full min-h-screen"):
         with ui.column().classes("medizin-kopf w-full px-8 py-7 gap-1"):
@@ -172,7 +168,14 @@ def zeige_hauptseite() -> None:
                         ui.label("Originaldokument").classes("bereichstitel")
                     seiten_auswahl = ui.select(
                         {}, label="Vorschauseite"
-                    ).props("outlined dense").classes("w-52")
+                    ).props("outlined dense").classes("flex-1")
+                    with ui.row().classes("w-full items-center gap-2"):
+                        seite_hoch = ui.button("Nach oben", icon="arrow_upward").props(
+                            "flat dense color=teal-8"
+                        )
+                        seite_runter = ui.button("Nach unten", icon="arrow_downward").props(
+                            "flat dense color=teal-8"
+                        )
                     vorschau_platzhalter = ui.label(
                         "Noch kein Dokument ausgewählt."
                     ).classes("text-slate-500 py-12 self-center")
@@ -233,16 +236,8 @@ def zeige_hauptseite() -> None:
         zustand.anbieter = str(anbieter_auswahl.value)
         if zustand.anbieter == "uk":
             anbieter_hinweis.text = "● UK-API · UK_API_KEY"
-            bedienhinweis.text = (
-                "Kein automatischer Anbieterwechsel. KI-Ergebnisse müssen "
-                "medizinisch geprüft werden."
-            )
         else:
             anbieter_hinweis.text = "● OpenAI · OPENAI_API_KEY"
-            bedienhinweis.text = (
-                "Datenschutzhinweis: Mit OpenAI dürfen keine personenbezogenen "
-                "oder identifizierbaren Patientendaten übermittelt werden."
-            )
         setze_status(
             f"{'UK-API' if zustand.anbieter == 'uk' else 'OpenAI'} ausgewählt"
         )
@@ -295,16 +290,41 @@ def zeige_hauptseite() -> None:
         }
         ergebnis_ausgabe.value = varianten[str(ergebnis_auswahl.value)]
 
-    def uebernehme_dokument(dateiname: str, dateiinhalt: bytes) -> None:
-        """Konvertiert Upload oder Zwischenablage über denselben Importweg.
+    def setze_seitenoptionen(auswahl: int | None = None) -> None:
+        """Nummeriert die Seiten neu und hält die Vorschauauswahl konsistent."""
+        seiten_auswahl.options = {
+            nummer: f"Seite {nummer + 1}" for nummer in range(len(zustand.seiten))
+        }
+        seiten_auswahl.value = auswahl
+        seiten_auswahl.update()
+        if auswahl is not None:
+            zeige_seite()
+
+    def verschiebe_seite(richtung: int) -> None:
+        """Verschiebt die ausgewählte Seite zur manuellen Reihenfolgekorrektur."""
+        if seiten_auswahl.value is None:
+            return
+        bisher = int(seiten_auswahl.value)
+        neu = bisher + richtung
+        if not 0 <= neu < len(zustand.seiten):
+            return
+        zustand.seiten[bisher], zustand.seiten[neu] = (
+            zustand.seiten[neu],
+            zustand.seiten[bisher],
+        )
+        setze_seitenoptionen(neu)
+        setze_status(f"Seite {bisher + 1} wurde an Position {neu + 1} verschoben")
+
+    def uebernehme_dokumente(dateien: list[tuple[str, bytes]]) -> None:
+        """Hängt mehrere Upload-, Drop- oder Zwischenablagedateien gemeinsam an.
 
         Debugging-Hinweis: Falls ein Browser kein Bild liefert, kann in dessen
         Entwicklerwerkzeugen der MIME-Typ des Clipboard-Items geprüft werden. Der
         medizinische Bildinhalt darf dabei nicht in Konsolen-Logs ausgegeben werden.
         """
-        # Ein neuer Upload beginnt zwingend eine neue Ergebnismenge. Auch frühere
-        # Fehler verschwinden; Ersatztexte werden in keines der vier Felder geschrieben.
-        zustand.seiten.clear()
+        # Neue Quellen werden in der vom Browser gelieferten Reihenfolge angehängt.
+        # Das vorhandene Ergebnis wird zurückgesetzt, weil es nicht mehr zur nun
+        # erweiterten Seitenmenge passt; bereits geladene Seiten bleiben erhalten.
         zustand.dokumenttyp = ""
         zustand.ausgelesener_inhalt = ""
         zustand.strukturierte_darstellung = ""
@@ -318,35 +338,39 @@ def zeige_hauptseite() -> None:
         setze_status("Dokument wird importiert und für die Vorschau vorbereitet …")
         try:
             wurzel = Path(zustand.temporaerer_ordner.name)
-            quellpfad = wurzel / Path(dateiname).name
-            quellpfad.write_bytes(dateiinhalt)
-            zustand.seiten.extend(DocumentConverter(wurzel / "seiten").convert([quellpfad]))
+            quellpfade: list[Path] = []
+            for dateiname, dateiinhalt in dateien:
+                # Die UUID vermeidet Kollisionen, wenn mehrere Screenshots denselben
+                # Namen tragen. Der Originalname wird nur lokal als Suffix bewahrt.
+                quellpfad = wurzel / f"{uuid.uuid4().hex}-{Path(dateiname).name}"
+                quellpfad.write_bytes(dateiinhalt)
+                quellpfade.append(quellpfad)
+            neue_seiten = DocumentConverter(wurzel / "seiten").convert(quellpfade)
+            erster_neuer_index = len(zustand.seiten)
+            zustand.seiten.extend(neue_seiten)
         except (DocumentConversionError, OSError) as fehler:
             # Debugging: Bei Bedarf lokal Dateityp und Exception-Typ prüfen. Namen
             # oder Inhalte medizinischer Dokumente nie in produktive Logs schreiben.
             setze_status(f"Dokumentimport fehlgeschlagen: {fehler}", fehler=True)
             return
-        seiten_auswahl.options = {
-            nummer: f"Seite {nummer + 1}" for nummer in range(len(zustand.seiten))
-        }
-        seiten_auswahl.value = 0
-        seiten_auswahl.update()
+        setze_seitenoptionen(erster_neuer_index)
         vorschau_platzhalter.set_visibility(False)
         vorschau.set_visibility(True)
-        zeige_seite()
         setze_status(
             f"{len(zustand.seiten)} Seite(n) vorbereitet · Anbieter wählen und Bearbeitung starten"
         )
 
     def uebernehme_datei(ereignis: events.UploadEventArguments) -> None:
-        """Reicht den bewährten Datei-Upload unverändert an den Importweg weiter."""
-        uebernehme_dokument(ereignis.name, ereignis.content.read())
+        """Hängt jede Datei einer Mehrfachauswahl an die vorhandenen Seiten an."""
+        uebernehme_dokumente([(ereignis.name, ereignis.content.read())])
 
-    def uebernehme_zwischenablage(ereignis: events.GenericEventArguments) -> None:
-        """Dekodiert genau das vom Browser übergebene Screenshot-Bild."""
-        daten = ereignis.args
-        dateiname = f"zwischenablage-{uuid.uuid4().hex}.png"
-        uebernehme_dokument(dateiname, base64.b64decode(daten["base64"], validate=True))
+    def uebernehme_abgelegte_dateien(ereignis: events.GenericEventArguments) -> None:
+        """Übernimmt Drop- oder Clipboard-Dateien in der gelieferten Reihenfolge."""
+        dateien = [
+            (eintrag["name"], base64.b64decode(eintrag["base64"], validate=True))
+            for eintrag in ereignis.args["dateien"]
+        ]
+        uebernehme_dokumente(dateien)
 
     async def lese_dokument() -> None:
         """Bearbeitet erhaltene Seiten erneut mit dem gerade gewählten Anbieter.
@@ -404,25 +428,55 @@ def zeige_hauptseite() -> None:
     datenbank_schalter.text = "CED-Datenbank aktivieren"
     datenbank_schalter.on_click(aktualisiere_datenbankmodus)
     seiten_auswahl.on_value_change(lambda _: zeige_seite())
+    seite_hoch.on_click(lambda: verschiebe_seite(-1))
+    seite_runter.on_click(lambda: verschiebe_seite(1))
     upload.on_upload(uebernehme_datei)
     lesen_schalter.on_click(lese_dokument)
     ergebnis_auswahl.on_value_change(lambda _: aktualisiere_ergebnisanzeige())
     kopieren_schalter.on_click(kopiere_ergebnis)
-    ui.on("zwischenablage_bild", uebernehme_zwischenablage)
+    ui.on("abgelegte_dateien", uebernehme_abgelegte_dateien)
 
     # Der Browser liest ausschließlich Bildobjekte aus einem echten Paste-Ereignis.
-    # Datei- und Drag-and-drop-Import bleiben davon unabhängig und unverändert aktiv.
-    ui.run_javascript("""
-        document.addEventListener('paste', event => {
-            const bild = [...(event.clipboardData?.items || [])]
-                .find(eintrag => eintrag.type.startsWith('image/'));
-            if (!bild) return;
+    # Zusätzlich fängt die Seite Datei-Drops außerhalb des sichtbaren Uploaders ab.
+    ui.run_javascript(r"""
+        // Außerhalb des Upload-Feldes abgelegte Dateien werden als geordnete
+        // Gruppe gelesen. Innerhalb des Uploaders übernimmt NiceGUI den Drop, damit
+        // dasselbe Dokument nicht doppelt importiert wird.
+        document.addEventListener('dragover', event => {
+            if (event.dataTransfer?.types.includes('Files')) event.preventDefault();
+        });
+        document.addEventListener('drop', async event => {
+            if (!event.dataTransfer?.files.length || event.target.closest('.q-uploader')) return;
             event.preventDefault();
-            const leser = new FileReader();
-            leser.onload = () => emitEvent('zwischenablage_bild', {
-                base64: String(leser.result).split(',', 2)[1],
-            });
-            leser.readAsDataURL(bild.getAsFile());
+            const erlaubt = /\.(pdf|png|jpe?g)$/i;
+            const dateien = [...event.dataTransfer.files].filter(datei => erlaubt.test(datei.name));
+            const gelesen = await Promise.all(dateien.map(datei => new Promise((resolve, reject) => {
+                const leser = new FileReader();
+                leser.onload = () => resolve({
+                    name: datei.name,
+                    base64: String(leser.result).split(',', 2)[1],
+                });
+                leser.onerror = reject;
+                leser.readAsDataURL(datei);
+            })));
+            if (gelesen.length) emitEvent('abgelegte_dateien', {dateien: gelesen});
+        });
+        document.addEventListener('paste', async event => {
+            const bilder = [...(event.clipboardData?.items || [])]
+                .filter(eintrag => eintrag.type.startsWith('image/'));
+            if (!bilder.length) return;
+            event.preventDefault();
+            const gelesen = await Promise.all(bilder.map((bild, index) =>
+                new Promise((resolve, reject) => {
+                    const leser = new FileReader();
+                    leser.onload = () => resolve({
+                        name: `zwischenablage-${index + 1}.png`,
+                        base64: String(leser.result).split(',', 2)[1],
+                    });
+                    leser.onerror = reject;
+                    leser.readAsDataURL(bild.getAsFile());
+                })));
+            emitEvent('abgelegte_dateien', {dateien: gelesen});
         });
     """)
 
