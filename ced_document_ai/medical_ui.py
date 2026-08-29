@@ -17,7 +17,7 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from nicegui import events, ui
+from nicegui import events, run, ui
 
 from ced_document_ai.config.settings import ConfigurationError, Settings
 from ced_document_ai.database.database import initialize_database
@@ -53,6 +53,10 @@ class Sitzungszustand:
     strukturierte_darstellung: str = ""
     kis_vorschlag: str = ""
     letzter_fehler: str = ""
+    # Der Anbieter des sichtbaren Ergebnisses wird separat festgehalten. So kann
+    # eine neue Auswahl als "noch nicht neu verarbeitet" kenntlich gemacht werden,
+    # ohne das bereits hochgeladene Dokument oder dessen bisheriges Ergebnis zu löschen.
+    ergebnis_anbieter: str = ""
     temporaerer_ordner: tempfile.TemporaryDirectory[str] = field(
         default_factory=lambda: tempfile.TemporaryDirectory(prefix="ced_nicegui_")
     )
@@ -95,6 +99,9 @@ def zeige_hauptseite() -> None:
           .anbieter-hinweis { position: fixed; right: 18px; bottom: 12px;
             color: white; padding: 7px 13px; border-radius: 9px; z-index: 9999;
             font-weight: bold; box-shadow: 0 3px 12px #0004; }
+          .arbeitsstatus { position: fixed; right: 18px; bottom: 58px;
+            background: #183638; color: white; padding: 7px 13px; border-radius: 9px;
+            z-index: 9999; box-shadow: 0 3px 12px #0003; max-width: 520px; }
           .datenschutz { background: #fff4e5; border-left: 5px solid #d97706;
             padding: 12px; border-radius: 7px; color: #713f12; }
           .referenzspalte, .ergebnisspalte { min-width: 320px; }
@@ -137,6 +144,10 @@ def zeige_hauptseite() -> None:
         ui.label("Kein automatischer Wechsel zwischen den Anbietern.").classes(
             "text-xs text-slate-500 mt-1"
         )
+        ui.label(
+            "Die Auswahl kann auch nach einem Upload geändert werden. Mit "
+            "„Dokument neu bearbeiten“ wird dasselbe Dokument erneut verarbeitet."
+        ).classes("text-xs text-slate-600 mt-2")
         ui.html('<div class="admin-trenner"></div>')
         ui.label("CED-Datenbank").classes("font-semibold text-slate-700")
         datenbank_status = ui.label("Nicht aktiviert · Lesemodus aktiv").classes(
@@ -234,9 +245,18 @@ def zeige_hauptseite() -> None:
 
     anbieter_hinweis = ui.label("● UK-API · UK_API_KEY").classes("anbieter-hinweis")
     anbieter_hinweis.style("background: #16833b")
+    arbeitsstatus = ui.label("Bereit · noch kein Dokument geladen").classes("arbeitsstatus")
+
+    def setze_status(text: str) -> None:
+        """Zeigt den letzten Arbeitsschritt dauerhaft und ohne sensible Inhalte an.
+
+        Für tieferes Debugging kann lokal zusätzlich der Zeitpunkt ergänzt werden.
+        Dokumentnamen, Antworttexte und Secrets dürfen hier jedoch nicht erscheinen.
+        """
+        arbeitsstatus.text = text
 
     def aktualisiere_anbieter() -> None:
-        """Übernimmt die bewusste Auswahl und kennzeichnet sie unübersehbar."""
+        """Wechselt bewusst den Anbieter, behält aber Dokument und Ergebnis bei."""
         zustand.anbieter = str(anbieter_auswahl.value)
         if zustand.anbieter == "uk":
             anbieter_hinweis.text = "● UK-API · UK_API_KEY"
@@ -245,6 +265,18 @@ def zeige_hauptseite() -> None:
             anbieter_hinweis.text = "● OpenAI · OPENAI_API_KEY"
             anbieter_hinweis.style("background: #b42318")
             datenschutz_dialog.open()
+        if zustand.seiten:
+            neuer_name = "UK-API" if zustand.anbieter == "uk" else "OpenAI"
+            lesen_schalter.text = f"Dokument mit {neuer_name} neu bearbeiten"
+            setze_status(
+                f"Anbieter auf {neuer_name} gewechselt · Dokument bereit zur erneuten Verarbeitung"
+            )
+            ui.notify(
+                f"{neuer_name} ausgewählt. Das hochgeladene Dokument bleibt erhalten; "
+                "starten Sie die Bearbeitung erneut.",
+                type="info",
+                timeout=6000,
+            )
 
     def aktualisiere_datenbankmodus() -> None:
         """Aktiviert oder beendet den geschützten Datenbankmodus."""
@@ -303,11 +335,14 @@ def zeige_hauptseite() -> None:
         zustand.strukturierte_darstellung = ""
         zustand.kis_vorschlag = ""
         zustand.letzter_fehler = ""
+        zustand.ergebnis_anbieter = ""
         dokumenttyp_ausgabe.value = ""
         ergebnis_ausgabe.value = ""
         ergebnis_auswahl.value = "rohtext"
         fehler_ausgabe.text = ""
         fehler_ausgabe.set_visibility(False)
+        lesen_schalter.text = "Dokument auslesen"
+        setze_status("Dokument wird importiert und für die Vorschau vorbereitet …")
         try:
             wurzel = Path(zustand.temporaerer_ordner.name)
             quellpfad = wurzel / Path(dateiname).name
@@ -317,6 +352,7 @@ def zeige_hauptseite() -> None:
             # Debugging: Bei Bedarf lokal Dateityp und Exception-Typ prüfen. Namen
             # oder Inhalte medizinischer Dokumente nie in produktive Logs schreiben.
             ui.notify(f"Dokumentimport fehlgeschlagen: {fehler}", type="negative")
+            setze_status("Dokumentimport fehlgeschlagen · technischen Hinweis prüfen")
             return
         seiten_auswahl.options = {
             nummer: f"Seite {nummer + 1}" for nummer in range(len(zustand.seiten))
@@ -326,6 +362,9 @@ def zeige_hauptseite() -> None:
         vorschau_platzhalter.set_visibility(False)
         vorschau.set_visibility(True)
         zeige_seite()
+        setze_status(
+            f"{len(zustand.seiten)} Seite(n) vorbereitet · Anbieter wählen und Bearbeitung starten"
+        )
         ui.notify(f"{len(zustand.seiten)} Seite(n) vorbereitet", type="positive")
 
     def uebernehme_datei(ereignis: events.UploadEventArguments) -> None:
@@ -338,32 +377,66 @@ def zeige_hauptseite() -> None:
         dateiname = f"zwischenablage-{uuid.uuid4().hex}.png"
         uebernehme_dokument(dateiname, base64.b64decode(daten["base64"], validate=True))
 
-    def lese_dokument() -> None:
-        """Ordnet die vier geprüften Ergebnisbereiche ohne stillen Fallback zu."""
+    async def lese_dokument() -> None:
+        """Bearbeitet erhaltene Seiten erneut mit dem gerade gewählten Anbieter.
+
+        Der Netzwerkaufruf läuft in einem I/O-Worker, damit der Browser den Status
+        bereits vor der möglicherweise langen LLM-Anfrage darstellen kann. Ein Fehler
+        löst ausdrücklich keinen automatischen Anbieterwechsel aus: Die Oberfläche
+        schlägt lediglich die bewusste Alternative vor und bewahrt die Seiten.
+        """
         if not zustand.seiten:
             ui.notify("Bitte zuerst ein Dokument auswählen.", type="warning")
+            setze_status("Warte auf Dokumentupload")
             return
+        anbieter_name = "UK-API" if zustand.anbieter == "uk" else "OpenAI"
+        lesen_schalter.disable()
+        setze_status(
+            f"{anbieter_name}: {len(zustand.seiten)} Seite(n) werden verarbeitet …"
+        )
+        fehler_ausgabe.set_visibility(False)
         try:
             ki_anbieter = (
                 LocalAPIProvider(einstellungen)
                 if zustand.anbieter == "uk"
                 else CloudAPIProvider(einstellungen)
             )
-            ergebnis = ki_anbieter.process_document(zustand.seiten)
+            # ``run.io_bound`` hält die Oberfläche reaktionsfähig. Es ist kein
+            # Fallback: Aufgerufen wird ausschließlich der oben ausgewählte Provider.
+            ergebnis = await run.io_bound(ki_anbieter.process_document, list(zustand.seiten))
             zustand.dokumenttyp = ergebnis.dokumenttyp.value
             zustand.ausgelesener_inhalt = ergebnis.ausgelesener_inhalt
             zustand.strukturierte_darstellung = ergebnis.strukturierte_darstellung
             zustand.kis_vorschlag = ergebnis.kis_vorschlag
+            zustand.ergebnis_anbieter = zustand.anbieter
             dokumenttyp_ausgabe.value = zustand.dokumenttyp
             aktualisiere_ergebnisanzeige()
             fehler_ausgabe.set_visibility(False)
+            lesen_schalter.text = f"Dokument mit {anbieter_name} neu bearbeiten"
+            setze_status(f"{anbieter_name}: Verarbeitung abgeschlossen · Ergebnis ungeprüft")
+            ui.notify(
+                f"Verarbeitung mit {anbieter_name} abgeschlossen.",
+                type="positive",
+                timeout=4000,
+            )
         except (ConfigurationError, AIProviderError, DokumentAntwortFehler, OSError, ValueError) as fehler:
             # Debugging: Endpunkt, Modell und Secret-Verfügbarkeit prüfen. Es gibt
             # absichtlich keinen Fallback; Schlüssel und Dokumentinhalt nie loggen.
             zustand.letzter_fehler = str(fehler)
             fehler_ausgabe.text = zustand.letzter_fehler
             fehler_ausgabe.set_visibility(True)
-            ui.notify(str(fehler), type="negative", timeout=10000)
+            alternative = "OpenAI" if zustand.anbieter == "uk" else "UK-API"
+            setze_status(
+                f"{anbieter_name}: Verarbeitung fehlgeschlagen · Dokument bleibt für neuen Versuch erhalten"
+            )
+            ui.notify(
+                f"{fehler} Sie können links {alternative} auswählen und dasselbe "
+                "Dokument erneut bearbeiten.",
+                type="negative",
+                timeout=12000,
+            )
+        finally:
+            lesen_schalter.enable()
 
     def kopiere_ergebnis() -> None:
         """Kopiert unmittelbar und unverändert die aktuell sichtbare Textvariante."""
