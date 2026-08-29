@@ -5,7 +5,10 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-import fitz
+# PyMuPDF stellt seit Version 1.24 den Modulnamen ``pymupdf`` bereit. Der alte
+# Alias ``fitz`` erzeugt beim Programmstart eine Deprecation-Warnung und soll laut
+# Bibliothek künftig entfallen; funktional bleibt die PDF-Verarbeitung identisch.
+import pymupdf
 
 SUPPORTED_SUFFIXES = {".pdf", ".png", ".jpg", ".jpeg"}
 
@@ -45,13 +48,13 @@ class DocumentConverter:
                 pages.append(source)
                 continue
             try:
-                with fitz.open(source) as pdf:
+                with pymupdf.open(source) as pdf:
                     for page_index, page in enumerate(pdf):
                         target = self.output_directory / f"{source.stem}_{page_index + 1}.png"
                         # 144 dpi liefern lesbaren Text, ohne Anfragen unnötig groß zu machen.
-                        page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False).save(target)
+                        page.get_pixmap(matrix=pymupdf.Matrix(2, 2), alpha=False).save(target)
                         pages.append(target)
-            except (fitz.FileDataError, OSError) as error:
+            except (pymupdf.FileDataError, OSError) as error:
                 raise DocumentConversionError(
                     f"Die PDF-Datei {source.name} konnte nicht gelesen werden."
                 ) from error
