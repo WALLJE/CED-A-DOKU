@@ -92,37 +92,20 @@ def zeige_hauptseite() -> None:
           .arbeitskarte { background: white; border: 1px solid #d7e4e3;
             border-radius: 14px; box-shadow: 0 3px 14px #163b3b12; }
           .bereichstitel { color: #0b6664; font-weight: 700; font-size: 1.1rem; }
-          .status-chip { background: #e3f2ef; color: #075c5b; border: 1px solid #b7d9d5;
-            border-radius: 999px; padding: 5px 12px; font-weight: 600; }
           .admin-drawer { background: #e5efee; border-right: 1px solid #bdd2d0; }
+          .admin-drawer .q-drawer__content { display: flex; flex-direction: column; }
           .admin-trenner { border-top: 1px solid #bed2d0; margin: 18px 0; }
-          .anbieter-hinweis { position: fixed; right: 18px; bottom: 12px;
-            color: white; padding: 7px 13px; border-radius: 9px; z-index: 9999;
-            font-weight: bold; box-shadow: 0 3px 12px #0004; }
-          .arbeitsstatus { position: fixed; right: 18px; bottom: 58px;
-            background: #183638; color: white; padding: 7px 13px; border-radius: 9px;
-            z-index: 9999; box-shadow: 0 3px 12px #0003; max-width: 520px; }
-          .datenschutz { background: #fff4e5; border-left: 5px solid #d97706;
-            padding: 12px; border-radius: 7px; color: #713f12; }
+          .steuerungs-meldungen { margin-top: auto; background: #d6e5e3;
+            border-top: 1px solid #aac6c3; padding: 14px 20px 18px; width: 100%; }
+          .anbieter-hinweis { color: #075c5b; font-weight: 700; }
+          .arbeitsstatus { color: #183638; font-size: .85rem; line-height: 1.35; }
+          .bedienhinweis { color: #475569; font-size: .76rem; line-height: 1.35; }
+          .meldungsfehler { color: #991b1b; font-weight: 600; }
           .referenzspalte, .ergebnisspalte { min-width: 320px; }
           .ergebnistext textarea { min-height: 330px !important;
             font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
         </style>
     """)
-
-    # Der Dialog ist modal. Damit kann OpenAI nicht unbemerkt ausgewählt werden;
-    # die Auswahl bleibt sichtbar, bis der konkrete Datenschutzhinweis bestätigt ist.
-    with ui.dialog() as datenschutz_dialog, ui.card().classes("w-full max-w-lg p-6"):
-        with ui.row().classes("items-center gap-3"):
-            ui.icon("privacy_tip", size="md").classes("text-orange-700")
-            ui.label("Datenschutzhinweis").classes("text-xl font-bold text-slate-800")
-        ui.label(
-            "Bei Verwendung von OpenAI dürfen keine personenbezogenen Daten oder "
-            "Dokumente mit identifizierbaren Patientendaten übermittelt werden."
-        ).classes("datenschutz my-4")
-        ui.button("O. K.", on_click=datenschutz_dialog.close, icon="check").props(
-            "color=teal-8 unelevated"
-        ).classes("self-end")
 
     # Diese Elemente werden sowohl aus der Arbeitsfläche als auch aus dem Adminbereich
     # aktualisiert. Sie werden vor den Callback-Funktionen bewusst einmal angelegt.
@@ -132,33 +115,41 @@ def zeige_hauptseite() -> None:
             ui.label("Steuerung / Administration").classes(
                 "text-lg font-bold text-teal-900"
             )
-        ui.label("Zugriff auf sensible Verarbeitungsfunktionen").classes(
-            "text-xs text-slate-600 mb-5"
-        )
-
         ui.label("LLM auswählen").classes("font-semibold text-slate-700")
         anbieter_auswahl = ui.select(
             {"uk": "UK-API (Standard)", "openai": "OpenAI"},
             value="uk",
         ).props("outlined dense").classes("w-full mt-1")
-        ui.label("Kein automatischer Wechsel zwischen den Anbietern.").classes(
-            "text-xs text-slate-500 mt-1"
-        )
-        ui.label(
-            "Die Auswahl kann auch nach einem Upload geändert werden. Mit "
-            "„Dokument neu bearbeiten“ wird dasselbe Dokument erneut verarbeitet."
-        ).classes("text-xs text-slate-600 mt-2")
         ui.html('<div class="admin-trenner"></div>')
         ui.label("CED-Datenbank").classes("font-semibold text-slate-700")
-        datenbank_status = ui.label("Nicht aktiviert · Lesemodus aktiv").classes(
-            "text-sm text-slate-600 my-2"
-        )
         passwort = ui.input(
             "Administrationspasswort", password=True, password_toggle_button=True
         ).props("outlined dense").classes("w-full")
         datenbank_schalter = ui.button(icon="lock_open").props(
             "color=teal-8 unelevated"
         ).classes("w-full mt-3")
+
+        # Sämtliche Status- und Bedienhinweise stehen gebündelt am unteren linken
+        # Rand der Steuerung. So überdecken weder Toasts noch frei schwebende Chips
+        # medizinische Dokumente. Zum CSS-Debugging kann im Browser geprüft werden,
+        # ob ``margin-top: auto`` innerhalb des Drawer-Flexcontainers wirksam ist.
+        with ui.column().classes("steuerungs-meldungen gap-2"):
+            with ui.row().classes("items-center gap-2"):
+                ui.icon("info", size="xs").classes("text-teal-800")
+                ui.label("Status und Hinweise").classes("font-bold text-teal-900")
+            anbieter_hinweis = ui.label("● UK-API · UK_API_KEY").classes(
+                "anbieter-hinweis"
+            )
+            datenbank_status = ui.label(
+                "Datenbank: nicht aktiviert · Lesemodus aktiv"
+            ).classes("arbeitsstatus")
+            arbeitsstatus = ui.label(
+                "Bereit · noch kein Dokument geladen"
+            ).classes("arbeitsstatus")
+            bedienhinweis = ui.label(
+                "Kein automatischer Anbieterwechsel. KI-Ergebnisse müssen "
+                "medizinisch geprüft werden."
+            ).classes("bedienhinweis")
 
     with ui.column().classes("w-full min-h-screen"):
         with ui.column().classes("medizin-kopf w-full px-8 py-7 gap-1"):
@@ -169,14 +160,6 @@ def zeige_hauptseite() -> None:
             )
 
         with ui.column().classes("w-full max-w-7xl mx-auto p-6 gap-5"):
-            modus_status = ui.label(f"● {LESEMODUS}").classes("status-chip self-start")
-
-            datenbank_banner = ui.label(
-                "Datenbankmodus aktiv: Die strukturierte Speicherung wird erst in "
-                "einer nachfolgenden Phase implementiert."
-            ).classes("w-full bg-orange-50 border border-orange-200 p-3 rounded-lg")
-            datenbank_banner.set_visibility(False)
-
             # Die zwei Spalten bilden einen einzigen, stabilen Arbeitsbereich: Das
             # Referenzbild bleibt links sichtbar, während rechts Erkennung und die
             # umschaltbaren Textvarianten ohne zusätzliche Fenster erreichbar sind.
@@ -204,11 +187,6 @@ def zeige_hauptseite() -> None:
                     ).props('accept=".pdf,.png,.jpg,.jpeg" color="teal-8"').classes(
                         "w-full"
                     )
-                    ui.label(
-                        "Zusätzlich können Sie einen Screenshot mit Strg+V oder "
-                        "Win+Umschalt+V aus der Zwischenablage einfügen."
-                    ).classes("text-sm text-slate-500")
-
                 with ui.column().classes("ergebnisspalte flex-1 lg:w-1/2 gap-5"):
                     with ui.card().classes("arbeitskarte w-full p-5"):
                         with ui.row().classes("items-center gap-2"):
@@ -217,10 +195,6 @@ def zeige_hauptseite() -> None:
                         dokumenttyp_ausgabe = ui.input(
                             "Erkannter Dokumenttyp", value=""
                         ).props("outlined readonly").classes("w-full")
-                        fehler_ausgabe = ui.label("").classes(
-                            "w-full bg-red-50 border border-red-300 text-red-900 p-3 rounded-lg"
-                        )
-                        fehler_ausgabe.set_visibility(False)
                         lesen_schalter = ui.button(
                             "Dokument auslesen", icon="document_scanner"
                         ).props("color=teal-8 unelevated").classes("w-full")
@@ -243,39 +217,40 @@ def zeige_hauptseite() -> None:
                             "Angezeigten Text kopieren", icon="content_copy"
                         ).props("color=teal-8 unelevated").classes("w-full")
 
-    anbieter_hinweis = ui.label("● UK-API · UK_API_KEY").classes("anbieter-hinweis")
-    anbieter_hinweis.style("background: #16833b")
-    arbeitsstatus = ui.label("Bereit · noch kein Dokument geladen").classes("arbeitsstatus")
-
-    def setze_status(text: str) -> None:
+    def setze_status(text: str, *, fehler: bool = False) -> None:
         """Zeigt den letzten Arbeitsschritt dauerhaft und ohne sensible Inhalte an.
 
         Für tieferes Debugging kann lokal zusätzlich der Zeitpunkt ergänzt werden.
         Dokumentnamen, Antworttexte und Secrets dürfen hier jedoch nicht erscheinen.
         """
         arbeitsstatus.text = text
+        arbeitsstatus.classes(remove="meldungsfehler")
+        if fehler:
+            arbeitsstatus.classes(add="meldungsfehler")
 
     def aktualisiere_anbieter() -> None:
         """Wechselt bewusst den Anbieter, behält aber Dokument und Ergebnis bei."""
         zustand.anbieter = str(anbieter_auswahl.value)
         if zustand.anbieter == "uk":
             anbieter_hinweis.text = "● UK-API · UK_API_KEY"
-            anbieter_hinweis.style("background: #16833b")
+            bedienhinweis.text = (
+                "Kein automatischer Anbieterwechsel. KI-Ergebnisse müssen "
+                "medizinisch geprüft werden."
+            )
         else:
             anbieter_hinweis.text = "● OpenAI · OPENAI_API_KEY"
-            anbieter_hinweis.style("background: #b42318")
-            datenschutz_dialog.open()
+            bedienhinweis.text = (
+                "Datenschutzhinweis: Mit OpenAI dürfen keine personenbezogenen "
+                "oder identifizierbaren Patientendaten übermittelt werden."
+            )
+        setze_status(
+            f"{'UK-API' if zustand.anbieter == 'uk' else 'OpenAI'} ausgewählt"
+        )
         if zustand.seiten:
             neuer_name = "UK-API" if zustand.anbieter == "uk" else "OpenAI"
             lesen_schalter.text = f"Dokument mit {neuer_name} neu bearbeiten"
             setze_status(
                 f"Anbieter auf {neuer_name} gewechselt · Dokument bereit zur erneuten Verarbeitung"
-            )
-            ui.notify(
-                f"{neuer_name} ausgewählt. Das hochgeladene Dokument bleibt erhalten; "
-                "starten Sie die Bearbeitung erneut.",
-                type="info",
-                timeout=6000,
             )
 
     def aktualisiere_datenbankmodus() -> None:
@@ -285,26 +260,26 @@ def zeige_hauptseite() -> None:
             passwort.value = ""
             passwort.set_visibility(True)
             datenbank_schalter.text = "CED-Datenbank aktivieren"
-            datenbank_status.text = "Nicht aktiviert · Lesemodus aktiv"
-            modus_status.text = f"● {LESEMODUS}"
-            datenbank_banner.set_visibility(False)
+            datenbank_status.text = "Datenbank: nicht aktiviert · Lesemodus aktiv"
+            setze_status("Lesemodus aktiviert · Datenbankmodus beendet")
             return
 
         try:
             richtiges_passwort = einstellungen.ced_database_password()
         except ConfigurationError as fehler:
-            ui.notify(str(fehler), type="negative", timeout=10000)
+            setze_status(str(fehler), fehler=True)
             return
         if not hmac.compare_digest(passwort.value or "", richtiges_passwort):
-            ui.notify("Das Administrationspasswort ist falsch.", type="negative")
+            setze_status("Das Administrationspasswort ist falsch.", fehler=True)
             return
         zustand.arbeitsmodus = DATENBANKMODUS
         passwort.value = ""
         passwort.set_visibility(False)
         datenbank_schalter.text = "Datenbankmodus beenden"
-        datenbank_status.text = "Aktiviert · geschützter Datenbankmodus"
-        modus_status.text = f"● {DATENBANKMODUS}"
-        datenbank_banner.set_visibility(True)
+        datenbank_status.text = "Datenbank: aktiviert · geschützter Modus"
+        setze_status(
+            "Datenbankmodus aktiviert · strukturierte Speicherung ist noch nicht implementiert"
+        )
 
     def zeige_seite() -> None:
         """Wechselt die Vorschau ohne die Originaldatei dauerhaft abzulegen."""
@@ -339,8 +314,6 @@ def zeige_hauptseite() -> None:
         dokumenttyp_ausgabe.value = ""
         ergebnis_ausgabe.value = ""
         ergebnis_auswahl.value = "rohtext"
-        fehler_ausgabe.text = ""
-        fehler_ausgabe.set_visibility(False)
         lesen_schalter.text = "Dokument auslesen"
         setze_status("Dokument wird importiert und für die Vorschau vorbereitet …")
         try:
@@ -351,8 +324,7 @@ def zeige_hauptseite() -> None:
         except (DocumentConversionError, OSError) as fehler:
             # Debugging: Bei Bedarf lokal Dateityp und Exception-Typ prüfen. Namen
             # oder Inhalte medizinischer Dokumente nie in produktive Logs schreiben.
-            ui.notify(f"Dokumentimport fehlgeschlagen: {fehler}", type="negative")
-            setze_status("Dokumentimport fehlgeschlagen · technischen Hinweis prüfen")
+            setze_status(f"Dokumentimport fehlgeschlagen: {fehler}", fehler=True)
             return
         seiten_auswahl.options = {
             nummer: f"Seite {nummer + 1}" for nummer in range(len(zustand.seiten))
@@ -365,7 +337,6 @@ def zeige_hauptseite() -> None:
         setze_status(
             f"{len(zustand.seiten)} Seite(n) vorbereitet · Anbieter wählen und Bearbeitung starten"
         )
-        ui.notify(f"{len(zustand.seiten)} Seite(n) vorbereitet", type="positive")
 
     def uebernehme_datei(ereignis: events.UploadEventArguments) -> None:
         """Reicht den bewährten Datei-Upload unverändert an den Importweg weiter."""
@@ -386,7 +357,6 @@ def zeige_hauptseite() -> None:
         schlägt lediglich die bewusste Alternative vor und bewahrt die Seiten.
         """
         if not zustand.seiten:
-            ui.notify("Bitte zuerst ein Dokument auswählen.", type="warning")
             setze_status("Warte auf Dokumentupload")
             return
         anbieter_name = "UK-API" if zustand.anbieter == "uk" else "OpenAI"
@@ -394,7 +364,6 @@ def zeige_hauptseite() -> None:
         setze_status(
             f"{anbieter_name}: {len(zustand.seiten)} Seite(n) werden verarbeitet …"
         )
-        fehler_ausgabe.set_visibility(False)
         try:
             ki_anbieter = (
                 LocalAPIProvider(einstellungen)
@@ -411,29 +380,17 @@ def zeige_hauptseite() -> None:
             zustand.ergebnis_anbieter = zustand.anbieter
             dokumenttyp_ausgabe.value = zustand.dokumenttyp
             aktualisiere_ergebnisanzeige()
-            fehler_ausgabe.set_visibility(False)
             lesen_schalter.text = f"Dokument mit {anbieter_name} neu bearbeiten"
             setze_status(f"{anbieter_name}: Verarbeitung abgeschlossen · Ergebnis ungeprüft")
-            ui.notify(
-                f"Verarbeitung mit {anbieter_name} abgeschlossen.",
-                type="positive",
-                timeout=4000,
-            )
         except (ConfigurationError, AIProviderError, DokumentAntwortFehler, OSError, ValueError) as fehler:
             # Debugging: Endpunkt, Modell und Secret-Verfügbarkeit prüfen. Es gibt
             # absichtlich keinen Fallback; Schlüssel und Dokumentinhalt nie loggen.
             zustand.letzter_fehler = str(fehler)
-            fehler_ausgabe.text = zustand.letzter_fehler
-            fehler_ausgabe.set_visibility(True)
             alternative = "OpenAI" if zustand.anbieter == "uk" else "UK-API"
             setze_status(
-                f"{anbieter_name}: Verarbeitung fehlgeschlagen · Dokument bleibt für neuen Versuch erhalten"
-            )
-            ui.notify(
-                f"{fehler} Sie können links {alternative} auswählen und dasselbe "
-                "Dokument erneut bearbeiten.",
-                type="negative",
-                timeout=12000,
+                f"{anbieter_name}: {fehler} Dokument bleibt erhalten; Sie können "
+                f"{alternative} auswählen und es erneut bearbeiten.",
+                fehler=True,
             )
         finally:
             lesen_schalter.enable()
@@ -441,7 +398,7 @@ def zeige_hauptseite() -> None:
     def kopiere_ergebnis() -> None:
         """Kopiert unmittelbar und unverändert die aktuell sichtbare Textvariante."""
         ui.clipboard.write(ergebnis_ausgabe.value or "")
-        ui.notify("Angezeigten Text kopiert", type="positive", timeout=1800)
+        setze_status("Angezeigten Text in die Zwischenablage kopiert")
 
     anbieter_auswahl.on_value_change(lambda _: aktualisiere_anbieter())
     datenbank_schalter.text = "CED-Datenbank aktivieren"
