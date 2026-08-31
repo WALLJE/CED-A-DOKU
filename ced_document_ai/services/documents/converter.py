@@ -51,6 +51,16 @@ class DocumentConverter:
                 with pymupdf.open(source) as pdf:
                     for page_index, page in enumerate(pdf):
                         target = self.output_directory / f"{source.stem}_{page_index + 1}.png"
+                        # Mehrere Uploads dürfen denselben Originalnamen besitzen. Ein
+                        # vorhandenes Rendering wird deshalb nie still überschrieben;
+                        # sonst würde die KI zwar mehrere Pfade, aber mehrfach dasselbe
+                        # zuletzt geladene Seitenbild erhalten.
+                        laufende_nummer = 2
+                        while target.exists():
+                            target = self.output_directory / (
+                                f"{source.stem}_{page_index + 1}_{laufende_nummer}.png"
+                            )
+                            laufende_nummer += 1
                         # 144 dpi liefern lesbaren Text, ohne Anfragen unnötig groß zu machen.
                         page.get_pixmap(matrix=pymupdf.Matrix(2, 2), alpha=False).save(target)
                         pages.append(target)
