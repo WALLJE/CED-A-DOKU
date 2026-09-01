@@ -1,8 +1,8 @@
 """Zentrale, sichere Anwendungskonfiguration.
 
-Secrets werden ausschließlich aus Umgebungsvariablen gelesen. In GitHub
-Codespaces stehen Repository-Secrets normalerweise als Umgebungsvariablen bereit.
-Bei einem lokalen Windows-Start müssen sie vor dem Programmstart gesetzt werden.
+Secrets werden ausschließlich aus Umgebungsvariablen gelesen. Für einen lokalen
+Start lädt dieses Modul die Variablen einmalig aus der ``.env`` im Projektordner.
+Bereits gesetzte Umgebungsvariablen werden dabei bewusst nicht überschrieben.
 """
 
 from __future__ import annotations
@@ -10,6 +10,17 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
+
+from dotenv import load_dotenv
+
+
+# Der explizite Pfad macht unabhängig davon, aus welchem Arbeitsverzeichnis das
+# Programm gestartet wird. ``override=False`` schützt beispielsweise Secrets, die
+# in einer Entwicklungsumgebung bereits als echte Umgebungsvariablen gesetzt sind.
+# Bei Problemen kann zum lokalen Debuggen vorübergehend ``verbose=True`` ergänzt
+# werden; Schlüsselwerte selbst dürfen dabei niemals ausgegeben werden.
+DOTENV_PATH = Path(__file__).resolve().parents[2] / ".env"
+load_dotenv(dotenv_path=DOTENV_PATH, override=False)
 
 
 @dataclass(frozen=True)
@@ -68,4 +79,3 @@ class Settings:
 
 class ConfigurationError(RuntimeError):
     """Verständliche Fehlermeldung für fehlende oder falsche Konfiguration."""
-
