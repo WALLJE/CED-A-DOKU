@@ -100,7 +100,7 @@ def zeige_hauptseite() -> None:
                         hinweis.text = "● UK-API · UK_API_KEY"
                         hinweis.style("background: #16833b")
                     else:
-                        hinweis.text = "● OpenAI · OPEN_AI_KEY"
+                        hinweis.text = "● OpenAI · OPENAI_API_KEY"
                         hinweis.style("background: #b42318")
 
                 anbieter_auswahl.on_value_change(lambda _: aktualisiere_anbieter())
