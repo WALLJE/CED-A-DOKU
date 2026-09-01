@@ -237,7 +237,7 @@ def zeige_hauptseite() -> None:
         if zustand.anbieter == "uk":
             anbieter_hinweis.text = "● UK-API · UK_API_KEY"
         else:
-            anbieter_hinweis.text = "● OpenAI · OPENAI_API_KEY"
+            anbieter_hinweis.text = "● OpenAI · OPEN_AI_KEY"
         setze_status(
             f"{'UK-API' if zustand.anbieter == 'uk' else 'OpenAI'} ausgewählt"
         )

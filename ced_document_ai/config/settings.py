@@ -58,7 +58,7 @@ class Settings:
 
     def api_key(self, provider: str) -> str:
         """Gibt den Schlüssel des gewählten Providers zurück oder erklärt den Fehler."""
-        variable = "UK_API_KEY" if provider == "uk" else "OPENAI_API_KEY"
+        variable = "UK_API_KEY" if provider == "uk" else "OPEN_AI_KEY"
         value = os.getenv(variable, "").strip()
         if not value:
             raise ConfigurationError(
