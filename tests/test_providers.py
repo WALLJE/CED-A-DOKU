@@ -32,6 +32,9 @@ def test_provider_sends_at_most_five_images_per_request(tmp_path: Path) -> None:
         for call in post.call_args_list
     ]
     assert image_counts == [5, 1]
-    assert "Dokumentteil 1" in result
-    assert "Dokumentteil 2" in result
-
+    assert result == "Text\n\nText"
+    # Die technische Aufteilung darf weder im Prompt als nummerierter Auftrag noch
+    # im zurückgegebenen Transkript sichtbare Dokumentteilnummern erzeugen.
+    prompts = [call.kwargs["json"]["messages"][0]["content"][0]["text"] for call in post.call_args_list]
+    assert all("Teil 1" not in prompt and "Teil 2" not in prompt for prompt in prompts)
+    assert all("keine Seitenzahlen, Dokumentnummern" in prompt for prompt in prompts)

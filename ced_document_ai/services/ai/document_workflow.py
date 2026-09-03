@@ -74,7 +74,9 @@ Bearbeite das gesamte Dokument strikt in dieser Reihenfolge:
    Die technische Upload-Reihenfolge ist nur ein Hinweis. Ordne Teile bei eindeutigen
    Indizien logisch; bei uneindeutiger Lage behalte ihre technische Reihenfolge bei.
 2. Lies danach alle Teile vollständig, in der ermittelten Reihenfolge und möglichst
-   originalgetreu als ein sequentiell zusammengefügtes Dokument aus.
+   originalgetreu als ein sequentiell zusammengefügtes Dokument aus. Seitenzahlen und
+   Dokumentnummern dienen ausschließlich zur Reihenfolgeprüfung und dürfen nicht im
+   Abschnitt AUSGELESENER INHALT erscheinen.
 3. Bestimme genau einen der folgenden Dokumenttypen: {', '.join(t.value for t in Dokumenttyp)}.
 4. Strukturiere den ausgelesenen Inhalt passend zu diesem Dokumenttyp.
 5. Erstelle ausschließlich aus dem ausgelesenen Inhalt einen gekürzten KIS-Vorschlag.
@@ -83,13 +85,17 @@ Bearbeite das gesamte Dokument strikt in dieser Reihenfolge:
 
 Verbindliche Regeln:
 - Keine Angaben ergänzen, die nicht im Dokument stehen.
+- Im Abschnitt AUSGELESENER INHALT ausschließlich Text des Originaldokuments ausgeben:
+  keine Seitenzahlen, Dokumentnummern, Teilnummern, Trennüberschriften oder sonstigen
+  technischen Kennzeichnungen übernehmen oder selbst hinzufügen.
 - Keine Diagnosen aus Symptomen oder Befunden ableiten und keine Diagnose präzisieren oder vereinheitlichen.
 - Keine Normalbefunde ergänzen und Laborwerte nicht interpretieren.
 - Keine Referenzbereiche aus medizinischem Wissen ergänzen.
 - Keine Medikamentenindikation aus dem Präparat ableiten.
 - Keine Dosierungen berechnen oder verändern und keine Einheiten umrechnen.
 - Keine Abkürzungen ausschreiben, wenn die Langform nicht im Dokument steht.
-- Keine Widersprüche selbstständig auflösen; unleserliche Stellen als `unleserlich` kennzeichnen.
+- Keine Widersprüche selbstständig auflösen; unleserliche Stellen auslassen und
+  insbesondere nicht durch einen selbst erzeugten Platzhalter ersetzen.
 - Zahlen, Datumsangaben, Einheiten, Medikamentennamen, Diagnosen und Negationen unverändert übernehmen.
 - Insbesondere `kein`, `nicht`, `ohne` und vergleichbare Negationen nicht verändern oder entfernen.
 - Umformulierungen dürfen die medizinische Aussage weder erweitern noch verändern.

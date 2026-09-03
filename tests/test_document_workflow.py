@@ -91,6 +91,8 @@ def test_prompt_enthaelt_vorlagen_und_sicherheitsregeln() -> None:
         "Keine Angaben ergänzen", "Keine Diagnosen", "Laborwerte nicht interpretieren",
         "Zahlen", "Einheiten", "Negationen", "`kein`, `nicht`, `ohne`",
         "wahrscheinliche Dokumentreihenfolge", "sequentiell zusammengefügtes Dokument",
+        "keine Seitenzahlen, Dokumentnummern, Teilnummern",
+        "nicht durch einen selbst erzeugten Platzhalter ersetzen",
     ):
         assert text in WORKFLOW_PROMPT
 
@@ -125,7 +127,10 @@ def test_mehrere_teile_werden_einzeln_transkribiert_und_gemeinsam_ausgewertet(tm
     for call in post.call_args_list[:-1]:
         inhalt = call.kwargs["json"]["messages"][0]["content"]
         assert sum(element["type"] == "image_url" for element in inhalt) == 1
-    assert all(f"--- Dokumentteil {nummer} ---" in prompts[-1] for nummer in range(1, 4))
+    assert "--- Dokumentteil" not in prompts[-1]
+    assert prompts[-1].endswith("Transkription\n\nTranskription\n\nTranskription")
+    assert all("Keine Seitenzahl, Dokumentnummer, Teilnummer" in prompt for prompt in prompts[:-1])
+    assert all("Keine Angaben, Platzhalter oder Hinweise ergänzen" in prompt for prompt in prompts[:-1])
 
 
 def test_parserfehler_startet_keine_weitere_anfrage(tmp_path: Path) -> None:

@@ -71,13 +71,17 @@ class OpenAICompatibleProvider(DocumentAI):
         )
         chunks = [document[index : index + self.max_images] for index in range(0, len(document), self.max_images)]
         answers: list[str] = []
-        for chunk_number, paths in enumerate(chunks, start=1):
+        for paths in chunks:
             content: list[dict[str, Any]] = [
                 {
                     "type": "text",
                     "text": (
                         f"{prompt}\nDokumenttyp: {document_type}. "
-                        f"Teil {chunk_number} von {len(chunks)}; Dokumentteile in Reihenfolge ausgeben."
+                        "Die bereitgestellten Bilder in ihrer Reihenfolge lesen. "
+                        "In der Transkription keine Seitenzahlen, Dokumentnummern, "
+                        "Teilnummern, Trennüberschriften oder sonstigen technischen "
+                        "Kennzeichnungen ausgeben. Ausschließlich den übrigen Text des "
+                        "Originaldokuments ohne Ergänzungen ausgeben."
                     ),
                 }
             ]
@@ -109,10 +113,10 @@ class OpenAICompatibleProvider(DocumentAI):
                     f"{type(error).__name__}. Bitte Endpunkt, Modell-ID und Secret prüfen."
                 ) from error
 
-        return "\n\n".join(
-            f"--- Dokumentteil {index} ---\n{answer}"
-            for index, answer in enumerate(answers, start=1)
-        )
+        # Die Antworten werden ohne künstliche Überschrift verbunden. Für die
+        # Fehlersuche kann lokal die Länge der einzelnen ``answers`` geprüft werden;
+        # Nummern oder Antworttexte dürfen nicht in dauerhafte Logs geschrieben werden.
+        return "\n\n".join(answers)
 
     def process_document(self, document: Sequence[Path]) -> DokumentErgebnis:
         """Führt den Workflow für mehrere Dokumentteile in zwei Phasen aus.
@@ -134,7 +138,7 @@ class OpenAICompatibleProvider(DocumentAI):
             rohantwort = self._request(WORKFLOW_PROMPT, document)
         else:
             transkriptionen: list[str] = []
-            for nummer, dokumentteil in enumerate(document, start=1):
+            for dokumentteil in document:
                 # Diese Phase darf ausdrücklich noch nicht klassifizieren oder
                 # zusammenfassen. Genau ein Bild je Anfrage macht außerdem im
                 # Debugging anhand der Anfragenanzahl sichtbar, ob ein Teil fehlte,
@@ -142,14 +146,16 @@ class OpenAICompatibleProvider(DocumentAI):
                 auftrag = (
                     "Lies ausschließlich das bereitgestellte Dokumentteil vollständig und "
                     "originalgetreu aus. Nicht klassifizieren, strukturieren oder kürzen. "
-                    "Keine Angaben ergänzen. Unleserliches als `unleserlich` markieren. "
-                    f"Kennzeichne es als Teil {nummer} von {len(document)}."
+                    "Keine Angaben, Platzhalter oder Hinweise ergänzen. Unleserliche Stellen "
+                    "auslassen, statt sie mit einer eigenen Kennzeichnung zu ersetzen. "
+                    "Keine Seitenzahl, Dokumentnummer, Teilnummer, Trennüberschrift oder "
+                    "sonstige technische Kennzeichnung ausgeben. Gib ausschließlich den "
+                    "übrigen Text aus dem Originaldokument aus."
                 )
                 transkriptionen.append(self._request(auftrag, (dokumentteil,)))
-            gesamtauslesung = "\n\n".join(
-                f"--- Dokumentteil {nummer} ---\n{text}"
-                for nummer, text in enumerate(transkriptionen, start=1)
-            )
+            # Auch die interne Zusammenführung erhält keine künstlichen Nummern, damit
+            # sie nicht versehentlich in den ausgegebenen Transkripttext gelangen.
+            gesamtauslesung = "\n\n".join(transkriptionen)
             rohantwort = self._request(
                 WORKFLOW_PROMPT
                 + "\n\nNachfolgend stehen die einzeln erfassten Teile des gesamten "
