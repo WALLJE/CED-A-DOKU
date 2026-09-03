@@ -90,6 +90,7 @@ def test_prompt_enthaelt_vorlagen_und_sicherheitsregeln() -> None:
     for text in (
         "Keine Angaben ergänzen", "Keine Diagnosen", "Laborwerte nicht interpretieren",
         "Zahlen", "Einheiten", "Negationen", "`kein`, `nicht`, `ohne`",
+        "wahrscheinliche Dokumentreihenfolge", "sequentiell zusammengefügtes Dokument",
     ):
         assert text in WORKFLOW_PROMPT
 
@@ -117,6 +118,7 @@ def test_mehrseitiges_dokument_erzeugt_genau_ein_gemeinsames_ergebnis(tmp_path: 
     # Nur die letzte Anfrage enthält den Klassifikationsauftrag und damit genau ein Ergebnis.
     prompts = [call.kwargs["json"]["messages"][0]["content"][0]["text"] for call in post.call_args_list]
     assert sum("DOKUMENTTYP:" in prompt for prompt in prompts) == 1
+    assert "technischen Upload-Reihenfolge" in prompts[-1]
 
 
 def test_parserfehler_startet_keine_weitere_anfrage(tmp_path: Path) -> None:
