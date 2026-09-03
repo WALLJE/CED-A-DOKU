@@ -105,6 +105,11 @@ def zeige_hauptseite() -> None:
           .upload-hervorgehoben { background: #edfafa; border: 2px dashed #16827d;
             border-radius: 12px; padding: 14px; }
           .upload-hinweis { color: #37817e; font-size: .86rem; font-weight: 500; }
+          /* Nach dem Upload zeigt NiceGUI standardmäßig noch einmal eine Datei-/
+             Bildvorschau. Sie ist hier redundant, weil jedes Dokumentteil bereits
+             oberhalb im sortierbaren Raster erscheint. Bei CSS-Problemen kann im
+             Browser geprüft werden, ob NiceGUI weiterhin ``q-uploader__list`` nutzt. */
+          .datei-upload .q-uploader__list { display: none; }
           .vorschau-raster { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 12px; width: 100%; }
           .vorschau-karte { border: 1px solid #cfe0df; border-radius: 10px;
@@ -199,7 +204,7 @@ def zeige_hauptseite() -> None:
                             auto_upload=True,
                         ).props(
                             'accept=".pdf,.png,.jpg,.jpeg" color="teal-8" flat bordered'
-                        ).classes("w-full bg-white rounded-lg")
+                        ).classes("datei-upload w-full bg-white rounded-lg")
                         ui.label(
                             "Auch Einfügen aus der Zwischenablage ist mit Strg+V / Cmd+V möglich."
                         ).classes("upload-hinweis")
@@ -314,26 +319,26 @@ def zeige_hauptseite() -> None:
             zustand.seiten[neu], zustand.seiten[index],
         )
         aktualisiere_vorschauen()
-        setze_status(f"Seite {index + 1} wurde an Position {neu + 1} verschoben")
+        setze_status(f"Teil {index + 1} wurde an Position {neu + 1} verschoben")
 
     def loesche_seite(index: int) -> None:
-        """Entfernt genau die auf der Vorschau bezeichnete Seite aus der Sitzung."""
+        """Entfernt genau das auf der Vorschau bezeichnete Teil aus der Sitzung."""
         zustand.seiten.pop(index)
         aktualisiere_vorschauen()
         setze_status(
-            f"Seite gelöscht · {len(zustand.seiten)} Seite(n) verbleiben"
-            if zustand.seiten else "Alle Dokumentseiten wurden gelöscht"
+            f"Teil gelöscht · {len(zustand.seiten)} Teil(e) verbleiben"
+            if zustand.seiten else "Alle Dokumentteile wurden gelöscht"
         )
 
     def aktualisiere_vorschauen() -> None:
-        """Zeigt jede übernommene Seite gleichzeitig in einem zweispaltigen Raster."""
+        """Zeigt jedes übernommene Teil gleichzeitig in einem zweispaltigen Raster."""
         vorschau_bereich.clear()
         vorschau_platzhalter.set_visibility(not zustand.seiten)
         with vorschau_bereich:
             for index, seite in enumerate(zustand.seiten):
                 with ui.column().classes("vorschau-karte gap-1"):
                     ui.image(_bildadresse(seite)).classes("vorschau-bild")
-                    ui.label(f"Seite {index + 1}").classes(
+                    ui.label(f"Teil {index + 1}").classes(
                         "text-sm font-semibold text-teal-900"
                     )
                     with ui.row().classes("w-full justify-between gap-0"):
@@ -412,7 +417,7 @@ def zeige_hauptseite() -> None:
             return
         aktualisiere_vorschauen()
         setze_status(
-            f"{len(zustand.seiten)} Seite(n) vorbereitet · Anbieter wählen und Bearbeitung starten"
+            f"{len(zustand.seiten)} Teil(e) vorbereitet · Anbieter wählen und Bearbeitung starten"
         )
 
     def uebernehme_datei(ereignis: events.UploadEventArguments) -> None:
@@ -442,7 +447,7 @@ def zeige_hauptseite() -> None:
         lesen_schalter.disable()
         ki_statussymbol.set_visibility(True)
         setze_status(
-            f"{anbieter_name}: KI analysiert und ordnet {len(zustand.seiten)} Seite(n) …"
+            f"{anbieter_name}: KI analysiert und ordnet {len(zustand.seiten)} Teil(e) …"
         )
         try:
             ki_anbieter = (

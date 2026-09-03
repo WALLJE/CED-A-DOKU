@@ -68,12 +68,12 @@ Dokumenttypspezifische strukturierte Darstellung:
 
 WORKFLOW_PROMPT = f"""
 Bearbeite das gesamte Dokument strikt in dieser Reihenfolge:
-1. Prüfe bei mehreren übergebenen Seiten oder separaten Dateien zuerst deren
+1. Prüfe bei mehreren übergebenen Dokumentteilen oder separaten Dateien zuerst deren
    wahrscheinliche Dokumentreihenfolge. Nutze ausschließlich sichtbare Merkmale wie
    Seitenzahlen, Datumsangaben, fortlaufende Sätze, Überschriften und Briefaufbau.
-   Die technische Upload-Reihenfolge ist nur ein Hinweis. Ordne Seiten bei eindeutigen
+   Die technische Upload-Reihenfolge ist nur ein Hinweis. Ordne Teile bei eindeutigen
    Indizien logisch; bei uneindeutiger Lage behalte ihre technische Reihenfolge bei.
-2. Lies danach alle Seiten vollständig, in der ermittelten Reihenfolge und möglichst
+2. Lies danach alle Teile vollständig, in der ermittelten Reihenfolge und möglichst
    originalgetreu als ein sequentiell zusammengefügtes Dokument aus.
 3. Bestimme genau einen der folgenden Dokumenttypen: {', '.join(t.value for t in Dokumenttyp)}.
 4. Strukturiere den ausgelesenen Inhalt passend zu diesem Dokumenttyp.

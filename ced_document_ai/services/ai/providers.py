@@ -38,7 +38,7 @@ class DocumentAI(ABC):
 
     @abstractmethod
     def process_document(self, document: Sequence[Path]) -> DokumentErgebnis:
-        """Verarbeitet alle Seiten zu genau einem gemeinsamen Ergebnis."""
+        """Verarbeitet alle Dokumentteile zu genau einem gemeinsamen Ergebnis."""
 
 
 @dataclass
@@ -77,7 +77,7 @@ class OpenAICompatibleProvider(DocumentAI):
                     "type": "text",
                     "text": (
                         f"{prompt}\nDokumenttyp: {document_type}. "
-                        f"Teil {chunk_number} von {len(chunks)}; Seiten in Reihenfolge ausgeben."
+                        f"Teil {chunk_number} von {len(chunks)}; Dokumentteile in Reihenfolge ausgeben."
                     ),
                 }
             ]
@@ -115,12 +115,14 @@ class OpenAICompatibleProvider(DocumentAI):
         )
 
     def process_document(self, document: Sequence[Path]) -> DokumentErgebnis:
-        """Führt den Workflow aus, bei vielen Seiten bewusst in zwei Phasen.
+        """Führt den Workflow für mehrere Dokumentteile in zwei Phasen aus.
 
-        Passt das Dokument in eine Anfrage, erhält das Modell direkt den zentralen
-        Auftrag. Andernfalls werden zunächst ausschließlich Transkriptionen der
-        Seitenblöcke erstellt. Erst danach erzeugt eine einzige Textanfrage Typ,
-        Struktur und KIS-Vorschlag für das Gesamtdokument. Es gibt weder einen
+        Ein einzelnes Bild kann unmittelbar ausgewertet werden. Bei mehreren Bildern
+        wird dagegen jedes Teil in einer eigenen Bildanfrage transkribiert. Das ist
+        absichtlich unabhängig vom technischen Bildlimit des Anbieters: Manche
+        kompatiblen Endpunkte akzeptieren mehrere Bilder, berücksichtigen inhaltlich
+        aber nur das letzte. Erst danach erzeugt eine einzige Textanfrage Typ,
+        Struktur und KIS-Vorschlag aus *allen* Transkriptionen. Es gibt weder einen
         Anbieterwechsel noch eine Ersatzantwort bei einem Parserfehler.
         """
         if not document:
@@ -128,37 +130,33 @@ class OpenAICompatibleProvider(DocumentAI):
         if self.max_images < 1:
             raise AIProviderError("Die maximale Bildanzahl des Anbieters muss mindestens 1 sein.")
 
-        if len(document) <= self.max_images:
+        if len(document) == 1:
             rohantwort = self._request(WORKFLOW_PROMPT, document)
         else:
             transkriptionen: list[str] = []
-            teile = [
-                document[index : index + self.max_images]
-                for index in range(0, len(document), self.max_images)
-            ]
-            for nummer, seiten in enumerate(teile, start=1):
-                erster_index = (nummer - 1) * self.max_images + 1
-                letzter_index = erster_index + len(seiten) - 1
+            for nummer, dokumentteil in enumerate(document, start=1):
                 # Diese Phase darf ausdrücklich noch nicht klassifizieren oder
-                # zusammenfassen, damit technische Blöcke kein eigenes Ergebnis bilden.
+                # zusammenfassen. Genau ein Bild je Anfrage macht außerdem im
+                # Debugging anhand der Anfragenanzahl sichtbar, ob ein Teil fehlte,
+                # ohne Patientendaten oder Bildinhalte protokollieren zu müssen.
                 auftrag = (
-                    "Lies ausschließlich die bereitgestellten Seiten vollständig und "
+                    "Lies ausschließlich das bereitgestellte Dokumentteil vollständig und "
                     "originalgetreu aus. Nicht klassifizieren, strukturieren oder kürzen. "
                     "Keine Angaben ergänzen. Unleserliches als `unleserlich` markieren. "
-                    f"Kennzeichne die Seiten {erster_index} bis {letzter_index} einzeln "
-                    "und erhalte ihre Reihenfolge."
+                    f"Kennzeichne es als Teil {nummer} von {len(document)}."
                 )
-                transkriptionen.append(self._request(auftrag, seiten))
+                transkriptionen.append(self._request(auftrag, (dokumentteil,)))
             gesamtauslesung = "\n\n".join(
-                f"--- Seitenblock {nummer} ---\n{text}"
+                f"--- Dokumentteil {nummer} ---\n{text}"
                 for nummer, text in enumerate(transkriptionen, start=1)
             )
             rohantwort = self._request(
                 WORKFLOW_PROMPT
-                + "\n\nNachfolgend steht die blockweise erfasste Auslesung des gesamten "
-                "Dokuments. Die Blockreihenfolge entspricht zunächst der technischen "
+                + "\n\nNachfolgend stehen die einzeln erfassten Teile des gesamten "
+                "Dokuments. Ihre Reihenfolge entspricht zunächst der technischen "
                 "Upload-Reihenfolge. Prüfe anhand der sichtbaren Inhalte die logische "
-                "Dokumentreihenfolge und verarbeite alle Blöcke anschließend gemeinsam:\n\n"
+                "Dokumentreihenfolge und verarbeite alle Teile anschließend gemeinsam. "
+                "Kein Dokumentteil darf ausgelassen werden:\n\n"
                 + gesamtauslesung,
                 (),
             )
