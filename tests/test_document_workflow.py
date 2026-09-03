@@ -95,7 +95,7 @@ def test_prompt_enthaelt_vorlagen_und_sicherheitsregeln() -> None:
         assert text in WORKFLOW_PROMPT
 
 
-def test_mehrseitiges_dokument_erzeugt_genau_ein_gemeinsames_ergebnis(tmp_path: Path) -> None:
+def test_mehrere_teile_werden_einzeln_transkribiert_und_gemeinsam_ausgewertet(tmp_path: Path) -> None:
     seiten = []
     for nummer in range(3):
         pfad = tmp_path / f"seite{nummer}.png"
@@ -110,15 +110,22 @@ def test_mehrseitiges_dokument_erzeugt_genau_ein_gemeinsames_ergebnis(tmp_path: 
     finalantwort.json.return_value = {"choices": [{"message": {"content": _antwort()}}]}
     with patch(
         "ced_document_ai.services.ai.providers.requests.post",
-        side_effect=[teilantwort, teilantwort, finalantwort],
+        side_effect=[teilantwort, teilantwort, teilantwort, finalantwort],
     ) as post:
         ergebnis = provider.process_document(seiten)
-    assert post.call_count == 3
+    # Drei Bildteile erzeugen drei getrennte Transkriptionen und genau eine
+    # abschließende Textauswertung. So kann ein Endpunkt nie still nur das letzte
+    # Bild einer Mehrbildanfrage beachten.
+    assert post.call_count == 4
     assert ergebnis.dokumenttyp is Dokumenttyp.ARZTBRIEF
     # Nur die letzte Anfrage enthält den Klassifikationsauftrag und damit genau ein Ergebnis.
     prompts = [call.kwargs["json"]["messages"][0]["content"][0]["text"] for call in post.call_args_list]
     assert sum("DOKUMENTTYP:" in prompt for prompt in prompts) == 1
     assert "technischen Upload-Reihenfolge" in prompts[-1]
+    for call in post.call_args_list[:-1]:
+        inhalt = call.kwargs["json"]["messages"][0]["content"]
+        assert sum(element["type"] == "image_url" for element in inhalt) == 1
+    assert all(f"--- Dokumentteil {nummer} ---" in prompts[-1] for nummer in range(1, 4))
 
 
 def test_parserfehler_startet_keine_weitere_anfrage(tmp_path: Path) -> None:
