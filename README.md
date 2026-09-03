@@ -50,6 +50,9 @@ Bei mehreren Bildern oder Dateien wird jedes Dokumentteil zuerst einzeln und
 vollständig transkribiert. Anschließend prüft die KI anhand sichtbarer
 Seitenzahlen, Datumsangaben und inhaltlicher Anschlüsse die wahrscheinliche
 Reihenfolge und verarbeitet alle Transkriptionen als ein gemeinsames Dokument.
+Das Transkript enthält dabei weder Seiten- oder Dokumentnummern noch automatisch
+erzeugte Teilkennzeichnungen; ausgegeben wird ausschließlich der übrige Text aus
+dem Originaldokument, ohne Ergänzungen.
 Währenddessen kennzeichnen ein drehendes Statussymbol und ein Statustext die laufende
 Bearbeitung. Da die automatische Reihenfolge nur ein Vorschlag sein kann, muss das
 Ergebnis weiterhin medizinisch geprüft werden.
