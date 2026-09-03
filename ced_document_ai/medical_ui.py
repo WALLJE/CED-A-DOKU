@@ -102,6 +102,20 @@ def zeige_hauptseite() -> None:
           .anbieter-hinweis, .arbeitsstatus { color: #334e50; font: inherit; }
           .meldungsfehler { color: #991b1b; font-weight: 600; }
           .referenzspalte, .ergebnisspalte { min-width: 320px; }
+          .upload-hervorgehoben { background: #edfafa; border: 2px dashed #16827d;
+            border-radius: 12px; padding: 14px; }
+          .upload-hinweis { color: #37817e; font-size: .86rem; font-weight: 500; }
+          .vorschau-raster { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px; width: 100%; }
+          .vorschau-karte { border: 1px solid #cfe0df; border-radius: 10px;
+            background: #f9fcfc; padding: 9px; min-width: 0; }
+          .vorschau-bild { width: 100%; height: 190px; object-fit: contain;
+            background: white; border-radius: 7px; }
+          .ki-dreher { animation: ki-drehen 1.1s linear infinite; }
+          @keyframes ki-drehen { to { transform: rotate(360deg); } }
+          @media (max-width: 680px) {
+            .vorschau-raster { grid-template-columns: minmax(0, 1fr); }
+          }
           .ergebnistext textarea { min-height: 330px !important;
             font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
         </style>
@@ -143,9 +157,14 @@ def zeige_hauptseite() -> None:
             datenbank_status = ui.label(
                 "Datenbank: nicht aktiviert · Lesemodus aktiv"
             ).classes("arbeitsstatus")
-            arbeitsstatus = ui.label(
-                "Bereit · noch kein Dokument geladen"
-            ).classes("arbeitsstatus")
+            with ui.row().classes("items-center gap-2 no-wrap"):
+                ki_statussymbol = ui.icon("progress_activity", size="sm").classes(
+                    "ki-dreher text-amber-700"
+                )
+                arbeitsstatus = ui.label(
+                    "Bereit · noch kein Dokument geladen"
+                ).classes("arbeitsstatus")
+            ki_statussymbol.set_visibility(False)
 
     with ui.column().classes("w-full min-h-screen"):
         with ui.column().classes("medizin-kopf w-full px-8 py-7 gap-1"):
@@ -166,30 +185,31 @@ def zeige_hauptseite() -> None:
                     with ui.row().classes("items-center gap-2"):
                         ui.icon("description").classes("text-teal-700")
                         ui.label("Originaldokument").classes("bereichstitel")
-                    seiten_auswahl = ui.select(
-                        {}, label="Vorschauseite"
-                    ).props("outlined dense").classes("flex-1")
-                    with ui.row().classes("w-full items-center gap-2"):
-                        seite_hoch = ui.button("Nach oben", icon="arrow_upward").props(
-                            "flat dense color=teal-8"
-                        )
-                        seite_runter = ui.button("Nach unten", icon="arrow_downward").props(
-                            "flat dense color=teal-8"
-                        )
                     vorschau_platzhalter = ui.label(
-                        "Noch kein Dokument ausgewählt."
-                    ).classes("text-slate-500 py-12 self-center")
-                    vorschau = ui.image().classes(
-                        "w-full max-h-[560px] object-contain rounded-lg border"
-                    )
-                    vorschau.set_visibility(False)
-                    upload = ui.upload(
-                        label="PDF-, JPG- oder PNG-Dokumente auswählen",
-                        multiple=True,
-                        auto_upload=True,
-                    ).props('accept=".pdf,.png,.jpg,.jpeg" color="teal-8"').classes(
-                        "w-full"
-                    )
+                        "Noch keine Dokumentseiten übernommen."
+                    ).classes("text-slate-500 italic py-5 self-center")
+                    vorschau_bereich = ui.element("div").classes("vorschau-raster")
+                    with ui.column().classes("upload-hervorgehoben w-full gap-2"):
+                        ui.label("Befunde und Dokumente hier hineinziehen").classes(
+                            "upload-hinweis"
+                        )
+                        upload = ui.upload(
+                            label="PDF-, JPG- oder PNG-Dateien auswählen",
+                            multiple=True,
+                            auto_upload=True,
+                        ).props(
+                            'accept=".pdf,.png,.jpg,.jpeg" color="teal-8" flat bordered'
+                        ).classes("w-full bg-white rounded-lg")
+                        ui.label(
+                            "Auch Einfügen aus der Zwischenablage ist mit Strg+V / Cmd+V möglich."
+                        ).classes("upload-hinweis")
+                    with ui.row().classes("w-full gap-2"):
+                        neu_schalter = ui.button(
+                            "Neues Dokument einlesen", icon="note_add"
+                        ).props("outline color=teal-8")
+                        alles_loeschen_schalter = ui.button(
+                            "Alles löschen / neu beginnen", icon="delete_sweep"
+                        ).props("outline color=negative")
                 with ui.column().classes("ergebnisspalte flex-1 lg:w-1/2 gap-5"):
                     with ui.card().classes("arbeitskarte w-full p-5"):
                         with ui.row().classes("items-center gap-2"):
@@ -276,11 +296,6 @@ def zeige_hauptseite() -> None:
             "Datenbankmodus aktiviert · strukturierte Speicherung ist noch nicht implementiert"
         )
 
-    def zeige_seite() -> None:
-        """Wechselt die Vorschau ohne die Originaldatei dauerhaft abzulegen."""
-        if seiten_auswahl.value is not None:
-            vorschau.set_source(_bildadresse(zustand.seiten[seiten_auswahl.value]))
-
     def aktualisiere_ergebnisanzeige() -> None:
         """Zeigt exakt die gewählte, bereits geprüfte Antwortvariante an."""
         varianten = {
@@ -290,30 +305,73 @@ def zeige_hauptseite() -> None:
         }
         ergebnis_ausgabe.value = varianten[str(ergebnis_auswahl.value)]
 
-    def setze_seitenoptionen(auswahl: int | None = None) -> None:
-        """Nummeriert die Seiten neu und hält die Vorschauauswahl konsistent."""
-        seiten_auswahl.options = {
-            nummer: f"Seite {nummer + 1}" for nummer in range(len(zustand.seiten))
-        }
-        seiten_auswahl.value = auswahl
-        seiten_auswahl.update()
-        if auswahl is not None:
-            zeige_seite()
-
-    def verschiebe_seite(richtung: int) -> None:
-        """Verschiebt die ausgewählte Seite zur manuellen Reihenfolgekorrektur."""
-        if seiten_auswahl.value is None:
-            return
-        bisher = int(seiten_auswahl.value)
-        neu = bisher + richtung
+    def verschiebe_seite(index: int, richtung: int) -> None:
+        """Verschiebt eine sichtbare Vorschau zur manuellen Reihenfolgekorrektur."""
+        neu = index + richtung
         if not 0 <= neu < len(zustand.seiten):
             return
-        zustand.seiten[bisher], zustand.seiten[neu] = (
-            zustand.seiten[neu],
-            zustand.seiten[bisher],
+        zustand.seiten[index], zustand.seiten[neu] = (
+            zustand.seiten[neu], zustand.seiten[index],
         )
-        setze_seitenoptionen(neu)
-        setze_status(f"Seite {bisher + 1} wurde an Position {neu + 1} verschoben")
+        aktualisiere_vorschauen()
+        setze_status(f"Seite {index + 1} wurde an Position {neu + 1} verschoben")
+
+    def loesche_seite(index: int) -> None:
+        """Entfernt genau die auf der Vorschau bezeichnete Seite aus der Sitzung."""
+        zustand.seiten.pop(index)
+        aktualisiere_vorschauen()
+        setze_status(
+            f"Seite gelöscht · {len(zustand.seiten)} Seite(n) verbleiben"
+            if zustand.seiten else "Alle Dokumentseiten wurden gelöscht"
+        )
+
+    def aktualisiere_vorschauen() -> None:
+        """Zeigt jede übernommene Seite gleichzeitig in einem zweispaltigen Raster."""
+        vorschau_bereich.clear()
+        vorschau_platzhalter.set_visibility(not zustand.seiten)
+        with vorschau_bereich:
+            for index, seite in enumerate(zustand.seiten):
+                with ui.column().classes("vorschau-karte gap-1"):
+                    ui.image(_bildadresse(seite)).classes("vorschau-bild")
+                    ui.label(f"Seite {index + 1}").classes(
+                        "text-sm font-semibold text-teal-900"
+                    )
+                    with ui.row().classes("w-full justify-between gap-0"):
+                        ui.button(
+                            icon="arrow_upward",
+                            on_click=lambda _, i=index: verschiebe_seite(i, -1),
+                        ).props("flat round dense color=teal-8").set_enabled(index > 0)
+                        ui.button(
+                            icon="arrow_downward",
+                            on_click=lambda _, i=index: verschiebe_seite(i, 1),
+                        ).props("flat round dense color=teal-8").set_enabled(
+                            index < len(zustand.seiten) - 1
+                        )
+                        ui.button(
+                            icon="delete",
+                            on_click=lambda _, i=index: loesche_seite(i),
+                        ).props("flat round dense color=negative")
+
+    def setze_leeren_zustand(status: str) -> None:
+        """Löscht Seiten und Ergebnis gemeinsam für ein eindeutig neues Dokument."""
+        zustand.seiten.clear()
+        zustand.dokumenttyp = ""
+        zustand.ausgelesener_inhalt = ""
+        zustand.strukturierte_darstellung = ""
+        zustand.kis_vorschlag = ""
+        zustand.letzter_fehler = ""
+        zustand.ergebnis_anbieter = ""
+        dokumenttyp_ausgabe.value = ""
+        ergebnis_ausgabe.value = ""
+        ergebnis_auswahl.value = "rohtext"
+        lesen_schalter.text = "Dokument auslesen"
+        upload.reset()
+        aktualisiere_vorschauen()
+        setze_status(status)
+
+    def beginne_neues_dokument() -> None:
+        """Bereitet eine leere Sitzung vor; die hervorgehobene Ablage bleibt sichtbar."""
+        setze_leeren_zustand("Bereit für ein neues Dokument · Dateien unten ablegen")
 
     def uebernehme_dokumente(dateien: list[tuple[str, bytes]]) -> None:
         """Hängt mehrere Upload-, Drop- oder Zwischenablagedateien gemeinsam an.
@@ -346,16 +404,13 @@ def zeige_hauptseite() -> None:
                 quellpfad.write_bytes(dateiinhalt)
                 quellpfade.append(quellpfad)
             neue_seiten = DocumentConverter(wurzel / "seiten").convert(quellpfade)
-            erster_neuer_index = len(zustand.seiten)
             zustand.seiten.extend(neue_seiten)
         except (DocumentConversionError, OSError) as fehler:
             # Debugging: Bei Bedarf lokal Dateityp und Exception-Typ prüfen. Namen
             # oder Inhalte medizinischer Dokumente nie in produktive Logs schreiben.
             setze_status(f"Dokumentimport fehlgeschlagen: {fehler}", fehler=True)
             return
-        setze_seitenoptionen(erster_neuer_index)
-        vorschau_platzhalter.set_visibility(False)
-        vorschau.set_visibility(True)
+        aktualisiere_vorschauen()
         setze_status(
             f"{len(zustand.seiten)} Seite(n) vorbereitet · Anbieter wählen und Bearbeitung starten"
         )
@@ -385,8 +440,9 @@ def zeige_hauptseite() -> None:
             return
         anbieter_name = "UK-API" if zustand.anbieter == "uk" else "OpenAI"
         lesen_schalter.disable()
+        ki_statussymbol.set_visibility(True)
         setze_status(
-            f"{anbieter_name}: {len(zustand.seiten)} Seite(n) werden verarbeitet …"
+            f"{anbieter_name}: KI analysiert und ordnet {len(zustand.seiten)} Seite(n) …"
         )
         try:
             ki_anbieter = (
@@ -417,6 +473,7 @@ def zeige_hauptseite() -> None:
                 fehler=True,
             )
         finally:
+            ki_statussymbol.set_visibility(False)
             lesen_schalter.enable()
 
     def kopiere_ergebnis() -> None:
@@ -427,10 +484,11 @@ def zeige_hauptseite() -> None:
     anbieter_auswahl.on_value_change(lambda _: aktualisiere_anbieter())
     datenbank_schalter.text = "CED-Datenbank aktivieren"
     datenbank_schalter.on_click(aktualisiere_datenbankmodus)
-    seiten_auswahl.on_value_change(lambda _: zeige_seite())
-    seite_hoch.on_click(lambda: verschiebe_seite(-1))
-    seite_runter.on_click(lambda: verschiebe_seite(1))
     upload.on_upload(uebernehme_datei)
+    neu_schalter.on_click(beginne_neues_dokument)
+    alles_loeschen_schalter.on_click(
+        lambda: setze_leeren_zustand("Alle Dokumente und Ergebnisse wurden gelöscht")
+    )
     lesen_schalter.on_click(lese_dokument)
     ergebnis_auswahl.on_value_change(lambda _: aktualisiere_ergebnisanzeige())
     kopieren_schalter.on_click(kopiere_ergebnis)

@@ -155,8 +155,10 @@ class OpenAICompatibleProvider(DocumentAI):
             )
             rohantwort = self._request(
                 WORKFLOW_PROMPT
-                + "\n\nNachfolgend steht die bereits in korrekter Seitenreihenfolge erfasste "
-                "Auslesung des gesamten Dokuments. Verarbeite alle Blöcke gemeinsam:\n\n"
+                + "\n\nNachfolgend steht die blockweise erfasste Auslesung des gesamten "
+                "Dokuments. Die Blockreihenfolge entspricht zunächst der technischen "
+                "Upload-Reihenfolge. Prüfe anhand der sichtbaren Inhalte die logische "
+                "Dokumentreihenfolge und verarbeite alle Blöcke anschließend gemeinsam:\n\n"
                 + gesamtauslesung,
                 (),
             )

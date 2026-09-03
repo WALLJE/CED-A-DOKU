@@ -35,6 +35,22 @@ Datei namens `.env` geladen. Die Schlüssel gehören **nicht** in eine Python-Da
    python main.py
    ```
 
+## Dokumente einlesen
+
+PDF-, JPG- und PNG-Dateien können gemeinsam ausgewählt, in das farblich markierte
+Ablagefeld gezogen oder als Bild mit `Strg+V` beziehungsweise `Cmd+V` eingefügt
+werden. Alle übernommenen Seiten erscheinen sofort als Vorschauen in bis zu zwei
+Spalten. Mit den Pfeilen lässt sich die Reihenfolge vor der Analyse manuell ändern;
+der Papierkorb entfernt eine einzelne Seite. „Alles löschen / neu beginnen“ setzt
+Dokument und KI-Ergebnis vollständig zurück.
+
+Bei mehreren Seiten oder Dateien prüft die KI zusätzlich anhand sichtbarer
+Seitenzahlen, Datumsangaben und inhaltlicher Anschlüsse die wahrscheinliche
+Reihenfolge und verarbeitet die Inhalte anschließend als ein gemeinsames Dokument.
+Währenddessen kennzeichnen ein drehendes Statussymbol und ein Statustext die laufende
+Bearbeitung. Da die automatische Reihenfolge nur ein Vorschlag sein kann, muss das
+Ergebnis weiterhin medizinisch geprüft werden.
+
 Die `.env` ist in `.gitignore` ausgeschlossen. `.env.example` bleibt dagegen als
 leere, sichere Vorlage versioniert. Bereits außerhalb der Datei gesetzte
 Umgebungsvariablen haben Vorrang vor Einträgen aus `.env`.
