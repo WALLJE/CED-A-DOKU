@@ -226,7 +226,7 @@ class MainWindow(QMainWindow):
             self.provider_indicator.setText("● UK-API · UK_API_KEY")
             self.provider_indicator.setStyleSheet("color: #16833b; font-weight: bold;")
         else:
-            self.provider_indicator.setText("● OpenAI · OPEN_AI_KEY")
+            self.provider_indicator.setText("● OpenAI · OPENAI_API_KEY")
             self.provider_indicator.setStyleSheet("color: #b42318; font-weight: bold;")
 
     def select_files(self) -> None:
