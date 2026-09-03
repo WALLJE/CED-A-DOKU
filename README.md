@@ -1,4 +1,4 @@
-# CED-A-DOKU lokal starten
+# CED-A-DOKU – KI-gestützte Auswertung medizinischer Dokumente
 
 ## API-Schlüssel eintragen
 
