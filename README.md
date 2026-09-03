@@ -23,7 +23,7 @@ Datei namens `.env` geladen. Die Schlüssel gehören **nicht** in eine Python-Da
    ```dotenv
    # Lokale Geheimnisse: Diese Datei niemals an Git übergeben.
    UK_API_KEY=hier_den_uk_api_schluessel_eintragen
-   OPEN_AI_KEY=hier_den_openai_api_schluessel_eintragen
+   OPENAI_API_KEY=hier_den_openai_api_schluessel_eintragen
    ```
 
    Es sind keine Anführungszeichen erforderlich. Für den in `CED_AI_PROVIDER`
@@ -39,7 +39,13 @@ Die `.env` ist in `.gitignore` ausgeschlossen. `.env.example` bleibt dagegen als
 leere, sichere Vorlage versioniert. Bereits außerhalb der Datei gesetzte
 Umgebungsvariablen haben Vorrang vor Einträgen aus `.env`.
 
+In GitHub Codespaces werden die Repository-Secrets `UK_API_KEY` und
+`OPENAI_API_KEY` direkt als Umgebungsvariablen verwendet. Nach dem Anlegen oder
+Ändern eines Secrets muss der Codespace neu gestartet werden. Eine `.env` ist dort
+nicht erforderlich.
+
 > **Debugging-Hinweis:** Falls eine Variable angeblich fehlt, zuerst prüfen, ob
 > die Datei wirklich `.env` heißt, im selben Ordner wie `main.py` liegt und kein
 > Leerzeichen vor dem Variablennamen enthält. Schlüsselwerte nicht in Logs oder
-> Screenshots ausgeben.
+> Screenshots ausgeben. In Codespaces zusätzlich prüfen, ob die Secret-Namen exakt
+> `UK_API_KEY` und `OPENAI_API_KEY` geschrieben sind.
