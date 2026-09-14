@@ -40,6 +40,7 @@ def test_vier_abschnitte_bleiben_getrennt_und_leerzeilen_sind_erlaubt() -> None:
     assert ergebnis.ausgelesener_inhalt == "Kein Fieber, CRP 12 mg/l."
     assert ergebnis.strukturierte_darstellung == "Diagnosen: Colitis ulcerosa"
     assert ergebnis.kis_vorschlag == "Kein Fieber; CRP 12 mg/l."
+    assert ergebnis.rohe_ki_antwort.startswith("\n\nDOKUMENTTYP:")
 
 
 @pytest.mark.parametrize(
