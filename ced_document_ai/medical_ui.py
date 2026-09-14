@@ -15,18 +15,30 @@ import socket
 import tempfile
 import uuid
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 
 from nicegui import events, run, ui
+from sqlalchemy import select
 
 from ced_document_ai.config.settings import ConfigurationError, Settings
-from ced_document_ai.database.database import initialize_database
+from ced_document_ai.database.database import get_session, initialize_database
+from ced_document_ai.database.models import Patient
 from ced_document_ai.services.ai.providers import (
     AIProviderError,
     CloudAPIProvider,
     LocalAPIProvider,
 )
-from ced_document_ai.services.ai.document_workflow import DokumentAntwortFehler
+from ced_document_ai.services.ai.document_workflow import DokumentAntwortFehler, Dokumenttyp
+from ced_document_ai.services.ced.patient_matching import (
+    ErkanntePatientendaten,
+    erkenne_patientendaten,
+    ermittle_patiententreffer,
+)
+from ced_document_ai.services.ced.questionnaire_parser import (
+    ExtrahierterBefund,
+    parse_ced_fragebogen,
+)
 from ced_document_ai.services.documents.converter import (
     DocumentConversionError,
     DocumentConverter,
@@ -53,6 +65,15 @@ class Sitzungszustand:
     strukturierte_darstellung: str = ""
     kis_vorschlag: str = ""
     letzter_fehler: str = ""
+    # Die Zuordnung wird nur als Datenbank-ID in dieser Browser-Sitzung gehalten.
+    # Ein erkannter Vorschlag setzt diesen Wert niemals automatisch.
+    patient_id: int | None = None
+    erkannte_patientendaten: ErkanntePatientendaten = field(
+        default_factory=ErkanntePatientendaten
+    )
+    # CED-Befunde bleiben bis zu einer späteren ausdrücklichen Freigabe rein
+    # temporär. Dieser Umsetzungsschritt schreibt noch keinen Befund in SQLite.
+    ced_befunde: list[ExtrahierterBefund] = field(default_factory=list)
     # Der Anbieter des sichtbaren Ergebnisses wird separat festgehalten. So kann
     # eine neue Auswahl als "noch nicht neu verarbeitet" kenntlich gemacht werden,
     # ohne das bereits hochgeladene Dokument oder dessen bisheriges Ergebnis zu löschen.
@@ -245,6 +266,101 @@ def zeige_hauptseite() -> None:
                             "Angezeigten Text kopieren", icon="content_copy"
                         ).props("color=teal-8 unelevated").classes("w-full")
 
+                    # Der Bereich bleibt nicht nur deaktiviert, sondern vollständig
+                    # verborgen, bis das Administrationspasswort bestätigt wurde.
+                    # Seine Auswahlliste wird erst beim Entsperren aus SQLite gefüllt,
+                    # damit Patientendaten vorher nicht an den Browser gelangen.
+                    with ui.card().classes("arbeitskarte w-full p-5") as patienten_karte:
+                        ui.label("Patientenzuordnung").classes("bereichstitel")
+                        patienten_hinweis = ui.label(
+                            "Nach dem Auslesen werden mögliche Patienten vorgeschlagen."
+                        ).classes("text-slate-600")
+                        patienten_auswahl = ui.select(
+                            options={}, label="Patient aus Verzeichnis auswählen"
+                        ).props("outlined dense clearable").classes("w-full")
+                        patient_bestaetigen = ui.button(
+                            "Ausgewählten Patienten bestätigen", icon="person_check"
+                        ).props("color=teal-8 unelevated").classes("w-full")
+                        ui.separator()
+                        ui.label("Oder neuen Patienten anlegen").classes(
+                            "font-semibold text-slate-700"
+                        )
+                        neue_patienten_id = ui.input("Patienten-ID").props(
+                            "outlined dense"
+                        ).classes("w-full")
+                        neuer_patientenname = ui.input("Name").props(
+                            "outlined dense"
+                        ).classes("w-full")
+                        neues_geburtsdatum = ui.input("Geburtsdatum").props(
+                            "outlined dense type=date"
+                        ).classes("w-full")
+                        patient_anlegen = ui.button(
+                            "Patient anlegen und bestätigen", icon="person_add"
+                        ).props("outline color=teal-8").classes("w-full")
+                    patienten_karte.set_visibility(False)
+
+                    # Die Prüftabelle folgt bewusst erst nach der bestätigten
+                    # Patientenzuordnung. Neue Kategorien erscheinen als deaktivierte
+                    # Vorschläge und müssen vor einer späteren Speicherung geprüft
+                    # und in der Spalte "Übernehmen" ausdrücklich aktiviert werden.
+                    with ui.card().classes("arbeitskarte w-full p-5") as ced_pruefung_karte:
+                        ui.label("CED-Daten prüfen").classes("bereichstitel")
+                        ced_pruefung_hinweis = ui.label(
+                            "Bitte zuerst einen Patienten bestätigen."
+                        ).classes("text-slate-600")
+                        befunddatum = ui.input("Befunddatum").props(
+                            "outlined dense type=date"
+                        ).classes("w-full")
+                        ced_extrahieren = ui.button(
+                            "CED-Daten zur Prüfung extrahieren", icon="fact_check"
+                        ).props("color=teal-8 unelevated").classes("w-full")
+                        ced_tabelle = ui.aggrid(
+                            {
+                                "defaultColDef": {
+                                    "resizable": True,
+                                    "sortable": True,
+                                    "filter": True,
+                                },
+                                "columnDefs": [
+                                    {"headerName": "Status", "field": "status", "width": 125},
+                                    {
+                                        "headerName": "Kategorie",
+                                        "field": "kategorie",
+                                        "editable": True,
+                                        "minWidth": 190,
+                                    },
+                                    {
+                                        "headerName": "Wert",
+                                        "field": "wert",
+                                        "editable": True,
+                                        "minWidth": 180,
+                                    },
+                                    {
+                                        "headerName": "Einheit",
+                                        "field": "einheit",
+                                        "editable": True,
+                                        "width": 120,
+                                    },
+                                    {
+                                        "headerName": "Übernehmen",
+                                        "field": "uebernehmen",
+                                        "editable": True,
+                                        "cellEditor": "agCheckboxCellEditor",
+                                        "cellRenderer": "agCheckboxCellRenderer",
+                                        "width": 135,
+                                    },
+                                    {
+                                        "headerName": "Quelle",
+                                        "field": "quelle",
+                                        "minWidth": 260,
+                                    },
+                                ],
+                                "rowData": [],
+                                "domLayout": "autoHeight",
+                            }
+                        ).classes("w-full")
+                    ced_pruefung_karte.set_visibility(False)
+
     def setze_status(text: str, *, fehler: bool = False) -> None:
         """Zeigt den letzten Arbeitsschritt dauerhaft und ohne sensible Inhalte an.
 
@@ -273,6 +389,219 @@ def zeige_hauptseite() -> None:
                 f"Anbieter auf {neuer_name} gewechselt · Dokument bereit zur erneuten Verarbeitung"
             )
 
+    def setze_ced_pruefung_zurueck() -> None:
+        """Entfernt temporäre CED-Werte, wenn Dokument oder Patient wechselt."""
+        zustand.ced_befunde.clear()
+        ced_tabelle.options["rowData"] = []
+        ced_tabelle.update()
+        befunddatum.value = ""
+        ced_pruefung_karte.set_visibility(False)
+
+    def aktualisiere_ced_bereitschaft() -> None:
+        """Öffnet die CED-Prüfung nur bei bestätigtem Patient und passendem Dokument."""
+        if zustand.arbeitsmodus != DATENBANKMODUS or zustand.patient_id is None:
+            ced_pruefung_karte.set_visibility(False)
+            return
+        ced_pruefung_karte.set_visibility(True)
+        ist_ced_fragebogen = zustand.dokumenttyp == Dokumenttyp.CED_FRAGEBOGEN.value
+        ced_extrahieren.set_enabled(ist_ced_fragebogen)
+        if ist_ced_fragebogen:
+            ced_pruefung_hinweis.text = (
+                "Die Werte werden aus der vorhandenen strukturierten Darstellung gelesen. "
+                "Befunddatum und jede neue Kategorie müssen vor einer späteren Übernahme geprüft werden."
+            )
+        elif zustand.dokumenttyp:
+            ced_pruefung_hinweis.text = (
+                f"CED-Extraktion nicht gestartet: Dokumenttyp ist {zustand.dokumenttyp}."
+            )
+        else:
+            ced_pruefung_hinweis.text = "Bitte zunächst das Dokument auslesen."
+
+    def extrahiere_ced_daten() -> None:
+        """Baut eine editierbare Prüftabelle, speichert aber ausdrücklich noch nichts."""
+        if zustand.patient_id is None:
+            setze_status("Bitte zuerst einen Patienten ausdrücklich bestätigen.", fehler=True)
+            return
+        if zustand.dokumenttyp != Dokumenttyp.CED_FRAGEBOGEN.value:
+            setze_status("Die CED-Extraktion ist nur für CED-Patientenfragebögen verfügbar.", fehler=True)
+            return
+        zustand.ced_befunde = parse_ced_fragebogen(zustand.strukturierte_darstellung)
+        prioritaet = {
+            "CONFLICT": 0,
+            "UNREADABLE": 1,
+            "UNCERTAIN": 2,
+            "MISSING": 3,
+            "HIGH_CONFIDENCE": 4,
+        }
+        sortierte_befunde = sorted(
+            zustand.ced_befunde,
+            key=lambda befund: (prioritaet[befund.qualitaet.value], befund.kategorie),
+        )
+        ced_tabelle.options["rowData"] = [
+            {
+                "status": (
+                    "Neue Kategorie · prüfen"
+                    if befund.neue_kategorie
+                    else befund.qualitaet.value
+                ),
+                "kategorie": befund.kategorie,
+                "wert": befund.anzeigewert,
+                "einheit": befund.einheit or "",
+                "uebernehmen": befund.uebernehmen,
+                "quelle": befund.quelltext,
+            }
+            for befund in sortierte_befunde
+        ]
+        ced_tabelle.update()
+        neue_anzahl = sum(befund.neue_kategorie for befund in zustand.ced_befunde)
+        if not zustand.ced_befunde:
+            ced_pruefung_hinweis.text = (
+                "Keine beschrifteten CED-Felder erkannt. Bitte die strukturierte Darstellung prüfen; "
+                "es werden keine Werte geraten oder automatisch ersetzt."
+            )
+            setze_status("Keine CED-Felder für die Prüftabelle erkannt", fehler=True)
+            return
+        ced_pruefung_hinweis.text = (
+            f"{len(zustand.ced_befunde)} Feld(er) erkannt"
+            + (
+                f" · {neue_anzahl} neue Kategorie(n) sind zunächst von der Übernahme ausgeschlossen"
+                if neue_anzahl
+                else ""
+            )
+            + ". Änderungen bleiben in diesem Schritt temporär; bitte zusätzlich das Befunddatum prüfen."
+        )
+        setze_status("CED-Daten wurden zur manuellen Prüfung vorbereitet")
+
+    def aktualisiere_patientenvorschlaege() -> None:
+        """Erkennt Stammdaten und lädt passende Patienten ausschließlich lokal.
+
+        Die Funktion wird nur im entsperrten Datenbankmodus aufgerufen. Für die
+        Fehlersuche können lokal Trefferanzahl und erkannte Feldnamen geprüft werden;
+        Namen, Geburtsdaten, IDs oder Dokumenttexte dürfen nicht geloggt werden.
+        """
+        if zustand.arbeitsmodus != DATENBANKMODUS:
+            return
+        patienten_karte.set_visibility(True)
+        zustand.patient_id = None
+        setze_ced_pruefung_zurueck()
+        zustand.erkannte_patientendaten = erkenne_patientendaten(
+            zustand.ausgelesener_inhalt
+        )
+        erkannt = zustand.erkannte_patientendaten
+        neue_patienten_id.value = erkannt.externe_id or ""
+        neuer_patientenname.value = erkannt.name or ""
+        neues_geburtsdatum.value = (
+            erkannt.geburtsdatum.isoformat() if erkannt.geburtsdatum else ""
+        )
+
+        with get_session() as sitzung:
+            patienten = list(
+                sitzung.scalars(select(Patient).order_by(Patient.name, Patient.id))
+            )
+            treffer = ermittle_patiententreffer(erkannt, patienten)
+
+        optionen: dict[int, str] = {}
+        for treffer in treffer:
+            kennzeichnung = "⚠" if treffer.widerspruch else "Vorschlag"
+            optionen[treffer.patient_id] = (
+                f"{kennzeichnung}: {treffer.bezeichnung} · {treffer.status}"
+            )
+        for patient in patienten:
+            if patient.id not in optionen:
+                optionen[patient.id] = (
+                    f"{patient.external_id or 'ohne ID'} · {patient.name} · "
+                    f"{patient.birth_date.strftime('%d.%m.%Y') if patient.birth_date else 'ohne Geburtsdatum'}"
+                )
+        patienten_auswahl.options = optionen
+        patienten_auswahl.value = None
+        patienten_auswahl.update()
+
+        if not zustand.ausgelesener_inhalt:
+            patienten_hinweis.text = (
+                "Bitte zunächst ein Dokument auslesen. Alternativ kann ein Patient "
+                "bewusst aus dem lokalen Verzeichnis ausgewählt werden."
+            )
+        elif treffer:
+            erster = treffer[0]
+            details = ", ".join(erster.begruendung)
+            patienten_hinweis.text = (
+                f"{erster.status}: {details}. Bitte den Patienten ausdrücklich auswählen und bestätigen."
+            )
+        elif not erkannt.name:
+            patienten_hinweis.text = (
+                "Kein Patientenname wurde eingelesen oder erkannt. Bitte einen Patienten "
+                "aus dem Verzeichnis auswählen oder alle Stammdaten für eine Neuanlage eingeben."
+            )
+        else:
+            patienten_hinweis.text = (
+                "Kein eindeutig passender Patient gefunden. Bitte einen Patienten aus "
+                "dem Verzeichnis auswählen oder die vorbelegten Stammdaten prüfen und neu anlegen."
+            )
+
+    def bestaetige_patient() -> None:
+        """Übernimmt genau die bewusst gewählte Datenbank-ID in die aktuelle Sitzung."""
+        if zustand.arbeitsmodus != DATENBANKMODUS:
+            setze_status("Patientenzuordnung erfordert den geschützten Datenbankmodus.", fehler=True)
+            return
+        if patienten_auswahl.value is None:
+            setze_status("Bitte zuerst einen Patienten aus dem Verzeichnis auswählen.", fehler=True)
+            return
+        patient_id = int(patienten_auswahl.value)
+        with get_session() as sitzung:
+            patient = sitzung.get(Patient, patient_id)
+            if patient is None:
+                setze_status("Der ausgewählte Patient ist nicht mehr vorhanden.", fehler=True)
+                return
+            bezeichnung = f"{patient.external_id} · {patient.name}"
+        zustand.patient_id = patient_id
+        patienten_hinweis.text = f"Bestätigter Patient: {bezeichnung}"
+        aktualisiere_ced_bereitschaft()
+        setze_status("Patientenzuordnung wurde ausdrücklich bestätigt")
+
+    def lege_patient_an() -> None:
+        """Legt nach vollständiger manueller Prüfung einen neuen Patienten an."""
+        if zustand.arbeitsmodus != DATENBANKMODUS:
+            setze_status("Patientenneuanlage erfordert den geschützten Datenbankmodus.", fehler=True)
+            return
+        externe_id = (neue_patienten_id.value or "").strip()
+        name = (neuer_patientenname.value or "").strip()
+        try:
+            geburtsdatum = date.fromisoformat(neues_geburtsdatum.value or "")
+        except ValueError:
+            setze_status("Bitte ein vollständiges Geburtsdatum eingeben.", fehler=True)
+            return
+        if not externe_id or not name:
+            setze_status("Patienten-ID, Name und Geburtsdatum sind verpflichtend.", fehler=True)
+            return
+        with get_session() as sitzung:
+            vorhanden = sitzung.scalar(
+                select(Patient).where(Patient.external_id == externe_id)
+            )
+            if vorhanden is not None:
+                setze_status(
+                    "Diese Patienten-ID ist bereits vorhanden. Bitte den vorhandenen Patienten auswählen.",
+                    fehler=True,
+                )
+                return
+            patient = Patient(
+                external_id=externe_id,
+                name=name,
+                birth_date=geburtsdatum,
+            )
+            sitzung.add(patient)
+            sitzung.commit()
+            neue_id = patient.id
+        aktualisiere_patientenvorschlaege()
+        patienten_auswahl.value = neue_id
+        patienten_auswahl.update()
+        # ``aktualisiere_patientenvorschlaege`` setzt die Zuordnung absichtlich
+        # zurück. Deshalb wird der neue, gerade manuell bestätigte Datensatz danach
+        # ausdrücklich wieder als Sitzungszuordnung gesetzt.
+        zustand.patient_id = neue_id
+        patienten_hinweis.text = f"Neuer Patient bestätigt: {externe_id} · {name}"
+        aktualisiere_ced_bereitschaft()
+        setze_status("Patient wurde angelegt und für dieses Dokument bestätigt")
+
     def aktualisiere_datenbankmodus() -> None:
         """Aktiviert oder beendet den geschützten Datenbankmodus."""
         if zustand.arbeitsmodus == DATENBANKMODUS:
@@ -281,6 +610,12 @@ def zeige_hauptseite() -> None:
             passwort.set_visibility(True)
             datenbank_schalter.text = "CED-Datenbank aktivieren"
             datenbank_status.text = "Datenbank: nicht aktiviert · Lesemodus aktiv"
+            zustand.patient_id = None
+            patienten_auswahl.options = {}
+            patienten_auswahl.value = None
+            patienten_auswahl.update()
+            patienten_karte.set_visibility(False)
+            setze_ced_pruefung_zurueck()
             setze_status("Lesemodus aktiviert · Datenbankmodus beendet")
             return
 
@@ -298,8 +633,9 @@ def zeige_hauptseite() -> None:
         datenbank_schalter.text = "Datenbankmodus beenden"
         datenbank_status.text = "Datenbank: aktiviert · geschützter Modus"
         setze_status(
-            "Datenbankmodus aktiviert · strukturierte Speicherung ist noch nicht implementiert"
+            "Datenbankmodus aktiviert · Patientenzuordnung ist verfügbar"
         )
+        aktualisiere_patientenvorschlaege()
 
     def aktualisiere_ergebnisanzeige() -> None:
         """Zeigt exakt die gewählte, bereits geprüfte Antwortvariante an."""
@@ -366,12 +702,15 @@ def zeige_hauptseite() -> None:
         zustand.kis_vorschlag = ""
         zustand.letzter_fehler = ""
         zustand.ergebnis_anbieter = ""
+        zustand.patient_id = None
         dokumenttyp_ausgabe.value = ""
         ergebnis_ausgabe.value = ""
         ergebnis_auswahl.value = "rohtext"
         lesen_schalter.text = "Dokument auslesen"
         upload.reset()
         aktualisiere_vorschauen()
+        if zustand.arbeitsmodus == DATENBANKMODUS:
+            aktualisiere_patientenvorschlaege()
         setze_status(status)
 
     def beginne_neues_dokument() -> None:
@@ -394,6 +733,7 @@ def zeige_hauptseite() -> None:
         zustand.kis_vorschlag = ""
         zustand.letzter_fehler = ""
         zustand.ergebnis_anbieter = ""
+        zustand.patient_id = None
         dokumenttyp_ausgabe.value = ""
         ergebnis_ausgabe.value = ""
         ergebnis_auswahl.value = "rohtext"
@@ -416,6 +756,8 @@ def zeige_hauptseite() -> None:
             setze_status(f"Dokumentimport fehlgeschlagen: {fehler}", fehler=True)
             return
         aktualisiere_vorschauen()
+        if zustand.arbeitsmodus == DATENBANKMODUS:
+            aktualisiere_patientenvorschlaege()
         setze_status(
             f"{len(zustand.seiten)} Teil(e) vorbereitet · Anbieter wählen und Bearbeitung starten"
         )
@@ -465,6 +807,8 @@ def zeige_hauptseite() -> None:
             zustand.ergebnis_anbieter = zustand.anbieter
             dokumenttyp_ausgabe.value = zustand.dokumenttyp
             aktualisiere_ergebnisanzeige()
+            if zustand.arbeitsmodus == DATENBANKMODUS:
+                aktualisiere_patientenvorschlaege()
             lesen_schalter.text = f"Dokument mit {anbieter_name} neu bearbeiten"
             setze_status(f"{anbieter_name}: Verarbeitung abgeschlossen · Ergebnis ungeprüft")
         except (ConfigurationError, AIProviderError, DokumentAntwortFehler, OSError, ValueError) as fehler:
@@ -489,6 +833,9 @@ def zeige_hauptseite() -> None:
     anbieter_auswahl.on_value_change(lambda _: aktualisiere_anbieter())
     datenbank_schalter.text = "CED-Datenbank aktivieren"
     datenbank_schalter.on_click(aktualisiere_datenbankmodus)
+    patient_bestaetigen.on_click(bestaetige_patient)
+    patient_anlegen.on_click(lege_patient_an)
+    ced_extrahieren.on_click(extrahiere_ced_daten)
     upload.on_upload(uebernehme_datei)
     neu_schalter.on_click(beginne_neues_dokument)
     alles_loeschen_schalter.on_click(
