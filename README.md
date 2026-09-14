@@ -65,3 +65,24 @@ Umgebungsvariablen haben Vorrang vor Einträgen aus `.env`.
 > die Datei wirklich `.env` heißt, im selben Ordner wie `main.py` liegt und kein
 > Leerzeichen vor dem Variablennamen enthält. Schlüsselwerte nicht in Logs oder
 > Screenshots ausgeben.
+
+## Geschützte Patientenzuordnung
+
+Die normale Textextraktion bleibt ohne Datenbankfreigabe nutzbar. Erst nach Eingabe
+des in `CED_DATA_PASS` gesetzten Passworts wird die lokale Patientenzuordnung
+eingeblendet. Das Werkzeug liest ausdrücklich beschriftete Patienten-ID-, Namens-
+und Geburtsdatumszeilen aus dem bereits erzeugten Rohtext und sucht damit lokal im
+Patientenverzeichnis. Das Verzeichnis wird nicht an den KI-Anbieter übertragen.
+
+Ein gefundener Patient ist immer nur ein Vorschlag und muss ausdrücklich bestätigt
+werden. Gibt es keinen eindeutigen Treffer oder wurde kein Name erkannt, fordert die
+Oberfläche zur Auswahl aus dem Verzeichnis oder zur vollständigen manuellen Eingabe
+von Patienten-ID, Name und Geburtsdatum auf. Ein neuer Patient wird erst durch den
+zugehörigen Bestätigungsschalter angelegt. Testpatienten können über die Oberfläche
+angelegt und anschließend durch Löschen der lokalen Entwicklungsdatenbank
+`data/ced_document_ai.sqlite3` vollständig entfernt werden.
+
+> **Debugging-Hinweis:** Wenn trotz sichtbarer Stammdaten kein Vorschlag erscheint,
+> zuerst prüfen, ob jede Angabe im Rohtext in einer eigenen, eindeutig beschrifteten
+> Zeile wie `Patienten-ID:`, `Name:` und `Geburtsdatum:` steht. Medizinische Inhalte
+> oder Stammdaten nicht zur Fehlersuche in Konsolen- oder Server-Logs ausgeben.

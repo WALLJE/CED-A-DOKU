@@ -15,18 +15,26 @@ import socket
 import tempfile
 import uuid
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 
 from nicegui import events, run, ui
+from sqlalchemy import select
 
 from ced_document_ai.config.settings import ConfigurationError, Settings
-from ced_document_ai.database.database import initialize_database
+from ced_document_ai.database.database import get_session, initialize_database
+from ced_document_ai.database.models import Patient
 from ced_document_ai.services.ai.providers import (
     AIProviderError,
     CloudAPIProvider,
     LocalAPIProvider,
 )
 from ced_document_ai.services.ai.document_workflow import DokumentAntwortFehler
+from ced_document_ai.services.ced.patient_matching import (
+    ErkanntePatientendaten,
+    erkenne_patientendaten,
+    ermittle_patiententreffer,
+)
 from ced_document_ai.services.documents.converter import (
     DocumentConversionError,
     DocumentConverter,
@@ -53,6 +61,12 @@ class Sitzungszustand:
     strukturierte_darstellung: str = ""
     kis_vorschlag: str = ""
     letzter_fehler: str = ""
+    # Die Zuordnung wird nur als Datenbank-ID in dieser Browser-Sitzung gehalten.
+    # Ein erkannter Vorschlag setzt diesen Wert niemals automatisch.
+    patient_id: int | None = None
+    erkannte_patientendaten: ErkanntePatientendaten = field(
+        default_factory=ErkanntePatientendaten
+    )
     # Der Anbieter des sichtbaren Ergebnisses wird separat festgehalten. So kann
     # eine neue Auswahl als "noch nicht neu verarbeitet" kenntlich gemacht werden,
     # ohne das bereits hochgeladene Dokument oder dessen bisheriges Ergebnis zu löschen.
@@ -245,6 +259,39 @@ def zeige_hauptseite() -> None:
                             "Angezeigten Text kopieren", icon="content_copy"
                         ).props("color=teal-8 unelevated").classes("w-full")
 
+                    # Der Bereich bleibt nicht nur deaktiviert, sondern vollständig
+                    # verborgen, bis das Administrationspasswort bestätigt wurde.
+                    # Seine Auswahlliste wird erst beim Entsperren aus SQLite gefüllt,
+                    # damit Patientendaten vorher nicht an den Browser gelangen.
+                    with ui.card().classes("arbeitskarte w-full p-5") as patienten_karte:
+                        ui.label("Patientenzuordnung").classes("bereichstitel")
+                        patienten_hinweis = ui.label(
+                            "Nach dem Auslesen werden mögliche Patienten vorgeschlagen."
+                        ).classes("text-slate-600")
+                        patienten_auswahl = ui.select(
+                            options={}, label="Patient aus Verzeichnis auswählen"
+                        ).props("outlined dense clearable").classes("w-full")
+                        patient_bestaetigen = ui.button(
+                            "Ausgewählten Patienten bestätigen", icon="person_check"
+                        ).props("color=teal-8 unelevated").classes("w-full")
+                        ui.separator()
+                        ui.label("Oder neuen Patienten anlegen").classes(
+                            "font-semibold text-slate-700"
+                        )
+                        neue_patienten_id = ui.input("Patienten-ID").props(
+                            "outlined dense"
+                        ).classes("w-full")
+                        neuer_patientenname = ui.input("Name").props(
+                            "outlined dense"
+                        ).classes("w-full")
+                        neues_geburtsdatum = ui.input("Geburtsdatum").props(
+                            "outlined dense type=date"
+                        ).classes("w-full")
+                        patient_anlegen = ui.button(
+                            "Patient anlegen und bestätigen", icon="person_add"
+                        ).props("outline color=teal-8").classes("w-full")
+                    patienten_karte.set_visibility(False)
+
     def setze_status(text: str, *, fehler: bool = False) -> None:
         """Zeigt den letzten Arbeitsschritt dauerhaft und ohne sensible Inhalte an.
 
@@ -273,6 +320,133 @@ def zeige_hauptseite() -> None:
                 f"Anbieter auf {neuer_name} gewechselt · Dokument bereit zur erneuten Verarbeitung"
             )
 
+    def aktualisiere_patientenvorschlaege() -> None:
+        """Erkennt Stammdaten und lädt passende Patienten ausschließlich lokal.
+
+        Die Funktion wird nur im entsperrten Datenbankmodus aufgerufen. Für die
+        Fehlersuche können lokal Trefferanzahl und erkannte Feldnamen geprüft werden;
+        Namen, Geburtsdaten, IDs oder Dokumenttexte dürfen nicht geloggt werden.
+        """
+        if zustand.arbeitsmodus != DATENBANKMODUS:
+            return
+        patienten_karte.set_visibility(True)
+        zustand.patient_id = None
+        zustand.erkannte_patientendaten = erkenne_patientendaten(
+            zustand.ausgelesener_inhalt
+        )
+        erkannt = zustand.erkannte_patientendaten
+        neue_patienten_id.value = erkannt.externe_id or ""
+        neuer_patientenname.value = erkannt.name or ""
+        neues_geburtsdatum.value = (
+            erkannt.geburtsdatum.isoformat() if erkannt.geburtsdatum else ""
+        )
+
+        with get_session() as sitzung:
+            patienten = list(
+                sitzung.scalars(select(Patient).order_by(Patient.name, Patient.id))
+            )
+            treffer = ermittle_patiententreffer(erkannt, patienten)
+
+        optionen: dict[int, str] = {}
+        for treffer in treffer:
+            kennzeichnung = "⚠" if treffer.widerspruch else "Vorschlag"
+            optionen[treffer.patient_id] = (
+                f"{kennzeichnung}: {treffer.bezeichnung} · {treffer.status}"
+            )
+        for patient in patienten:
+            if patient.id not in optionen:
+                optionen[patient.id] = (
+                    f"{patient.external_id or 'ohne ID'} · {patient.name} · "
+                    f"{patient.birth_date.strftime('%d.%m.%Y') if patient.birth_date else 'ohne Geburtsdatum'}"
+                )
+        patienten_auswahl.options = optionen
+        patienten_auswahl.value = None
+        patienten_auswahl.update()
+
+        if not zustand.ausgelesener_inhalt:
+            patienten_hinweis.text = (
+                "Bitte zunächst ein Dokument auslesen. Alternativ kann ein Patient "
+                "bewusst aus dem lokalen Verzeichnis ausgewählt werden."
+            )
+        elif treffer:
+            erster = treffer[0]
+            details = ", ".join(erster.begruendung)
+            patienten_hinweis.text = (
+                f"{erster.status}: {details}. Bitte den Patienten ausdrücklich auswählen und bestätigen."
+            )
+        elif not erkannt.name:
+            patienten_hinweis.text = (
+                "Kein Patientenname wurde eingelesen oder erkannt. Bitte einen Patienten "
+                "aus dem Verzeichnis auswählen oder alle Stammdaten für eine Neuanlage eingeben."
+            )
+        else:
+            patienten_hinweis.text = (
+                "Kein eindeutig passender Patient gefunden. Bitte einen Patienten aus "
+                "dem Verzeichnis auswählen oder die vorbelegten Stammdaten prüfen und neu anlegen."
+            )
+
+    def bestaetige_patient() -> None:
+        """Übernimmt genau die bewusst gewählte Datenbank-ID in die aktuelle Sitzung."""
+        if zustand.arbeitsmodus != DATENBANKMODUS:
+            setze_status("Patientenzuordnung erfordert den geschützten Datenbankmodus.", fehler=True)
+            return
+        if patienten_auswahl.value is None:
+            setze_status("Bitte zuerst einen Patienten aus dem Verzeichnis auswählen.", fehler=True)
+            return
+        patient_id = int(patienten_auswahl.value)
+        with get_session() as sitzung:
+            patient = sitzung.get(Patient, patient_id)
+            if patient is None:
+                setze_status("Der ausgewählte Patient ist nicht mehr vorhanden.", fehler=True)
+                return
+            bezeichnung = f"{patient.external_id} · {patient.name}"
+        zustand.patient_id = patient_id
+        patienten_hinweis.text = f"Bestätigter Patient: {bezeichnung}"
+        setze_status("Patientenzuordnung wurde ausdrücklich bestätigt")
+
+    def lege_patient_an() -> None:
+        """Legt nach vollständiger manueller Prüfung einen neuen Patienten an."""
+        if zustand.arbeitsmodus != DATENBANKMODUS:
+            setze_status("Patientenneuanlage erfordert den geschützten Datenbankmodus.", fehler=True)
+            return
+        externe_id = (neue_patienten_id.value or "").strip()
+        name = (neuer_patientenname.value or "").strip()
+        try:
+            geburtsdatum = date.fromisoformat(neues_geburtsdatum.value or "")
+        except ValueError:
+            setze_status("Bitte ein vollständiges Geburtsdatum eingeben.", fehler=True)
+            return
+        if not externe_id or not name:
+            setze_status("Patienten-ID, Name und Geburtsdatum sind verpflichtend.", fehler=True)
+            return
+        with get_session() as sitzung:
+            vorhanden = sitzung.scalar(
+                select(Patient).where(Patient.external_id == externe_id)
+            )
+            if vorhanden is not None:
+                setze_status(
+                    "Diese Patienten-ID ist bereits vorhanden. Bitte den vorhandenen Patienten auswählen.",
+                    fehler=True,
+                )
+                return
+            patient = Patient(
+                external_id=externe_id,
+                name=name,
+                birth_date=geburtsdatum,
+            )
+            sitzung.add(patient)
+            sitzung.commit()
+            neue_id = patient.id
+        aktualisiere_patientenvorschlaege()
+        patienten_auswahl.value = neue_id
+        patienten_auswahl.update()
+        # ``aktualisiere_patientenvorschlaege`` setzt die Zuordnung absichtlich
+        # zurück. Deshalb wird der neue, gerade manuell bestätigte Datensatz danach
+        # ausdrücklich wieder als Sitzungszuordnung gesetzt.
+        zustand.patient_id = neue_id
+        patienten_hinweis.text = f"Neuer Patient bestätigt: {externe_id} · {name}"
+        setze_status("Patient wurde angelegt und für dieses Dokument bestätigt")
+
     def aktualisiere_datenbankmodus() -> None:
         """Aktiviert oder beendet den geschützten Datenbankmodus."""
         if zustand.arbeitsmodus == DATENBANKMODUS:
@@ -281,6 +455,11 @@ def zeige_hauptseite() -> None:
             passwort.set_visibility(True)
             datenbank_schalter.text = "CED-Datenbank aktivieren"
             datenbank_status.text = "Datenbank: nicht aktiviert · Lesemodus aktiv"
+            zustand.patient_id = None
+            patienten_auswahl.options = {}
+            patienten_auswahl.value = None
+            patienten_auswahl.update()
+            patienten_karte.set_visibility(False)
             setze_status("Lesemodus aktiviert · Datenbankmodus beendet")
             return
 
@@ -298,8 +477,9 @@ def zeige_hauptseite() -> None:
         datenbank_schalter.text = "Datenbankmodus beenden"
         datenbank_status.text = "Datenbank: aktiviert · geschützter Modus"
         setze_status(
-            "Datenbankmodus aktiviert · strukturierte Speicherung ist noch nicht implementiert"
+            "Datenbankmodus aktiviert · Patientenzuordnung ist verfügbar"
         )
+        aktualisiere_patientenvorschlaege()
 
     def aktualisiere_ergebnisanzeige() -> None:
         """Zeigt exakt die gewählte, bereits geprüfte Antwortvariante an."""
@@ -366,12 +546,15 @@ def zeige_hauptseite() -> None:
         zustand.kis_vorschlag = ""
         zustand.letzter_fehler = ""
         zustand.ergebnis_anbieter = ""
+        zustand.patient_id = None
         dokumenttyp_ausgabe.value = ""
         ergebnis_ausgabe.value = ""
         ergebnis_auswahl.value = "rohtext"
         lesen_schalter.text = "Dokument auslesen"
         upload.reset()
         aktualisiere_vorschauen()
+        if zustand.arbeitsmodus == DATENBANKMODUS:
+            aktualisiere_patientenvorschlaege()
         setze_status(status)
 
     def beginne_neues_dokument() -> None:
@@ -394,6 +577,7 @@ def zeige_hauptseite() -> None:
         zustand.kis_vorschlag = ""
         zustand.letzter_fehler = ""
         zustand.ergebnis_anbieter = ""
+        zustand.patient_id = None
         dokumenttyp_ausgabe.value = ""
         ergebnis_ausgabe.value = ""
         ergebnis_auswahl.value = "rohtext"
@@ -416,6 +600,8 @@ def zeige_hauptseite() -> None:
             setze_status(f"Dokumentimport fehlgeschlagen: {fehler}", fehler=True)
             return
         aktualisiere_vorschauen()
+        if zustand.arbeitsmodus == DATENBANKMODUS:
+            aktualisiere_patientenvorschlaege()
         setze_status(
             f"{len(zustand.seiten)} Teil(e) vorbereitet · Anbieter wählen und Bearbeitung starten"
         )
@@ -465,6 +651,8 @@ def zeige_hauptseite() -> None:
             zustand.ergebnis_anbieter = zustand.anbieter
             dokumenttyp_ausgabe.value = zustand.dokumenttyp
             aktualisiere_ergebnisanzeige()
+            if zustand.arbeitsmodus == DATENBANKMODUS:
+                aktualisiere_patientenvorschlaege()
             lesen_schalter.text = f"Dokument mit {anbieter_name} neu bearbeiten"
             setze_status(f"{anbieter_name}: Verarbeitung abgeschlossen · Ergebnis ungeprüft")
         except (ConfigurationError, AIProviderError, DokumentAntwortFehler, OSError, ValueError) as fehler:
@@ -489,6 +677,8 @@ def zeige_hauptseite() -> None:
     anbieter_auswahl.on_value_change(lambda _: aktualisiere_anbieter())
     datenbank_schalter.text = "CED-Datenbank aktivieren"
     datenbank_schalter.on_click(aktualisiere_datenbankmodus)
+    patient_bestaetigen.on_click(bestaetige_patient)
+    patient_anlegen.on_click(lege_patient_an)
     upload.on_upload(uebernehme_datei)
     neu_schalter.on_click(beginne_neues_dokument)
     alles_loeschen_schalter.on_click(
