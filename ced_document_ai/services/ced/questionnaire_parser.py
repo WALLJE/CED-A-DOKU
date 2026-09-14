@@ -13,6 +13,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from dataclasses import dataclass, replace
+from datetime import date, datetime
 
 from ced_document_ai.database.models import ConfidenceStatus
 
@@ -94,9 +95,36 @@ _ALIASE = {
     for alias in aliase
 }
 
+# Dokument- und Patientenmetadaten werden für Zuordnung beziehungsweise Datum
+# separat verarbeitet. Sie sind keine longitudinalen CED-Befundkategorien und dürfen
+# daher nicht versehentlich als dynamische Tabellenfelder vorgeschlagen werden.
+_METADATENFELDER = {
+    _normalisiere(name)
+    for name in (
+        "Befunddatum",
+        "Fragebogendatum",
+        "Datum des Fragebogens",
+        "Erhebungsdatum",
+        "Untersuchungsdatum",
+        "Datum",
+        "Patient",
+        "Patientin",
+        "Patientenname",
+        "Name",
+        "Patienten-ID",
+        "Patientennummer",
+        "Geburtsdatum",
+    )
+}
+
 _ZEILE = re.compile(r"^\s*([^:|]{2,100})\s*:\s*(.*?)\s*$")
 _ZAHL = re.compile(r"(?<!\d)(-?\d+(?:[.,]\d+)?)(?!\d)")
 _QUALITAET = re.compile(r"\s*(?:✓\s*sicher|\?\s*unsicher|!\s*prüfen)\s*$", re.I)
+_DATUMSZEILE = re.compile(
+    r"(?im)^\s*(Befunddatum|Fragebogendatum|Datum\s+des\s+Fragebogens|"
+    r"Erhebungsdatum|Untersuchungsdatum|Datum)\s*:\s*([^\n\r]+?)\s*$"
+)
+_DATUMSWERT = re.compile(r"(?<!\d)(\d{1,2}[./]\d{1,2}[./]\d{4}|\d{4}-\d{2}-\d{2})(?!\d)")
 
 
 def _qualitaet_und_wert(wert: str) -> tuple[ConfidenceStatus, str]:
@@ -107,6 +135,52 @@ def _qualitaet_und_wert(wert: str) -> tuple[ConfidenceStatus, str]:
     if re.search(r"(?:\?|unsicher|!\s*prüfen)\s*$", wert, re.I):
         return ConfidenceStatus.UNCERTAIN, _QUALITAET.sub("", wert).strip()
     return ConfidenceStatus.HIGH_CONFIDENCE, _QUALITAET.sub("", wert).strip()
+
+
+def erkenne_befunddatum(*texte: str) -> date | None:
+    """Erkennt ein eindeutig beschriftetes Befunddatum oder lässt das Feld frei.
+
+    Die Reihenfolge der Bezeichnungen bildet ihre fachliche Eindeutigkeit ab. Ein
+    ausdrücklich genanntes ``Befunddatum`` hat Vorrang vor einem allgemeinen
+    ``Datum``. Gibt es innerhalb derselben Priorität verschiedene gültige Daten,
+    wird keines geraten. Ein Geburtsdatum passt absichtlich auf kein Suchmuster.
+
+    Debugging-Hinweis: Bei Bedarf nur gefundene Bezeichnung und Trefferanzahl
+    betrachten; konkrete Datumswerte oder übrige Dokumentinhalte nicht loggen.
+    """
+    prioritaet = {
+        "befunddatum": 0,
+        "fragebogendatum": 1,
+        "datum des fragebogens": 1,
+        "erhebungsdatum": 1,
+        "untersuchungsdatum": 2,
+        "datum": 3,
+    }
+    kandidaten: dict[int, set[date]] = {}
+    for text in texte:
+        for treffer in _DATUMSZEILE.finditer(text or ""):
+            datumsfund = _DATUMSWERT.search(treffer.group(2))
+            if datumsfund is None:
+                continue
+            rohdatum = datumsfund.group(1)
+            formatierung = (
+                "%Y-%m-%d"
+                if "-" in rohdatum
+                else "%d.%m.%Y"
+                if "." in rohdatum
+                else "%d/%m/%Y"
+            )
+            try:
+                datum = datetime.strptime(rohdatum, formatierung).date()
+            except ValueError:
+                continue
+            stufe = prioritaet[_normalisiere(treffer.group(1))]
+            kandidaten.setdefault(stufe, set()).add(datum)
+    if not kandidaten:
+        return None
+    beste_stufe = min(kandidaten)
+    eindeutige = kandidaten[beste_stufe]
+    return next(iter(eindeutige)) if len(eindeutige) == 1 else None
 
 
 def _numerik(kategorie: str, wert: str) -> tuple[float | None, str | None]:
@@ -177,7 +251,10 @@ def parse_ced_fragebogen(text: str) -> list[ExtrahierterBefund]:
         feldname, rohwert = treffer.groups()
         if not rohwert.strip():
             continue
-        kategorie = _ALIASE.get(_normalisiere(feldname), feldname.strip())
+        normalisierter_feldname = _normalisiere(feldname)
+        if normalisierter_feldname in _METADATENFELDER:
+            continue
+        kategorie = _ALIASE.get(normalisierter_feldname, feldname.strip())
         ist_neu = kategorie not in STANDARDKATEGORIEN
         qualitaet, wert = _qualitaet_und_wert(rohwert)
         if ist_neu:

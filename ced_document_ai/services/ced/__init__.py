@@ -9,6 +9,7 @@ from ced_document_ai.services.ced.patient_matching import (
 from ced_document_ai.services.ced.questionnaire_parser import (
     STANDARDKATEGORIEN,
     ExtrahierterBefund,
+    erkenne_befunddatum,
     parse_ced_fragebogen,
 )
 from ced_document_ai.services.ced.storage import (
@@ -24,6 +25,7 @@ __all__ = [
     "ermittle_patiententreffer",
     "STANDARDKATEGORIEN",
     "ExtrahierterBefund",
+    "erkenne_befunddatum",
     "parse_ced_fragebogen",
     "CEDSpeicherauftrag",
     "FreigegebenerBefund",

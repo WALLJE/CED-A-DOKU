@@ -104,11 +104,20 @@ allgemeine Dokument- und Textextraktion wird dadurch nicht verändert. Erkannter
 Wert, Einheit, Qualitätsstatus und unveränderte Quellzeile werden nebeneinander
 angezeigt und können vor einer späteren Speicherung geprüft werden.
 
-Die CED-Prüfung wird über den Menüpunkt „CED-Daten prüfen“ in der linken geschützten
-Steuerung als eigener Vollbild-Arbeitsbereich geöffnet. „Zurück zum Einlesen“ führt
-ohne erneute KI-Anfrage zum Dokument zurück. Umfangreiche Befundlisten besitzen
-innerhalb der Tabelle einen eigenen vertikalen Scrollbereich, sodass Befunddatum,
-Aktionen und Speicherschalter erreichbar bleiben.
+Die CED-Prüfung wird über den Menüpunkt „CED-Daten einlesen“ in der linken geschützten
+Steuerung als eigener Vollbild-Arbeitsbereich geöffnet. Beim Klick werden die
+CED-Felder unmittelbar extrahiert und in der Tabelle angezeigt; ein zusätzlicher
+Extraktionsschalter ist nicht erforderlich. „Zurück zum Einlesen“ führt ohne erneute
+KI-Anfrage zum Dokument zurück. Umfangreiche Befundlisten besitzen innerhalb der
+Tabelle einen eigenen vertikalen Scrollbereich, sodass Befunddatum und
+Speicherschalter erreichbar bleiben.
+
+Ein eindeutig beschriftetes `Befunddatum`, `Fragebogendatum`, Erhebungs- oder
+Untersuchungsdatum wird aus dem bereits eingelesenen Text als Vorschlag übernommen.
+Das Geburtsdatum wird dabei ausdrücklich nicht verwendet. Bei mehreren
+widersprüchlichen gleichrangigen Datumsangaben oder wenn kein gültiges Datum erkannt
+wird, bleibt das Feld leer und muss manuell ausgefüllt werden. Ein vorgeschlagenes
+Datum kann vor der Speicherung jederzeit korrigiert werden.
 
 Auch zusätzliche, klar mit `Feldname: Wert` beschriftete Angaben bleiben sichtbar.
 Sie werden als **neue Kategorie** gekennzeichnet und sind zunächst ausdrücklich von

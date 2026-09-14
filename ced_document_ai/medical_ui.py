@@ -38,6 +38,7 @@ from ced_document_ai.services.ced.patient_matching import (
 )
 from ced_document_ai.services.ced.questionnaire_parser import (
     ExtrahierterBefund,
+    erkenne_befunddatum,
     parse_ced_fragebogen,
 )
 from ced_document_ai.services.ced.storage import (
@@ -185,7 +186,7 @@ def zeige_hauptseite() -> None:
             "color=teal-8 unelevated"
         ).classes("w-full mt-3")
         ced_navigation = ui.button(
-            "CED-Daten prüfen", icon="fact_check"
+            "CED-Daten einlesen", icon="fact_check"
         ).props("outline color=teal-8").classes("w-full mt-3")
         # Der Menüpunkt darf vor der Passwortfreigabe keine Rückschlüsse auf
         # Patientendaten oder vorbereitete Befunde ermöglichen.
@@ -351,9 +352,6 @@ def zeige_hauptseite() -> None:
                             befunddatum = ui.input("Befunddatum").props(
                                 "outlined dense type=date"
                             ).classes("w-full")
-                            ced_extrahieren = ui.button(
-                                "CED-Daten zur Prüfung extrahieren", icon="fact_check"
-                            ).props("color=teal-8 unelevated").classes("w-full")
                             ced_tabelle = ui.aggrid(
                                 {
                                     "defaultColDef": {
@@ -452,9 +450,8 @@ def zeige_hauptseite() -> None:
         if zustand.arbeitsmodus != DATENBANKMODUS or zustand.patient_id is None:
             ced_navigation.disable()
             return
-        ced_navigation.enable()
         ist_ced_fragebogen = zustand.dokumenttyp == Dokumenttyp.CED_FRAGEBOGEN.value
-        ced_extrahieren.set_enabled(ist_ced_fragebogen)
+        ced_navigation.set_enabled(ist_ced_fragebogen)
         if ist_ced_fragebogen:
             ced_pruefung_hinweis.text = (
                 "Die Werte werden aus der vorhandenen strukturierten Darstellung gelesen. "
@@ -467,14 +464,22 @@ def zeige_hauptseite() -> None:
         else:
             ced_pruefung_hinweis.text = "Bitte zunächst das Dokument auslesen."
 
-    def extrahiere_ced_daten() -> None:
-        """Baut eine editierbare Prüftabelle, speichert aber ausdrücklich noch nichts."""
+    def oeffne_ced_pruefung() -> None:
+        """Schlägt das Datum vor, extrahiert die Werte und öffnet den Prüfscreen."""
         if zustand.patient_id is None:
             setze_status("Bitte zuerst einen Patienten ausdrücklich bestätigen.", fehler=True)
             return
         if zustand.dokumenttyp != Dokumenttyp.CED_FRAGEBOGEN.value:
             setze_status("Die CED-Extraktion ist nur für CED-Patientenfragebögen verfügbar.", fehler=True)
             return
+        datumsvorschlag = erkenne_befunddatum(
+            zustand.ausgelesener_inhalt,
+            zustand.strukturierte_darstellung,
+        )
+        # Ein bereits manuell korrigiertes Datum wird beim erneuten Öffnen nicht
+        # überschrieben. Ohne eindeutigen Vorschlag bleibt das Pflichtfeld leer.
+        if datumsvorschlag is not None and not befunddatum.value:
+            befunddatum.value = datumsvorschlag.isoformat()
         zustand.ced_befunde = parse_ced_fragebogen(zustand.strukturierte_darstellung)
         prioritaet = {
             "CONFLICT": 0,
@@ -511,7 +516,13 @@ def zeige_hauptseite() -> None:
                 "es werden keine Werte geraten oder automatisch ersetzt."
             )
             setze_status("Keine CED-Felder für die Prüftabelle erkannt", fehler=True)
+            ced_dialog.open()
             return
+        datumshinweis = (
+            "Befunddatum aus dem Dokument vorgeschlagen"
+            if datumsvorschlag is not None
+            else "kein eindeutiges Befunddatum erkannt · manuelle Eingabe erforderlich"
+        )
         ced_pruefung_hinweis.text = (
             f"{len(zustand.ced_befunde)} Feld(er) erkannt"
             + (
@@ -519,9 +530,10 @@ def zeige_hauptseite() -> None:
                 if neue_anzahl
                 else ""
             )
-            + ". Änderungen bleiben in diesem Schritt temporär; bitte zusätzlich das Befunddatum prüfen."
+            + f" · {datumshinweis}. Bitte alle Angaben vor der Speicherung prüfen."
         )
         setze_status("CED-Daten wurden zur manuellen Prüfung vorbereitet")
+        ced_dialog.open()
 
     async def speichere_gepruefte_ced_daten() -> None:
         """Liest den sichtbaren Tabellenstand und speichert nur markierte Zeilen.
@@ -648,13 +660,13 @@ def zeige_hauptseite() -> None:
             patienten = list(
                 sitzung.scalars(select(Patient).order_by(Patient.name, Patient.id))
             )
-            treffer = ermittle_patiententreffer(erkannt, patienten)
+            trefferliste = ermittle_patiententreffer(erkannt, patienten)
 
         optionen: dict[int, str] = {}
-        for treffer in treffer:
-            kennzeichnung = "⚠" if treffer.widerspruch else "Vorschlag"
-            optionen[treffer.patient_id] = (
-                f"{kennzeichnung}: {treffer.bezeichnung} · {treffer.status}"
+        for patiententreffer in trefferliste:
+            kennzeichnung = "⚠" if patiententreffer.widerspruch else "Vorschlag"
+            optionen[patiententreffer.patient_id] = (
+                f"{kennzeichnung}: {patiententreffer.bezeichnung} · {patiententreffer.status}"
             )
         for patient in patienten:
             if patient.id not in optionen:
@@ -671,8 +683,8 @@ def zeige_hauptseite() -> None:
                 "Bitte zunächst ein Dokument auslesen. Alternativ kann ein Patient "
                 "bewusst aus dem lokalen Verzeichnis ausgewählt werden."
             )
-        elif treffer:
-            erster = treffer[0]
+        elif trefferliste:
+            erster = trefferliste[0]
             details = ", ".join(erster.begruendung)
             patienten_hinweis.text = (
                 f"{erster.status}: {details}. Bitte den Patienten ausdrücklich auswählen und bestätigen."
@@ -994,9 +1006,8 @@ def zeige_hauptseite() -> None:
     datenbank_schalter.on_click(aktualisiere_datenbankmodus)
     patient_bestaetigen.on_click(bestaetige_patient)
     patient_anlegen.on_click(lege_patient_an)
-    ced_extrahieren.on_click(extrahiere_ced_daten)
     ced_speichern.on_click(speichere_gepruefte_ced_daten)
-    ced_navigation.on_click(ced_dialog.open)
+    ced_navigation.on_click(oeffne_ced_pruefung)
     upload.on_upload(uebernehme_datei)
     neu_schalter.on_click(beginne_neues_dokument)
     alles_loeschen_schalter.on_click(
