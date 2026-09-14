@@ -153,6 +153,13 @@ def zeige_hauptseite() -> None:
           }
           .ergebnistext textarea { min-height: 330px !important;
             font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+          /* Die CED-Prüfung besitzt einen eigenen Vollbild-Arbeitsbereich. Die feste
+             Tabellenhöhe hält Kopf, Befunddatum und Speicherschalter erreichbar;
+             umfangreiche Befundlisten scrollen ausschließlich innerhalb des Rasters. */
+          .ced-pruefdialog .q-dialog__inner { padding: 0; }
+          .ced-pruefseite { width: 100vw; max-width: none !important; min-height: 100vh;
+            border-radius: 0; margin: 0; background: #f3f7f7; }
+          .ced-tabellenrahmen { height: min(58vh, 680px); min-height: 320px; }
         </style>
     """)
 
@@ -177,6 +184,13 @@ def zeige_hauptseite() -> None:
         datenbank_schalter = ui.button(icon="lock_open").props(
             "color=teal-8 unelevated"
         ).classes("w-full mt-3")
+        ced_navigation = ui.button(
+            "CED-Daten prüfen", icon="fact_check"
+        ).props("outline color=teal-8").classes("w-full mt-3")
+        # Der Menüpunkt darf vor der Passwortfreigabe keine Rückschlüsse auf
+        # Patientendaten oder vorbereitete Befunde ermöglichen.
+        ced_navigation.set_visibility(False)
+        ced_navigation.disable()
 
         # Sämtliche Status- und Bedienhinweise stehen gebündelt am unteren linken
         # Rand der Steuerung. So überdecken weder Toasts noch frei schwebende Chips
@@ -308,75 +322,90 @@ def zeige_hauptseite() -> None:
                         ).props("outline color=teal-8").classes("w-full")
                     patienten_karte.set_visibility(False)
 
-                    # Die Prüftabelle folgt bewusst erst nach der bestätigten
-                    # Patientenzuordnung. Neue Kategorien erscheinen als deaktivierte
-                    # Vorschläge und müssen vor einer späteren Speicherung geprüft
-                    # und in der Spalte "Übernehmen" ausdrücklich aktiviert werden.
-                    with ui.card().classes("arbeitskarte w-full p-5") as ced_pruefung_karte:
-                        ui.label("CED-Daten prüfen").classes("bereichstitel")
-                        ced_pruefung_hinweis = ui.label(
-                            "Bitte zuerst einen Patienten bestätigen."
-                        ).classes("text-slate-600")
-                        befunddatum = ui.input("Befunddatum").props(
-                            "outlined dense type=date"
-                        ).classes("w-full")
-                        ced_extrahieren = ui.button(
-                            "CED-Daten zur Prüfung extrahieren", icon="fact_check"
-                        ).props("color=teal-8 unelevated").classes("w-full")
-                        ced_tabelle = ui.aggrid(
-                            {
-                                "defaultColDef": {
-                                    "resizable": True,
-                                    "sortable": True,
-                                    "filter": True,
-                                },
-                                "columnDefs": [
-                                    {"headerName": "Status", "field": "status", "width": 125},
-                                    {
-                                        "headerName": "Kategorie",
-                                        "field": "kategorie",
-                                        "editable": True,
-                                        "minWidth": 190,
+                    # Die Prüfung liegt in einem maximierten Dialog und damit auf
+                    # einem eigenen Arbeitsbildschirm. Der Einlesebereich bleibt im
+                    # Hintergrund unverändert erhalten und kann über "Zurück" ohne
+                    # erneute Bildanalyse wieder geöffnet werden.
+                    with ui.dialog().props("maximized").classes(
+                        "ced-pruefdialog"
+                    ) as ced_dialog:
+                        with ui.card().classes(
+                            "ced-pruefseite p-6 md:p-8 gap-4"
+                        ):
+                            with ui.row().classes("w-full items-center justify-between gap-3"):
+                                with ui.column().classes("gap-0"):
+                                    ui.label("CED-Daten prüfen").classes(
+                                        "text-2xl font-bold text-teal-900"
+                                    )
+                                    ced_patientenkopf = ui.label(
+                                        "Noch kein Patient bestätigt"
+                                    ).classes("text-slate-600")
+                                ui.button(
+                                    "Zurück zum Einlesen",
+                                    icon="arrow_back",
+                                    on_click=ced_dialog.close,
+                                ).props("outline color=teal-8")
+                            ced_pruefung_hinweis = ui.label(
+                                "Bitte zuerst einen Patienten bestätigen."
+                            ).classes("text-slate-600")
+                            befunddatum = ui.input("Befunddatum").props(
+                                "outlined dense type=date"
+                            ).classes("w-full")
+                            ced_extrahieren = ui.button(
+                                "CED-Daten zur Prüfung extrahieren", icon="fact_check"
+                            ).props("color=teal-8 unelevated").classes("w-full")
+                            ced_tabelle = ui.aggrid(
+                                {
+                                    "defaultColDef": {
+                                        "resizable": True,
+                                        "sortable": True,
+                                        "filter": True,
                                     },
-                                    {
-                                        "headerName": "Wert",
-                                        "field": "wert",
-                                        "editable": True,
-                                        "minWidth": 180,
-                                    },
-                                    {
-                                        "headerName": "Einheit",
-                                        "field": "einheit",
-                                        "editable": True,
-                                        "width": 120,
-                                    },
-                                    {
-                                        "headerName": "Übernehmen",
-                                        "field": "uebernehmen",
-                                        "editable": True,
-                                        "cellEditor": "agCheckboxCellEditor",
-                                        "cellRenderer": "agCheckboxCellRenderer",
-                                        "width": 135,
-                                    },
-                                    {
-                                        "headerName": "Quelle",
-                                        "field": "quelle",
-                                        "minWidth": 260,
-                                    },
-                                ],
-                                "rowData": [],
-                                "domLayout": "autoHeight",
-                                # Beendet eine Zellbearbeitung beim Verlassen der
-                                # Zelle, damit ``get_client_data`` beim Speichern
-                                # garantiert den sichtbaren letzten Wert erhält.
-                                "stopEditingWhenCellsLoseFocus": True,
-                            }
-                        ).classes("w-full")
-                        ced_speichern = ui.button(
-                            "Geprüfte CED-Daten speichern", icon="save"
-                        ).props("color=teal-8 unelevated").classes("w-full")
-                        ced_speichern.disable()
-                    ced_pruefung_karte.set_visibility(False)
+                                    "columnDefs": [
+                                        {"headerName": "Status", "field": "status", "width": 125},
+                                        {
+                                            "headerName": "Kategorie",
+                                            "field": "kategorie",
+                                            "editable": True,
+                                            "minWidth": 190,
+                                        },
+                                        {
+                                            "headerName": "Wert",
+                                            "field": "wert",
+                                            "editable": True,
+                                            "minWidth": 180,
+                                        },
+                                        {
+                                            "headerName": "Einheit",
+                                            "field": "einheit",
+                                            "editable": True,
+                                            "width": 120,
+                                        },
+                                        {
+                                            "headerName": "Übernehmen",
+                                            "field": "uebernehmen",
+                                            "editable": True,
+                                            "cellEditor": "agCheckboxCellEditor",
+                                            "cellRenderer": "agCheckboxCellRenderer",
+                                            "width": 135,
+                                        },
+                                        {
+                                            "headerName": "Quelle",
+                                            "field": "quelle",
+                                            "minWidth": 260,
+                                        },
+                                    ],
+                                    "rowData": [],
+                                    # Beendet eine Zellbearbeitung beim Verlassen der
+                                    # Zelle, damit ``get_client_data`` beim Speichern
+                                    # garantiert den sichtbaren letzten Wert erhält.
+                                    "stopEditingWhenCellsLoseFocus": True,
+                                }
+                            ).classes("ced-tabellenrahmen w-full")
+                            ced_speichern = ui.button(
+                                "Geprüfte CED-Daten speichern", icon="save"
+                            ).props("color=teal-8 unelevated").classes("w-full")
+                            ced_speichern.disable()
 
     def setze_status(text: str, *, fehler: bool = False) -> None:
         """Zeigt den letzten Arbeitsschritt dauerhaft und ohne sensible Inhalte an.
@@ -414,14 +443,16 @@ def zeige_hauptseite() -> None:
         ced_tabelle.update()
         befunddatum.value = ""
         ced_speichern.disable()
-        ced_pruefung_karte.set_visibility(False)
+        ced_navigation.disable()
+        ced_patientenkopf.text = "Noch kein Patient bestätigt"
+        ced_dialog.close()
 
     def aktualisiere_ced_bereitschaft() -> None:
         """Öffnet die CED-Prüfung nur bei bestätigtem Patient und passendem Dokument."""
         if zustand.arbeitsmodus != DATENBANKMODUS or zustand.patient_id is None:
-            ced_pruefung_karte.set_visibility(False)
+            ced_navigation.disable()
             return
-        ced_pruefung_karte.set_visibility(True)
+        ced_navigation.enable()
         ist_ced_fragebogen = zustand.dokumenttyp == Dokumenttyp.CED_FRAGEBOGEN.value
         ced_extrahieren.set_enabled(ist_ced_fragebogen)
         if ist_ced_fragebogen:
@@ -674,6 +705,7 @@ def zeige_hauptseite() -> None:
             bezeichnung = f"{patient.external_id} · {patient.name}"
         zustand.patient_id = patient_id
         patienten_hinweis.text = f"Bestätigter Patient: {bezeichnung}"
+        ced_patientenkopf.text = f"Bestätigter Patient: {bezeichnung}"
         aktualisiere_ced_bereitschaft()
         setze_status("Patientenzuordnung wurde ausdrücklich bestätigt")
 
@@ -718,6 +750,7 @@ def zeige_hauptseite() -> None:
         # ausdrücklich wieder als Sitzungszuordnung gesetzt.
         zustand.patient_id = neue_id
         patienten_hinweis.text = f"Neuer Patient bestätigt: {externe_id} · {name}"
+        ced_patientenkopf.text = f"Bestätigter Patient: {externe_id} · {name}"
         aktualisiere_ced_bereitschaft()
         setze_status("Patient wurde angelegt und für dieses Dokument bestätigt")
 
@@ -734,6 +767,7 @@ def zeige_hauptseite() -> None:
             patienten_auswahl.value = None
             patienten_auswahl.update()
             patienten_karte.set_visibility(False)
+            ced_navigation.set_visibility(False)
             setze_ced_pruefung_zurueck()
             setze_status("Lesemodus aktiviert · Datenbankmodus beendet")
             return
@@ -751,6 +785,7 @@ def zeige_hauptseite() -> None:
         passwort.set_visibility(False)
         datenbank_schalter.text = "Datenbankmodus beenden"
         datenbank_status.text = "Datenbank: aktiviert · geschützter Modus"
+        ced_navigation.set_visibility(True)
         setze_status(
             "Datenbankmodus aktiviert · Patientenzuordnung ist verfügbar"
         )
@@ -961,6 +996,7 @@ def zeige_hauptseite() -> None:
     patient_anlegen.on_click(lege_patient_an)
     ced_extrahieren.on_click(extrahiere_ced_daten)
     ced_speichern.on_click(speichere_gepruefte_ced_daten)
+    ced_navigation.on_click(ced_dialog.open)
     upload.on_upload(uebernehme_datei)
     neu_schalter.on_click(beginne_neues_dokument)
     alles_loeschen_schalter.on_click(

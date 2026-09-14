@@ -57,6 +57,14 @@ Währenddessen kennzeichnen ein drehendes Statussymbol und ein Statustext die la
 Bearbeitung. Da die automatische Reihenfolge nur ein Vorschlag sein kann, muss das
 Ergebnis weiterhin medizinisch geprüft werden.
 
+Die Auswahl zwischen Rohtext, strukturierter Darstellung und KI-Zusammenfassung
+startet keine neue Bildanalyse. Bei einem einzelnen Bild erzeugt genau eine
+multimodale Anfrage alle drei Ansichten gemeinsam. Bei mehreren Dokumentteilen wird
+jeder Teil einmal vollständig transkribiert; anschließend erzeugt genau eine weitere
+reine Textanfrage Dokumenttyp, strukturierten Text und KIS-Zusammenfassung aus diesen
+Transkriptionen. Nur der ausdrücklich betätigte Schalter zur erneuten Bearbeitung
+sendet das Dokument nochmals an den gewählten Anbieter.
+
 Die `.env` ist in `.gitignore` ausgeschlossen. `.env.example` bleibt dagegen als
 leere, sichere Vorlage versioniert. Bereits außerhalb der Datei gesetzte
 Umgebungsvariablen haben Vorrang vor Einträgen aus `.env`.
@@ -95,6 +103,12 @@ Reintextparser arbeitet auf der bereits vorhandenen strukturierten Darstellung; 
 allgemeine Dokument- und Textextraktion wird dadurch nicht verändert. Erkannter
 Wert, Einheit, Qualitätsstatus und unveränderte Quellzeile werden nebeneinander
 angezeigt und können vor einer späteren Speicherung geprüft werden.
+
+Die CED-Prüfung wird über den Menüpunkt „CED-Daten prüfen“ in der linken geschützten
+Steuerung als eigener Vollbild-Arbeitsbereich geöffnet. „Zurück zum Einlesen“ führt
+ohne erneute KI-Anfrage zum Dokument zurück. Umfangreiche Befundlisten besitzen
+innerhalb der Tabelle einen eigenen vertikalen Scrollbereich, sodass Befunddatum,
+Aktionen und Speicherschalter erreichbar bleiben.
 
 Auch zusätzliche, klar mit `Feldname: Wert` beschriftete Angaben bleiben sichtbar.
 Sie werden als **neue Kategorie** gekennzeichnet und sind zunächst ausdrücklich von
