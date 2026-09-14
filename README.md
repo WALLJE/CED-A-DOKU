@@ -86,3 +86,25 @@ angelegt und anschließend durch Löschen der lokalen Entwicklungsdatenbank
 > zuerst prüfen, ob jede Angabe im Rohtext in einer eigenen, eindeutig beschrifteten
 > Zeile wie `Patienten-ID:`, `Name:` und `Geburtsdatum:` steht. Medizinische Inhalte
 > oder Stammdaten nicht zur Fehlersuche in Konsolen- oder Server-Logs ausgeben.
+
+## CED-Prüftabelle
+
+Nach bestätigter Patientenzuordnung kann ein als `CED-Patientenfragebogen` erkanntes
+Dokument in eine vorläufige Prüftabelle übernommen werden. Der dafür verwendete
+Reintextparser arbeitet auf der bereits vorhandenen strukturierten Darstellung; die
+allgemeine Dokument- und Textextraktion wird dadurch nicht verändert. Erkannter
+Wert, Einheit, Qualitätsstatus und unveränderte Quellzeile werden nebeneinander
+angezeigt und können vor einer späteren Speicherung geprüft werden.
+
+Auch zusätzliche, klar mit `Feldname: Wert` beschriftete Angaben bleiben sichtbar.
+Sie werden als **neue Kategorie** gekennzeichnet und sind zunächst ausdrücklich von
+der Übernahme ausgeschlossen. Damit kann eine neue Kategorie später bewusst
+bestätigt oder einer vorhandenen Kategorie zugeordnet werden; unbekannte Felder
+werden weder automatisch dauerhaft angelegt noch verworfen. Das Befunddatum bleibt
+ebenfalls eine verpflichtende manuelle Angabe. Der aktuelle Umsetzungsschritt zeigt
+und bearbeitet die Daten nur temporär und speichert noch keine CED-Befunde.
+
+> **Debugging-Hinweis:** Erscheint eine erwartete Angabe nicht in der Prüftabelle,
+> die strukturierte Darstellung auf eine eigene Zeile im Format `Feldname: Wert`
+> prüfen. Unbeschrifteter Freitext wird absichtlich nicht geraten. Zum Debugging
+> höchstens Feldname und Parserstatus verwenden, niemals den medizinischen Wert.

@@ -6,10 +6,18 @@ from ced_document_ai.services.ced.patient_matching import (
     erkenne_patientendaten,
     ermittle_patiententreffer,
 )
+from ced_document_ai.services.ced.questionnaire_parser import (
+    STANDARDKATEGORIEN,
+    ExtrahierterBefund,
+    parse_ced_fragebogen,
+)
 
 __all__ = [
     "ErkanntePatientendaten",
     "Patiententreffer",
     "erkenne_patientendaten",
     "ermittle_patiententreffer",
+    "STANDARDKATEGORIEN",
+    "ExtrahierterBefund",
+    "parse_ced_fragebogen",
 ]
