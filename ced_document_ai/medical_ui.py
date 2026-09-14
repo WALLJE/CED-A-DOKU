@@ -20,10 +20,11 @@ from pathlib import Path
 
 from nicegui import events, run, ui
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
 from ced_document_ai.config.settings import ConfigurationError, Settings
 from ced_document_ai.database.database import get_session, initialize_database
-from ced_document_ai.database.models import Patient
+from ced_document_ai.database.models import ConfidenceStatus, Patient
 from ced_document_ai.services.ai.providers import (
     AIProviderError,
     CloudAPIProvider,
@@ -38,6 +39,11 @@ from ced_document_ai.services.ced.patient_matching import (
 from ced_document_ai.services.ced.questionnaire_parser import (
     ExtrahierterBefund,
     parse_ced_fragebogen,
+)
+from ced_document_ai.services.ced.storage import (
+    CEDSpeicherauftrag,
+    FreigegebenerBefund,
+    speichere_ced_pruefung,
 )
 from ced_document_ai.services.documents.converter import (
     DocumentConversionError,
@@ -58,12 +64,14 @@ class Sitzungszustand:
     arbeitsmodus: str = LESEMODUS
     anbieter: str = "uk"
     seiten: list[Path] = field(default_factory=list)
+    dokumentnamen: list[str] = field(default_factory=list)
     # Die vier Werte gehören immer zu genau demselben Dokument. Sie werden beim
     # nächsten Upload gemeinsam gelöscht, sodass keine alten Ergebnisse stehen bleiben.
     dokumenttyp: str = ""
     ausgelesener_inhalt: str = ""
     strukturierte_darstellung: str = ""
     kis_vorschlag: str = ""
+    rohe_ki_antwort: str = ""
     letzter_fehler: str = ""
     # Die Zuordnung wird nur als Datenbank-ID in dieser Browser-Sitzung gehalten.
     # Ein erkannter Vorschlag setzt diesen Wert niemals automatisch.
@@ -74,6 +82,7 @@ class Sitzungszustand:
     # CED-Befunde bleiben bis zu einer späteren ausdrücklichen Freigabe rein
     # temporär. Dieser Umsetzungsschritt schreibt noch keinen Befund in SQLite.
     ced_befunde: list[ExtrahierterBefund] = field(default_factory=list)
+    gespeichertes_dokument_id: int | None = None
     # Der Anbieter des sichtbaren Ergebnisses wird separat festgehalten. So kann
     # eine neue Auswahl als "noch nicht neu verarbeitet" kenntlich gemacht werden,
     # ohne das bereits hochgeladene Dokument oder dessen bisheriges Ergebnis zu löschen.
@@ -357,8 +366,16 @@ def zeige_hauptseite() -> None:
                                 ],
                                 "rowData": [],
                                 "domLayout": "autoHeight",
+                                # Beendet eine Zellbearbeitung beim Verlassen der
+                                # Zelle, damit ``get_client_data`` beim Speichern
+                                # garantiert den sichtbaren letzten Wert erhält.
+                                "stopEditingWhenCellsLoseFocus": True,
                             }
                         ).classes("w-full")
+                        ced_speichern = ui.button(
+                            "Geprüfte CED-Daten speichern", icon="save"
+                        ).props("color=teal-8 unelevated").classes("w-full")
+                        ced_speichern.disable()
                     ced_pruefung_karte.set_visibility(False)
 
     def setze_status(text: str, *, fehler: bool = False) -> None:
@@ -392,9 +409,11 @@ def zeige_hauptseite() -> None:
     def setze_ced_pruefung_zurueck() -> None:
         """Entfernt temporäre CED-Werte, wenn Dokument oder Patient wechselt."""
         zustand.ced_befunde.clear()
+        zustand.gespeichertes_dokument_id = None
         ced_tabelle.options["rowData"] = []
         ced_tabelle.update()
         befunddatum.value = ""
+        ced_speichern.disable()
         ced_pruefung_karte.set_visibility(False)
 
     def aktualisiere_ced_bereitschaft() -> None:
@@ -453,6 +472,7 @@ def zeige_hauptseite() -> None:
             for befund in sortierte_befunde
         ]
         ced_tabelle.update()
+        ced_speichern.set_enabled(bool(zustand.ced_befunde))
         neue_anzahl = sum(befund.neue_kategorie for befund in zustand.ced_befunde)
         if not zustand.ced_befunde:
             ced_pruefung_hinweis.text = (
@@ -471,6 +491,105 @@ def zeige_hauptseite() -> None:
             + ". Änderungen bleiben in diesem Schritt temporär; bitte zusätzlich das Befunddatum prüfen."
         )
         setze_status("CED-Daten wurden zur manuellen Prüfung vorbereitet")
+
+    async def speichere_gepruefte_ced_daten() -> None:
+        """Liest den sichtbaren Tabellenstand und speichert nur markierte Zeilen.
+
+        AG Grid verwaltet Änderungen zunächst im Browser. Deshalb wird unmittelbar
+        vor der Transaktion der aktuelle Client-Stand abgefragt. Für Debugging darf
+        nur die Zeilenanzahl betrachtet werden; Tabellenwerte gehören nicht in Logs.
+        """
+        if zustand.patient_id is None:
+            setze_status("Bitte zuerst einen Patienten ausdrücklich bestätigen.", fehler=True)
+            return
+        if zustand.gespeichertes_dokument_id is not None:
+            setze_status("Diese Prüfung wurde bereits gespeichert.", fehler=True)
+            return
+        try:
+            datum = date.fromisoformat(befunddatum.value or "")
+        except ValueError:
+            setze_status("Bitte vor der Speicherung ein vollständiges Befunddatum eingeben.", fehler=True)
+            return
+        try:
+            tabellenzeilen = await ced_tabelle.get_client_data()
+        except TimeoutError:
+            setze_status(
+                "Tabellenwerte konnten nicht aus dem Browser gelesen werden. "
+                "Bitte die letzte Zelle verlassen und erneut speichern.",
+                fehler=True,
+            )
+            return
+        freigegebene: list[FreigegebenerBefund] = []
+        for zeile in tabellenzeilen:
+            if not zeile.get("uebernehmen"):
+                continue
+            kategorie = str(zeile.get("kategorie") or "").strip()
+            wert = str(zeile.get("wert") or "").strip()
+            einheit = str(zeile.get("einheit") or "").strip() or None
+            quelle = str(zeile.get("quelle") or "").strip()
+            status = str(zeile.get("status") or "")
+            try:
+                qualitaet = ConfidenceStatus(status)
+            except ValueError:
+                # Eine ausdrücklich aktivierte neue Kategorie bleibt bis zu einer
+                # späteren Katalogprüfung als unsicher gekennzeichnet.
+                qualitaet = ConfidenceStatus.UNCERTAIN
+            erneut_geparst = parse_ced_fragebogen(f"{kategorie}: {wert}")
+            passender_befund = next(
+                (befund for befund in erneut_geparst if befund.kategorie == kategorie),
+                None,
+            )
+            numerischer_wert = (
+                passender_befund.numerischer_wert if passender_befund else None
+            )
+            freigegebene.append(
+                FreigegebenerBefund(
+                    kategorie=kategorie,
+                    anzeigewert=wert,
+                    numerischer_wert=numerischer_wert,
+                    einheit=einheit,
+                    quelltext=quelle,
+                    qualitaet=qualitaet,
+                )
+            )
+        if zustand.ergebnis_anbieter not in {"uk", "openai"}:
+            setze_status(
+                "Der Anbieter des sichtbaren Ergebnisses ist nicht eindeutig. "
+                "Bitte das Dokument erneut auslesen.",
+                fehler=True,
+            )
+            return
+        provider_name = "UK-API" if zustand.ergebnis_anbieter == "uk" else "OpenAI"
+        modell = (
+            einstellungen.uk_model
+            if zustand.ergebnis_anbieter == "uk"
+            else einstellungen.openai_model
+        )
+        auftrag = CEDSpeicherauftrag(
+            patient_id=zustand.patient_id,
+            befunddatum=datum,
+            original_name=" + ".join(zustand.dokumentnamen) or "CED-Fragebogen",
+            rohe_ki_antwort=zustand.rohe_ki_antwort,
+            kis_vorschlag=zustand.kis_vorschlag,
+            provider=provider_name,
+            modell=modell,
+            befunde=tuple(freigegebene),
+        )
+        try:
+            with get_session() as sitzung:
+                dokument_id = speichere_ced_pruefung(sitzung, auftrag)
+        except (OSError, SQLAlchemyError, ValueError) as fehler:
+            # Es gibt keinen zweiten Speicherweg. Bei SQL-Problemen kann lokal der
+            # Exception-Typ ergänzt werden, ohne Werte oder Patientendaten auszugeben.
+            setze_status(f"CED-Daten konnten nicht gespeichert werden: {fehler}", fehler=True)
+            return
+        zustand.gespeichertes_dokument_id = dokument_id
+        ced_speichern.disable()
+        ced_pruefung_hinweis.text = (
+            f"Testdaten als bestätigtes Dokument {dokument_id} gespeichert. "
+            "Für Änderungen bitte ein neues Dokument einlesen."
+        )
+        setze_status("Geprüfte CED-Daten wurden vollständig gespeichert")
 
     def aktualisiere_patientenvorschlaege() -> None:
         """Erkennt Stammdaten und lädt passende Patienten ausschließlich lokal.
@@ -696,10 +815,12 @@ def zeige_hauptseite() -> None:
     def setze_leeren_zustand(status: str) -> None:
         """Löscht Seiten und Ergebnis gemeinsam für ein eindeutig neues Dokument."""
         zustand.seiten.clear()
+        zustand.dokumentnamen.clear()
         zustand.dokumenttyp = ""
         zustand.ausgelesener_inhalt = ""
         zustand.strukturierte_darstellung = ""
         zustand.kis_vorschlag = ""
+        zustand.rohe_ki_antwort = ""
         zustand.letzter_fehler = ""
         zustand.ergebnis_anbieter = ""
         zustand.patient_id = None
@@ -731,6 +852,7 @@ def zeige_hauptseite() -> None:
         zustand.ausgelesener_inhalt = ""
         zustand.strukturierte_darstellung = ""
         zustand.kis_vorschlag = ""
+        zustand.rohe_ki_antwort = ""
         zustand.letzter_fehler = ""
         zustand.ergebnis_anbieter = ""
         zustand.patient_id = None
@@ -750,6 +872,7 @@ def zeige_hauptseite() -> None:
                 quellpfade.append(quellpfad)
             neue_seiten = DocumentConverter(wurzel / "seiten").convert(quellpfade)
             zustand.seiten.extend(neue_seiten)
+            zustand.dokumentnamen.extend(dateiname for dateiname, _ in dateien)
         except (DocumentConversionError, OSError) as fehler:
             # Debugging: Bei Bedarf lokal Dateityp und Exception-Typ prüfen. Namen
             # oder Inhalte medizinischer Dokumente nie in produktive Logs schreiben.
@@ -804,6 +927,7 @@ def zeige_hauptseite() -> None:
             zustand.ausgelesener_inhalt = ergebnis.ausgelesener_inhalt
             zustand.strukturierte_darstellung = ergebnis.strukturierte_darstellung
             zustand.kis_vorschlag = ergebnis.kis_vorschlag
+            zustand.rohe_ki_antwort = ergebnis.rohe_ki_antwort
             zustand.ergebnis_anbieter = zustand.anbieter
             dokumenttyp_ausgabe.value = zustand.dokumenttyp
             aktualisiere_ergebnisanzeige()
@@ -836,6 +960,7 @@ def zeige_hauptseite() -> None:
     patient_bestaetigen.on_click(bestaetige_patient)
     patient_anlegen.on_click(lege_patient_an)
     ced_extrahieren.on_click(extrahiere_ced_daten)
+    ced_speichern.on_click(speichere_gepruefte_ced_daten)
     upload.on_upload(uebernehme_datei)
     neu_schalter.on_click(beginne_neues_dokument)
     alles_loeschen_schalter.on_click(

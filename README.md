@@ -101,8 +101,20 @@ Sie werden als **neue Kategorie** gekennzeichnet und sind zunächst ausdrücklic
 der Übernahme ausgeschlossen. Damit kann eine neue Kategorie später bewusst
 bestätigt oder einer vorhandenen Kategorie zugeordnet werden; unbekannte Felder
 werden weder automatisch dauerhaft angelegt noch verworfen. Das Befunddatum bleibt
-ebenfalls eine verpflichtende manuelle Angabe. Der aktuelle Umsetzungsschritt zeigt
-und bearbeitet die Daten nur temporär und speichert noch keine CED-Befunde.
+ebenfalls eine verpflichtende manuelle Angabe.
+
+Mit „Geprüfte CED-Daten speichern“ werden ausschließlich die in der Tabelle zur
+Übernahme markierten Zeilen zusammen mit Dokumentbezug, unveränderter KI-Rohantwort
+und KIS-Vorschlag in einer gemeinsamen SQLite-Transaktion gespeichert. Auch eine
+neue Kategorie wird nur angelegt, wenn ihre Zeile zuvor ausdrücklich aktiviert
+wurde. Schlägt ein Teil der Speicherung fehl, werden keine Teildaten übernommen.
+Nach erfolgreicher Speicherung ist der Schalter für diese Prüfung gesperrt, damit
+dasselbe Dokument nicht versehentlich doppelt angelegt wird.
+
+Solange ausschließlich Testdaten verwendet werden, kann der gesamte lokale
+Testbestand bei beendeter Anwendung durch Löschen von
+`data/ced_document_ai.sqlite3` entfernt werden. Dieser Schritt löscht die komplette
+Datenbank und darf deshalb später mit realen Daten nicht mehr verwendet werden.
 
 > **Debugging-Hinweis:** Erscheint eine erwartete Angabe nicht in der Prüftabelle,
 > die strukturierte Darstellung auf eine eigene Zeile im Format `Feldname: Wert`
