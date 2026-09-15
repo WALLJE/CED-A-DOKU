@@ -20,8 +20,11 @@ from ced_document_ai.services.ced.storage import (
 from ced_document_ai.services.ced.patient_overview import (
     BefundUebersicht,
     DiagnoseUebersicht,
+    KlinischerVerlauf,
     PatientenUebersicht,
+    Verlaufszeile,
     berechne_alter,
+    lade_klinischen_verlauf,
     lade_patientenuebersicht,
 )
 
@@ -39,7 +42,10 @@ __all__ = [
     "speichere_ced_pruefung",
     "BefundUebersicht",
     "DiagnoseUebersicht",
+    "KlinischerVerlauf",
     "PatientenUebersicht",
+    "Verlaufszeile",
     "berechne_alter",
+    "lade_klinischen_verlauf",
     "lade_patientenuebersicht",
 ]

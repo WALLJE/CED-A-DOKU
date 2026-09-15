@@ -36,7 +36,10 @@ from ced_document_ai.services.ced.patient_matching import (
     erkenne_patientendaten,
     ermittle_patiententreffer,
 )
-from ced_document_ai.services.ced.patient_overview import lade_patientenuebersicht
+from ced_document_ai.services.ced.patient_overview import (
+    lade_klinischen_verlauf,
+    lade_patientenuebersicht,
+)
 from ced_document_ai.services.ced.questionnaire_parser import (
     ExtrahierterBefund,
     erkenne_befunddatum,
@@ -162,6 +165,8 @@ def zeige_hauptseite() -> None:
           .ced-pruefseite { width: 100vw; max-width: none !important; min-height: 100vh;
             border-radius: 0; margin: 0; background: #f3f7f7; }
           .ced-tabellenrahmen { height: min(58vh, 680px); min-height: 320px; }
+          .patienten-kurztabelle { height: 280px; min-height: 220px; }
+          .verlaufs-tabelle { height: min(66vh, 720px); min-height: 360px; }
         </style>
     """)
 
@@ -192,12 +197,17 @@ def zeige_hauptseite() -> None:
         patientenansicht_navigation = ui.button(
             "Patientenübersicht", icon="person"
         ).props("outline color=teal-8").classes("w-full mt-2")
+        verlauf_navigation = ui.button(
+            "Klinischer Verlauf", icon="table_chart"
+        ).props("outline color=teal-8").classes("w-full mt-2")
         # Der Menüpunkt darf vor der Passwortfreigabe keine Rückschlüsse auf
         # Patientendaten oder vorbereitete Befunde ermöglichen.
         ced_navigation.set_visibility(False)
         ced_navigation.disable()
         patientenansicht_navigation.set_visibility(False)
         patientenansicht_navigation.disable()
+        verlauf_navigation.set_visibility(False)
+        verlauf_navigation.disable()
 
         # Sämtliche Status- und Bedienhinweise stehen gebündelt am unteren linken
         # Rand der Steuerung. So überdecken weder Toasts noch frei schwebende Chips
@@ -449,12 +459,20 @@ def zeige_hauptseite() -> None:
                                     diagnosen_liste = ui.column().classes("gap-1")
                                 with ui.card().classes("arbeitskarte flex-1 p-5"):
                                     ui.label("CED-Stammdaten").classes("bereichstitel")
-                                    erstdiagnose_ausgabe = ui.label(
-                                        "Erstdiagnose: noch nicht hinterlegt"
-                                    )
-                                    befallsmuster_ausgabe = ui.label(
-                                        "Befallsmuster: noch nicht hinterlegt"
-                                    )
+                                    # Bereits jetzt werden beschreibbare Formfelder
+                                    # verwendet. Sie bleiben in diesem Schritt noch
+                                    # schreibgeschützt; eine spätere manuelle Freigabe
+                                    # kann deshalb ohne erneuten Layoutumbau folgen.
+                                    erstdiagnose_ausgabe = ui.input(
+                                        "Erstdiagnose",
+                                        value="",
+                                        placeholder="noch nicht hinterlegt",
+                                    ).props("outlined dense readonly").classes("w-full")
+                                    befallsmuster_ausgabe = ui.input(
+                                        "Befallsmuster",
+                                        value="",
+                                        placeholder="noch nicht hinterlegt",
+                                    ).props("outlined dense readonly").classes("w-full")
 
                             with ui.row().classes(
                                 "w-full gap-4 items-stretch flex-wrap lg:flex-nowrap"
@@ -473,6 +491,9 @@ def zeige_hauptseite() -> None:
                                         "Die Fachbereiche werden schrittweise an bestätigte Dokumentdaten angebunden."
                                     ).classes("text-slate-600")
                                     with ui.row().classes("gap-2 flex-wrap"):
+                                        klinischer_verlauf_kachel = ui.button(
+                                            "Klinischer Verlauf", icon="table_chart"
+                                        ).props("outline color=teal-8")
                                         for titel in (
                                             "Labor",
                                             "Calprotectin",
@@ -511,9 +532,51 @@ def zeige_hauptseite() -> None:
                                             },
                                         ],
                                         "rowData": [],
-                                        "domLayout": "autoHeight",
                                     }
-                                ).classes("w-full")
+                                ).classes("patienten-kurztabelle w-full")
+
+                    # Die kumulative Ansicht erhält einen eigenen Arbeitsbildschirm.
+                    # Dynamische Datumsspalten können horizontal und zahlreiche
+                    # Parameter vertikal innerhalb des Rasters gescrollt werden.
+                    with ui.dialog().props("maximized").classes(
+                        "ced-pruefdialog"
+                    ) as verlauf_dialog:
+                        with ui.card().classes("ced-pruefseite p-6 md:p-8 gap-4"):
+                            with ui.row().classes(
+                                "w-full items-start justify-between gap-3"
+                            ):
+                                with ui.column().classes("gap-0"):
+                                    ui.label("Klinischer CED-Verlauf").classes(
+                                        "text-2xl font-bold text-teal-900"
+                                    )
+                                    verlauf_patientenkopf = ui.label("").classes(
+                                        "text-slate-600"
+                                    )
+                                ui.button(
+                                    "Zur Patientenübersicht",
+                                    icon="arrow_back",
+                                    on_click=verlauf_dialog.close,
+                                ).props("outline color=teal-8")
+                            verlauf_hinweis = ui.label("").classes("text-slate-600")
+                            verlauf_tabelle = ui.aggrid(
+                                {
+                                    "defaultColDef": {
+                                        "resizable": True,
+                                        "sortable": False,
+                                        "filter": True,
+                                        "minWidth": 145,
+                                    },
+                                    "columnDefs": [
+                                        {
+                                            "headerName": "Parameter",
+                                            "field": "kategorie",
+                                            "pinned": "left",
+                                            "minWidth": 220,
+                                        }
+                                    ],
+                                    "rowData": [],
+                                }
+                            ).classes("verlaufs-tabelle w-full")
 
     def setze_status(text: str, *, fehler: bool = False) -> None:
         """Zeigt den letzten Arbeitsschritt dauerhaft und ohne sensible Inhalte an.
@@ -558,12 +621,70 @@ def zeige_hauptseite() -> None:
     def setze_patientenansicht_zurueck() -> None:
         """Entfernt sichtbare Patientendaten unmittelbar bei aufgehobener Zuordnung."""
         patientenansicht_navigation.disable()
+        verlauf_navigation.disable()
         patientenansicht_dialog.close()
+        verlauf_dialog.close()
         patientenansicht_name.text = "Patientenübersicht"
         patientenansicht_stammdaten.text = ""
+        erstdiagnose_ausgabe.value = ""
+        befallsmuster_ausgabe.value = ""
         diagnosen_liste.clear()
         letzte_befunde_tabelle.options["rowData"] = []
         letzte_befunde_tabelle.update()
+        verlauf_tabelle.options["rowData"] = []
+        verlauf_tabelle.update()
+
+    def oeffne_klinischen_verlauf() -> None:
+        """Zeigt alle bestätigten Fragebogenparameter kumulativ über die Zeit."""
+        if zustand.arbeitsmodus != DATENBANKMODUS or zustand.patient_id is None:
+            setze_status("Bitte zuerst einen Patienten ausdrücklich bestätigen.", fehler=True)
+            return
+        try:
+            with get_session() as sitzung:
+                uebersicht = lade_patientenuebersicht(sitzung, zustand.patient_id)
+                verlauf = lade_klinischen_verlauf(sitzung, zustand.patient_id)
+        except (SQLAlchemyError, ValueError) as fehler:
+            # Es werden keine alten Tabellenzeilen als Ersatz gezeigt. Für lokales
+            # Debugging nur Abfrageart, Exception-Typ und Trefferanzahl untersuchen.
+            setze_status(f"Klinischer Verlauf konnte nicht geladen werden: {fehler}", fehler=True)
+            return
+
+        verlauf_patientenkopf.text = (
+            f"{uebersicht.name} · Patienten-ID: "
+            f"{uebersicht.externe_id or 'nicht hinterlegt'}"
+        )
+        datumsspalten = [
+            {
+                "headerName": datum.strftime("%d.%m.%Y"),
+                "field": datum.isoformat(),
+                "minWidth": 160,
+            }
+            for datum in verlauf.daten
+        ]
+        verlauf_tabelle.options["columnDefs"] = [
+            {
+                "headerName": "Parameter",
+                "field": "kategorie",
+                "pinned": "left",
+                "minWidth": 220,
+            },
+            *datumsspalten,
+        ]
+        verlauf_tabelle.options["rowData"] = [
+            {
+                "kategorie": zeile.kategorie,
+                **{datum.isoformat(): wert for datum, wert in zeile.werte},
+            }
+            for zeile in verlauf.zeilen
+        ]
+        verlauf_tabelle.update()
+        verlauf_hinweis.text = (
+            f"{len(verlauf.zeilen)} Parameter über {len(verlauf.daten)} Befundzeitpunkt(e)"
+            if verlauf.daten
+            else "Noch keine bestätigten CED-Fragebogendaten vorhanden"
+        )
+        verlauf_dialog.open()
+        setze_status("Klinischen CED-Verlauf geöffnet")
 
     def oeffne_patientenansicht() -> None:
         """Lädt eine aktuelle lesende Übersicht des ausdrücklich bestätigten Patienten."""
@@ -615,12 +736,12 @@ def zeige_hauptseite() -> None:
             for diagnose in uebersicht.diagnosen
             if diagnose.erstdiagnose is not None
         ]
-        erstdiagnose_ausgabe.text = (
-            f"Erstdiagnose: {min(erstdiagnosen).strftime('%d.%m.%Y')}"
+        erstdiagnose_ausgabe.value = (
+            min(erstdiagnosen).strftime("%d.%m.%Y")
             if erstdiagnosen
-            else "Erstdiagnose: noch nicht hinterlegt"
+            else ""
         )
-        befallsmuster_ausgabe.text = "Befallsmuster: noch nicht hinterlegt"
+        befallsmuster_ausgabe.value = ""
 
         letzte_befunde_tabelle.options["rowData"] = [
             {
@@ -648,8 +769,10 @@ def zeige_hauptseite() -> None:
         if zustand.arbeitsmodus != DATENBANKMODUS or zustand.patient_id is None:
             ced_navigation.disable()
             patientenansicht_navigation.disable()
+            verlauf_navigation.disable()
             return
         patientenansicht_navigation.enable()
+        verlauf_navigation.enable()
         ist_ced_fragebogen = zustand.dokumenttyp == Dokumenttyp.CED_FRAGEBOGEN.value
         ced_navigation.set_enabled(ist_ced_fragebogen)
         if ist_ced_fragebogen:
@@ -982,6 +1105,7 @@ def zeige_hauptseite() -> None:
             patienten_karte.set_visibility(False)
             ced_navigation.set_visibility(False)
             patientenansicht_navigation.set_visibility(False)
+            verlauf_navigation.set_visibility(False)
             setze_ced_pruefung_zurueck()
             setze_patientenansicht_zurueck()
             setze_status("Lesemodus aktiviert · Datenbankmodus beendet")
@@ -1002,6 +1126,7 @@ def zeige_hauptseite() -> None:
         datenbank_status.text = "Datenbank: aktiviert · geschützter Modus"
         ced_navigation.set_visibility(True)
         patientenansicht_navigation.set_visibility(True)
+        verlauf_navigation.set_visibility(True)
         setze_status(
             "Datenbankmodus aktiviert · Patientenzuordnung ist verfügbar"
         )
@@ -1213,6 +1338,8 @@ def zeige_hauptseite() -> None:
     ced_speichern.on_click(speichere_gepruefte_ced_daten)
     ced_navigation.on_click(oeffne_ced_pruefung)
     patientenansicht_navigation.on_click(oeffne_patientenansicht)
+    verlauf_navigation.on_click(oeffne_klinischen_verlauf)
+    klinischer_verlauf_kachel.on_click(oeffne_klinischen_verlauf)
     upload.on_upload(uebernehme_datei)
     neu_schalter.on_click(beginne_neues_dokument)
     alles_loeschen_schalter.on_click(

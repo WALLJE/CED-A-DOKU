@@ -164,6 +164,23 @@ sind bereits als Orientierung angeordnet, aber noch deaktiviert. Sie werden in
 weiteren Schritten jeweils mit bestätigten, quellenbezogenen Dokumentdaten verbunden.
 Es wird kein Ersatzinhalt aus Freitext oder medizinischem Allgemeinwissen erzeugt.
 
+Die Fachansicht „Klinischer Verlauf“ ist bereits aktiv. Sie stellt sämtliche
+bestätigten Kategorien aus CED-Fragebögen als kumulative Tabelle dar: Kategorien
+stehen in den Zeilen, Befundzeitpunkte in dynamisch erzeugten Spalten. Dadurch lassen
+sich beispielsweise Stuhlfrequenz, Blut im Stuhl, Bauchschmerzen, Skalenwerte und
+Gewicht über mehrere Fragebögen vergleichen. Die Parameter-Spalte bleibt beim
+horizontalen Scrollen sichtbar; viele Parameter und Datumswerte können innerhalb der
+Tabelle vertikal beziehungsweise horizontal gescrollt werden. Laborwerte bleiben
+bewusst außerhalb dieser Ansicht und werden später in der eigenen Laboransicht
+dargestellt.
+
+Auch die kompakte Tabelle des letzten CED-Befunds besitzt nun einen begrenzten
+Scrollbereich und kann den Patientenbildschirm nicht mehr unbegrenzt verbreitern oder
+verlängern. Erstdiagnose und Befallsmuster werden bereits als beschreibbare, vorerst
+schreibgeschützte Formfelder dargestellt. In einem folgenden Freigabeschritt sollen
+fehlende Stammdaten dort manuell ergänzt werden können, ohne aus Dokumentfreitext
+automatisch Ersatzwerte zu erzeugen; Änderungen benötigen dann Quelle und Auditspur.
+
 > **Debugging-Hinweis:** Bleibt die Übersicht trotz gespeicherter CED-Werte leer,
 > zunächst prüfen, ob `confirmed_by_user` gesetzt ist und `patient_id` mit dem oben
 > bestätigten Patienten übereinstimmt. In Debug-Ausgaben nur IDs und Trefferanzahlen,

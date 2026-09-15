@@ -14,6 +14,7 @@ from ced_document_ai.database.models import (
 )
 from ced_document_ai.services.ced.patient_overview import (
     berechne_alter,
+    lade_klinischen_verlauf,
     lade_patientenuebersicht,
 )
 
@@ -97,3 +98,81 @@ def test_uebersicht_zeigt_nur_letztes_befunddatum_und_bestaetigte_werte(
         ("Gewicht", "74 kg")
     ]
     assert uebersicht.diagnosen[0].bezeichnung == "Synthetische Testdiagnose"
+
+
+def test_klinischer_verlauf_pivotiert_bestaetigte_ced_parameter(tmp_path) -> None:
+    fabrik = initialize_database(Settings(database_path=tmp_path / "verlauf.sqlite3"))
+    with fabrik() as sitzung:
+        patient = Patient(external_id="TEST-02", name="Max Beispiel", birth_date=None)
+        dokument = Document(patient_id=None, original_name="test.pdf", confirmed=True)
+        stuhl = FindingCategory(name="Stuhlfrequenz", group_name="CED-Fragebogen")
+        labor = FindingCategory(name="CRP", group_name="Labor")
+        sitzung.add_all([patient, dokument, stuhl, labor])
+        sitzung.flush()
+        dokument.patient_id = patient.id
+        for datum, wert in (
+            (date(2026, 1, 1), "6 pro Tag"),
+            (date(2026, 9, 13), "3 pro Tag"),
+        ):
+            sitzung.add(
+                Finding(
+                    patient_id=patient.id,
+                    document_id=dokument.id,
+                    category_id=stuhl.id,
+                    finding_date=datum,
+                    text_value=wert,
+                    confidence_status=ConfidenceStatus.HIGH_CONFIDENCE,
+                    confirmed_by_user=True,
+                )
+            )
+        sitzung.add(
+            Finding(
+                patient_id=patient.id,
+                document_id=dokument.id,
+                category_id=labor.id,
+                finding_date=date(2026, 9, 13),
+                numeric_value=12,
+                unit="mg/l",
+                confidence_status=ConfidenceStatus.HIGH_CONFIDENCE,
+                confirmed_by_user=True,
+            )
+        )
+        sitzung.commit()
+
+        verlauf = lade_klinischen_verlauf(sitzung, patient.id)
+
+    assert verlauf.daten == (date(2026, 1, 1), date(2026, 9, 13))
+    assert len(verlauf.zeilen) == 1
+    assert verlauf.zeilen[0].kategorie == "Stuhlfrequenz"
+    assert verlauf.zeilen[0].werte == (
+        (date(2026, 1, 1), "6 pro Tag"),
+        (date(2026, 9, 13), "3 pro Tag"),
+    )
+
+
+def test_mehrere_werte_am_selben_tag_werden_nicht_ueberschrieben(tmp_path) -> None:
+    fabrik = initialize_database(Settings(database_path=tmp_path / "doppelt.sqlite3"))
+    with fabrik() as sitzung:
+        patient = Patient(external_id="TEST-03", name="Doppel Beispiel", birth_date=None)
+        dokument = Document(patient_id=None, original_name="test.pdf", confirmed=True)
+        kategorie = FindingCategory(name="Gewicht", group_name="CED-Fragebogen")
+        sitzung.add_all([patient, dokument, kategorie])
+        sitzung.flush()
+        dokument.patient_id = patient.id
+        for wert in ("70 kg", "71 kg"):
+            sitzung.add(
+                Finding(
+                    patient_id=patient.id,
+                    document_id=dokument.id,
+                    category_id=kategorie.id,
+                    finding_date=date(2026, 9, 13),
+                    text_value=wert,
+                    confidence_status=ConfidenceStatus.CONFLICT,
+                    confirmed_by_user=True,
+                )
+            )
+        sitzung.commit()
+
+        verlauf = lade_klinischen_verlauf(sitzung, patient.id)
+
+    assert verlauf.zeilen[0].werte == ((date(2026, 9, 13), "70 kg | 71 kg"),)

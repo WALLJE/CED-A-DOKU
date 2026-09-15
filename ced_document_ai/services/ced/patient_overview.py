@@ -49,6 +49,22 @@ class PatientenUebersicht:
     letzte_befunde: tuple[BefundUebersicht, ...]
 
 
+@dataclass(frozen=True)
+class Verlaufszeile:
+    """Ein klinischer Parameter mit seinen bestätigten Werten je Befunddatum."""
+
+    kategorie: str
+    werte: tuple[tuple[date, str], ...]
+
+
+@dataclass(frozen=True)
+class KlinischerVerlauf:
+    """Dynamische Pivot-Grundlage ohne fest verdrahtete Datums- oder Feldspalten."""
+
+    daten: tuple[date, ...]
+    zeilen: tuple[Verlaufszeile, ...]
+
+
 def berechne_alter(geburtsdatum: date | None, *, am: date | None = None) -> int | None:
     """Berechnet das vollendete Alter dynamisch und speichert es nicht dauerhaft."""
     if geburtsdatum is None:
@@ -100,6 +116,7 @@ def lade_patientenuebersicht(
             .where(
                 Finding.patient_id == patient_id,
                 Finding.confirmed_by_user.is_(True),
+                FindingCategory.group_name == "CED-Fragebogen",
             )
             .order_by(Finding.finding_date.desc(), FindingCategory.name)
         )
@@ -125,3 +142,49 @@ def lade_patientenuebersicht(
         letztes_befunddatum=letztes_datum,
         letzte_befunde=letzte_befunde,
     )
+
+
+def lade_klinischen_verlauf(sitzung: Session, patient_id: int) -> KlinischerVerlauf:
+    """Lädt alle bestätigten CED-Fragebogenparameter als kumulative Zeitansicht.
+
+    Mehrere Werte derselben Kategorie am selben Tag werden nicht überschrieben,
+    sondern sichtbar mit `` | `` verbunden. So bleibt ein möglicher Datenkonflikt
+    prüfbar. Labor- oder Bildgebungswerte gelangen nur dann in diese Ansicht, wenn
+    ihre Kategorie ausdrücklich zur Gruppe ``CED-Fragebogen`` gehört.
+    """
+    if sitzung.get(Patient, patient_id) is None:
+        raise ValueError("Der bestätigte Patient ist nicht mehr vorhanden.")
+    eintraege = list(
+        sitzung.execute(
+            select(Finding, FindingCategory)
+            .join(FindingCategory, Finding.category_id == FindingCategory.id)
+            .where(
+                Finding.patient_id == patient_id,
+                Finding.confirmed_by_user.is_(True),
+                FindingCategory.group_name == "CED-Fragebogen",
+            )
+            .order_by(FindingCategory.name, Finding.finding_date)
+        )
+    )
+    daten = tuple(sorted({befund.finding_date for befund, _ in eintraege}))
+    sammlung: dict[str, dict[date, list[str]]] = {}
+    for befund, kategorie in eintraege:
+        wert = befund.text_value or (
+            str(befund.numeric_value) if befund.numeric_value is not None else ""
+        )
+        if befund.unit and befund.unit not in wert:
+            wert = f"{wert} {befund.unit}".strip()
+        sammlung.setdefault(kategorie.name, {}).setdefault(
+            befund.finding_date, []
+        ).append(wert)
+    zeilen = tuple(
+        Verlaufszeile(
+            kategorie=kategorie,
+            werte=tuple(
+                (datum, " | ".join(werte))
+                for datum, werte in sorted(werte_nach_datum.items())
+            ),
+        )
+        for kategorie, werte_nach_datum in sorted(sammlung.items())
+    )
+    return KlinischerVerlauf(daten=daten, zeilen=zeilen)
