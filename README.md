@@ -143,3 +143,28 @@ Datenbank und darf deshalb später mit realen Daten nicht mehr verwendet werden.
 > die strukturierte Darstellung auf eine eigene Zeile im Format `Feldname: Wert`
 > prüfen. Unbeschrifteter Freitext wird absichtlich nicht geraten. Zum Debugging
 > höchstens Feldname und Parserstatus verwenden, niemals den medizinischen Wert.
+
+## Patientenübersicht
+
+Nach bestätigter Patientenzuordnung steht in der geschützten Seitenleiste zusätzlich
+„Patientenübersicht“ zur Verfügung. Die lesende Übersicht zeigt Name, Geburtsdatum,
+Patienten-ID und das am aktuellen Tag berechnete vollendete Alter. Das Alter wird
+nicht gespeichert; bei fehlendem oder zukünftigem Geburtsdatum wird ausdrücklich
+„nicht berechenbar“ angezeigt.
+
+Darunter erscheinen bereits gespeicherte Diagnosen mit Status und möglichem
+Erstdiagnosedatum sowie die Werte des jüngsten bestätigten CED-Befunddatums. Da das
+aktuelle Datenmodell Haupt- und Nebendiagnosen noch nicht sicher unterscheidet, wird
+keine Diagnose willkürlich zur Hauptdiagnose erklärt. CED-Stammdaten wie
+Befallsmuster sowie medikamentöser und chirurgischer Therapieverlauf bleiben bis zu
+ihrer späteren strukturierten Erfassung sichtbar leer.
+
+Die vorgesehenen Bereiche Labor, Calprotectin, Endoskopie, Sonografie und MRT/CT
+sind bereits als Orientierung angeordnet, aber noch deaktiviert. Sie werden in
+weiteren Schritten jeweils mit bestätigten, quellenbezogenen Dokumentdaten verbunden.
+Es wird kein Ersatzinhalt aus Freitext oder medizinischem Allgemeinwissen erzeugt.
+
+> **Debugging-Hinweis:** Bleibt die Übersicht trotz gespeicherter CED-Werte leer,
+> zunächst prüfen, ob `confirmed_by_user` gesetzt ist und `patient_id` mit dem oben
+> bestätigten Patienten übereinstimmt. In Debug-Ausgaben nur IDs und Trefferanzahlen,
+> niemals Namen, Diagnosen oder Befundwerte verwenden.

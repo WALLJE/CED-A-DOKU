@@ -36,6 +36,7 @@ from ced_document_ai.services.ced.patient_matching import (
     erkenne_patientendaten,
     ermittle_patiententreffer,
 )
+from ced_document_ai.services.ced.patient_overview import lade_patientenuebersicht
 from ced_document_ai.services.ced.questionnaire_parser import (
     ExtrahierterBefund,
     erkenne_befunddatum,
@@ -188,10 +189,15 @@ def zeige_hauptseite() -> None:
         ced_navigation = ui.button(
             "CED-Daten einlesen", icon="fact_check"
         ).props("outline color=teal-8").classes("w-full mt-3")
+        patientenansicht_navigation = ui.button(
+            "Patientenübersicht", icon="person"
+        ).props("outline color=teal-8").classes("w-full mt-2")
         # Der Menüpunkt darf vor der Passwortfreigabe keine Rückschlüsse auf
         # Patientendaten oder vorbereitete Befunde ermöglichen.
         ced_navigation.set_visibility(False)
         ced_navigation.disable()
+        patientenansicht_navigation.set_visibility(False)
+        patientenansicht_navigation.disable()
 
         # Sämtliche Status- und Bedienhinweise stehen gebündelt am unteren linken
         # Rand der Steuerung. So überdecken weder Toasts noch frei schwebende Chips
@@ -405,6 +411,110 @@ def zeige_hauptseite() -> None:
                             ).props("color=teal-8 unelevated").classes("w-full")
                             ced_speichern.disable()
 
+                    # Die erste Patientenansicht ist bewusst eine kompakte lesende
+                    # Übersicht. Noch nicht strukturierte Bereiche bleiben sichtbar
+                    # leer, damit keine medizinischen Inhalte aus Freitext geraten
+                    # oder vermeintlich vollständig dargestellt werden.
+                    with ui.dialog().props("maximized").classes(
+                        "ced-pruefdialog"
+                    ) as patientenansicht_dialog:
+                        with ui.card().classes("ced-pruefseite p-6 md:p-8 gap-5"):
+                            with ui.row().classes(
+                                "w-full items-start justify-between gap-3"
+                            ):
+                                with ui.column().classes("gap-0"):
+                                    patientenansicht_name = ui.label(
+                                        "Patientenübersicht"
+                                    ).classes("text-2xl font-bold text-teal-900")
+                                    patientenansicht_stammdaten = ui.label("").classes(
+                                        "text-slate-600"
+                                    )
+                                ui.button(
+                                    "Zurück zum Einlesen",
+                                    icon="arrow_back",
+                                    on_click=patientenansicht_dialog.close,
+                                ).props("outline color=teal-8")
+
+                            with ui.row().classes(
+                                "w-full gap-4 items-stretch flex-wrap lg:flex-nowrap"
+                            ):
+                                with ui.card().classes("arbeitskarte flex-1 p-5"):
+                                    ui.label("Diagnosen").classes("bereichstitel")
+                                    hauptdiagnose_ausgabe = ui.label(
+                                        "Hauptdiagnose: noch nicht klassifiziert"
+                                    )
+                                    ui.label("Weitere gespeicherte Diagnosen").classes(
+                                        "font-semibold text-slate-700 mt-2"
+                                    )
+                                    diagnosen_liste = ui.column().classes("gap-1")
+                                with ui.card().classes("arbeitskarte flex-1 p-5"):
+                                    ui.label("CED-Stammdaten").classes("bereichstitel")
+                                    erstdiagnose_ausgabe = ui.label(
+                                        "Erstdiagnose: noch nicht hinterlegt"
+                                    )
+                                    befallsmuster_ausgabe = ui.label(
+                                        "Befallsmuster: noch nicht hinterlegt"
+                                    )
+
+                            with ui.row().classes(
+                                "w-full gap-4 items-stretch flex-wrap lg:flex-nowrap"
+                            ):
+                                with ui.card().classes("arbeitskarte flex-1 p-5"):
+                                    ui.label("Therapieverlauf").classes("bereichstitel")
+                                    ui.label(
+                                        "Medikamentös: noch kein bestätigter Verlauf"
+                                    )
+                                    ui.label(
+                                        "Chirurgisch: noch kein bestätigter Verlauf"
+                                    )
+                                with ui.card().classes("arbeitskarte flex-1 p-5"):
+                                    ui.label("Fachansichten").classes("bereichstitel")
+                                    ui.label(
+                                        "Die Fachbereiche werden schrittweise an bestätigte Dokumentdaten angebunden."
+                                    ).classes("text-slate-600")
+                                    with ui.row().classes("gap-2 flex-wrap"):
+                                        for titel in (
+                                            "Labor",
+                                            "Calprotectin",
+                                            "Endoskopie",
+                                            "Sonografie",
+                                            "MRT / CT",
+                                        ):
+                                            ui.button(titel).props(
+                                                "outline color=teal-8 disable"
+                                            )
+
+                            with ui.card().classes("arbeitskarte w-full p-5"):
+                                letzte_befunde_titel = ui.label(
+                                    "Letzter bestätigter CED-Befund"
+                                ).classes("bereichstitel")
+                                letzte_befunde_hinweis = ui.label("").classes(
+                                    "text-slate-600"
+                                )
+                                letzte_befunde_tabelle = ui.aggrid(
+                                    {
+                                        "columnDefs": [
+                                            {
+                                                "headerName": "Kategorie",
+                                                "field": "kategorie",
+                                                "flex": 1,
+                                            },
+                                            {
+                                                "headerName": "Wert",
+                                                "field": "wert",
+                                                "flex": 1,
+                                            },
+                                            {
+                                                "headerName": "Einheit",
+                                                "field": "einheit",
+                                                "width": 130,
+                                            },
+                                        ],
+                                        "rowData": [],
+                                        "domLayout": "autoHeight",
+                                    }
+                                ).classes("w-full")
+
     def setze_status(text: str, *, fehler: bool = False) -> None:
         """Zeigt den letzten Arbeitsschritt dauerhaft und ohne sensible Inhalte an.
 
@@ -445,11 +555,101 @@ def zeige_hauptseite() -> None:
         ced_patientenkopf.text = "Noch kein Patient bestätigt"
         ced_dialog.close()
 
+    def setze_patientenansicht_zurueck() -> None:
+        """Entfernt sichtbare Patientendaten unmittelbar bei aufgehobener Zuordnung."""
+        patientenansicht_navigation.disable()
+        patientenansicht_dialog.close()
+        patientenansicht_name.text = "Patientenübersicht"
+        patientenansicht_stammdaten.text = ""
+        diagnosen_liste.clear()
+        letzte_befunde_tabelle.options["rowData"] = []
+        letzte_befunde_tabelle.update()
+
+    def oeffne_patientenansicht() -> None:
+        """Lädt eine aktuelle lesende Übersicht des ausdrücklich bestätigten Patienten."""
+        if zustand.arbeitsmodus != DATENBANKMODUS or zustand.patient_id is None:
+            setze_status("Bitte zuerst einen Patienten ausdrücklich bestätigen.", fehler=True)
+            return
+        try:
+            with get_session() as sitzung:
+                uebersicht = lade_patientenuebersicht(sitzung, zustand.patient_id)
+        except (SQLAlchemyError, ValueError) as fehler:
+            # Kein Fallback auf alte Sitzungsdaten: Bei einem Abfragefehler bleibt die
+            # Ansicht geschlossen. Zum Debugging nur Exception-Typ und Tabellenname,
+            # niemals medizinische Inhalte oder Stammdaten protokollieren.
+            setze_status(f"Patientenübersicht konnte nicht geladen werden: {fehler}", fehler=True)
+            return
+
+        patientenansicht_name.text = uebersicht.name
+        geburtsdatum_text = (
+            uebersicht.geburtsdatum.strftime("%d.%m.%Y")
+            if uebersicht.geburtsdatum
+            else "nicht hinterlegt"
+        )
+        alter_text = f"{uebersicht.alter} Jahre" if uebersicht.alter is not None else "nicht berechenbar"
+        patientenansicht_stammdaten.text = (
+            f"Geburtsdatum: {geburtsdatum_text} · Alter: {alter_text} · "
+            f"Patienten-ID: {uebersicht.externe_id or 'nicht hinterlegt'}"
+        )
+
+        # Haupt- und Nebendiagnosen können mit dem aktuellen Schema noch nicht sicher
+        # unterschieden werden. Vorhandene Einträge werden deshalb gemeinsam und mit
+        # Status gezeigt, statt willkürlich eine Hauptdiagnose zu bestimmen.
+        hauptdiagnose_ausgabe.text = "Hauptdiagnose: noch nicht klassifiziert"
+        diagnosen_liste.clear()
+        with diagnosen_liste:
+            if not uebersicht.diagnosen:
+                ui.label("Noch keine bestätigte Diagnose vorhanden").classes(
+                    "text-slate-500 italic"
+                )
+            for diagnose in uebersicht.diagnosen:
+                datum = (
+                    diagnose.erstdiagnose.strftime("%d.%m.%Y")
+                    if diagnose.erstdiagnose
+                    else "Datum offen"
+                )
+                ui.label(f"• {diagnose.bezeichnung} · {diagnose.status} · {datum}")
+
+        erstdiagnosen = [
+            diagnose.erstdiagnose
+            for diagnose in uebersicht.diagnosen
+            if diagnose.erstdiagnose is not None
+        ]
+        erstdiagnose_ausgabe.text = (
+            f"Erstdiagnose: {min(erstdiagnosen).strftime('%d.%m.%Y')}"
+            if erstdiagnosen
+            else "Erstdiagnose: noch nicht hinterlegt"
+        )
+        befallsmuster_ausgabe.text = "Befallsmuster: noch nicht hinterlegt"
+
+        letzte_befunde_tabelle.options["rowData"] = [
+            {
+                "kategorie": befund.kategorie,
+                "wert": befund.wert,
+                "einheit": befund.einheit or "",
+            }
+            for befund in uebersicht.letzte_befunde
+        ]
+        letzte_befunde_tabelle.update()
+        if uebersicht.letztes_befunddatum:
+            letztes_datum = uebersicht.letztes_befunddatum.strftime("%d.%m.%Y")
+            letzte_befunde_titel.text = f"Letzter bestätigter CED-Befund · {letztes_datum}"
+            letzte_befunde_hinweis.text = (
+                f"{len(uebersicht.letzte_befunde)} bestätigte Feld(er)"
+            )
+        else:
+            letzte_befunde_titel.text = "Letzter bestätigter CED-Befund"
+            letzte_befunde_hinweis.text = "Noch keine bestätigten Befunde vorhanden"
+        patientenansicht_dialog.open()
+        setze_status("Patientenübersicht geöffnet")
+
     def aktualisiere_ced_bereitschaft() -> None:
         """Öffnet die CED-Prüfung nur bei bestätigtem Patient und passendem Dokument."""
         if zustand.arbeitsmodus != DATENBANKMODUS or zustand.patient_id is None:
             ced_navigation.disable()
+            patientenansicht_navigation.disable()
             return
+        patientenansicht_navigation.enable()
         ist_ced_fragebogen = zustand.dokumenttyp == Dokumenttyp.CED_FRAGEBOGEN.value
         ced_navigation.set_enabled(ist_ced_fragebogen)
         if ist_ced_fragebogen:
@@ -646,6 +846,7 @@ def zeige_hauptseite() -> None:
         patienten_karte.set_visibility(True)
         zustand.patient_id = None
         setze_ced_pruefung_zurueck()
+        setze_patientenansicht_zurueck()
         zustand.erkannte_patientendaten = erkenne_patientendaten(
             zustand.ausgelesener_inhalt
         )
@@ -780,7 +981,9 @@ def zeige_hauptseite() -> None:
             patienten_auswahl.update()
             patienten_karte.set_visibility(False)
             ced_navigation.set_visibility(False)
+            patientenansicht_navigation.set_visibility(False)
             setze_ced_pruefung_zurueck()
+            setze_patientenansicht_zurueck()
             setze_status("Lesemodus aktiviert · Datenbankmodus beendet")
             return
 
@@ -798,6 +1001,7 @@ def zeige_hauptseite() -> None:
         datenbank_schalter.text = "Datenbankmodus beenden"
         datenbank_status.text = "Datenbank: aktiviert · geschützter Modus"
         ced_navigation.set_visibility(True)
+        patientenansicht_navigation.set_visibility(True)
         setze_status(
             "Datenbankmodus aktiviert · Patientenzuordnung ist verfügbar"
         )
@@ -1008,6 +1212,7 @@ def zeige_hauptseite() -> None:
     patient_anlegen.on_click(lege_patient_an)
     ced_speichern.on_click(speichere_gepruefte_ced_daten)
     ced_navigation.on_click(oeffne_ced_pruefung)
+    patientenansicht_navigation.on_click(oeffne_patientenansicht)
     upload.on_upload(uebernehme_datei)
     neu_schalter.on_click(beginne_neues_dokument)
     alles_loeschen_schalter.on_click(
