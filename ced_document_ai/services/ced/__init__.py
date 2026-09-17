@@ -27,6 +27,12 @@ from ced_document_ai.services.ced.patient_overview import (
     lade_klinischen_verlauf,
     lade_patientenuebersicht,
 )
+from ced_document_ai.services.ced.patient_profile import (
+    BEFALLSMUSTER,
+    ERSTDIAGNOSE,
+    ManuelleCEDStammdaten,
+    speichere_manuelle_stammdaten,
+)
 
 __all__ = [
     "ErkanntePatientendaten",
@@ -48,4 +54,8 @@ __all__ = [
     "berechne_alter",
     "lade_klinischen_verlauf",
     "lade_patientenuebersicht",
+    "BEFALLSMUSTER",
+    "ERSTDIAGNOSE",
+    "ManuelleCEDStammdaten",
+    "speichere_manuelle_stammdaten",
 ]

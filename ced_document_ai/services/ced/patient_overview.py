@@ -14,7 +14,14 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ced_document_ai.database.models import Diagnosis, Finding, FindingCategory, Patient
+from ced_document_ai.database.models import (
+    Diagnosis,
+    Finding,
+    FindingCategory,
+    Patient,
+    PatientCEDAttribute,
+)
+from ced_document_ai.services.ced.patient_profile import BEFALLSMUSTER, ERSTDIAGNOSE
 
 
 @dataclass(frozen=True)
@@ -44,6 +51,8 @@ class PatientenUebersicht:
     name: str
     geburtsdatum: date | None
     alter: int | None
+    erstdiagnose: date | None
+    befallsmuster: str | None
     diagnosen: tuple[DiagnoseUebersicht, ...]
     letztes_befunddatum: date | None
     letzte_befunde: tuple[BefundUebersicht, ...]
@@ -132,12 +141,36 @@ def lade_patientenuebersicht(
         for befund, kategorie in befundzeilen
         if befund.finding_date == letztes_datum
     )
+    # Die Stammdaten werden versioniert gespeichert. Für die kompakte Übersicht ist
+    # jeweils nur die jüngste ausdrücklich bestätigte Version relevant. Die ID dient
+    # bei identischen Zeitstempeln als stabile Reihenfolge.
+    attribute = {
+        attributtyp: sitzung.scalar(
+            select(PatientCEDAttribute)
+            .where(
+                PatientCEDAttribute.patient_id == patient_id,
+                PatientCEDAttribute.attribute_type == attributtyp,
+                PatientCEDAttribute.confirmed_by_user.is_(True),
+            )
+            .order_by(
+                PatientCEDAttribute.created_at.desc(), PatientCEDAttribute.id.desc()
+            )
+            .limit(1)
+        )
+        for attributtyp in (ERSTDIAGNOSE, BEFALLSMUSTER)
+    }
     return PatientenUebersicht(
         patient_id=patient.id,
         externe_id=patient.external_id,
         name=patient.name,
         geburtsdatum=patient.birth_date,
         alter=berechne_alter(patient.birth_date, am=stichtag),
+        erstdiagnose=(
+            attribute[ERSTDIAGNOSE].date_value if attribute[ERSTDIAGNOSE] else None
+        ),
+        befallsmuster=(
+            attribute[BEFALLSMUSTER].text_value if attribute[BEFALLSMUSTER] else None
+        ),
         diagnosen=diagnosen,
         letztes_befunddatum=letztes_datum,
         letzte_befunde=letzte_befunde,

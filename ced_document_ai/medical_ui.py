@@ -40,6 +40,10 @@ from ced_document_ai.services.ced.patient_overview import (
     lade_klinischen_verlauf,
     lade_patientenuebersicht,
 )
+from ced_document_ai.services.ced.patient_profile import (
+    ManuelleCEDStammdaten,
+    speichere_manuelle_stammdaten,
+)
 from ced_document_ai.services.ced.questionnaire_parser import (
     ExtrahierterBefund,
     erkenne_befunddatum,
@@ -459,20 +463,31 @@ def zeige_hauptseite() -> None:
                                     diagnosen_liste = ui.column().classes("gap-1")
                                 with ui.card().classes("arbeitskarte flex-1 p-5"):
                                     ui.label("CED-Stammdaten").classes("bereichstitel")
-                                    # Bereits jetzt werden beschreibbare Formfelder
-                                    # verwendet. Sie bleiben in diesem Schritt noch
-                                    # schreibgeschützt; eine spätere manuelle Freigabe
-                                    # kann deshalb ohne erneuten Layoutumbau folgen.
+                                    # Erst der bewusste Bearbeitungsschalter gibt die
+                                    # Felder frei. Neue Werte werden versioniert,
+                                    # statt bestehende Angaben zu überschreiben.
                                     erstdiagnose_ausgabe = ui.input(
                                         "Erstdiagnose",
                                         value="",
                                         placeholder="noch nicht hinterlegt",
-                                    ).props("outlined dense readonly").classes("w-full")
+                                    ).props("outlined dense readonly type=date").classes("w-full")
                                     befallsmuster_ausgabe = ui.input(
                                         "Befallsmuster",
                                         value="",
                                         placeholder="noch nicht hinterlegt",
                                     ).props("outlined dense readonly").classes("w-full")
+                                    with ui.row().classes("w-full gap-2 flex-wrap"):
+                                        stammdaten_bearbeiten = ui.button(
+                                            "Stammdaten bearbeiten", icon="edit"
+                                        ).props("outline color=teal-8")
+                                        stammdaten_speichern = ui.button(
+                                            "Stammdaten speichern", icon="save"
+                                        ).props("color=teal-8")
+                                        stammdaten_abbrechen = ui.button(
+                                            "Abbrechen", icon="close"
+                                        ).props("flat color=grey-7")
+                                    stammdaten_speichern.set_visibility(False)
+                                    stammdaten_abbrechen.set_visibility(False)
 
                             with ui.row().classes(
                                 "w-full gap-4 items-stretch flex-wrap lg:flex-nowrap"
@@ -618,6 +633,85 @@ def zeige_hauptseite() -> None:
         ced_patientenkopf.text = "Noch kein Patient bestätigt"
         ced_dialog.close()
 
+    # Nur der zuletzt geladene Formularstand wird gemerkt. So kann „Abbrechen“ ihn
+    # wiederherstellen und unveränderte Felder werden nicht erneut versioniert.
+    stammdaten_original = {"erstdiagnose": "", "befallsmuster": ""}
+
+    def setze_stammdaten_bearbeitung(aktiv: bool) -> None:
+        """Schaltet die manuelle Bearbeitung sichtbar und nachvollziehbar um."""
+        if aktiv:
+            erstdiagnose_ausgabe.props(remove="readonly")
+            befallsmuster_ausgabe.props(remove="readonly")
+        else:
+            erstdiagnose_ausgabe.props(add="readonly")
+            befallsmuster_ausgabe.props(add="readonly")
+        stammdaten_bearbeiten.set_visibility(not aktiv)
+        stammdaten_speichern.set_visibility(aktiv)
+        stammdaten_abbrechen.set_visibility(aktiv)
+
+    def beginne_stammdaten_bearbeitung() -> None:
+        """Gibt Erstdiagnose und Befallsmuster erst nach bewusstem Klick frei."""
+        if zustand.patient_id is None:
+            setze_status("Bitte zuerst einen Patienten ausdrücklich bestätigen.", fehler=True)
+            return
+        setze_stammdaten_bearbeitung(True)
+        setze_status("CED-Stammdaten können jetzt manuell ergänzt werden")
+
+    def breche_stammdaten_bearbeitung_ab() -> None:
+        """Verwirft ausschließlich ungespeicherte Eingaben dieser Sitzung."""
+        erstdiagnose_ausgabe.value = stammdaten_original["erstdiagnose"]
+        befallsmuster_ausgabe.value = stammdaten_original["befallsmuster"]
+        setze_stammdaten_bearbeitung(False)
+        setze_status("Ungespeicherte Stammdatenänderungen wurden verworfen")
+
+    def speichere_patientenstammdaten() -> None:
+        """Versioniert ausschließlich tatsächlich geänderte, ausgefüllte Werte."""
+        if zustand.patient_id is None:
+            setze_status("Bitte zuerst einen Patienten ausdrücklich bestätigen.", fehler=True)
+            return
+        erstdiagnose_text = str(erstdiagnose_ausgabe.value or "").strip()
+        befallsmuster_text = str(befallsmuster_ausgabe.value or "").strip()
+        try:
+            geaenderte_erstdiagnose = (
+                date.fromisoformat(erstdiagnose_text)
+                if erstdiagnose_text
+                and erstdiagnose_text != stammdaten_original["erstdiagnose"]
+                else None
+            )
+        except ValueError:
+            setze_status("Bitte die Erstdiagnose vollständig eingeben.", fehler=True)
+            return
+        geaendertes_befallsmuster = (
+            befallsmuster_text
+            if befallsmuster_text
+            and befallsmuster_text != stammdaten_original["befallsmuster"]
+            else None
+        )
+        if geaenderte_erstdiagnose is None and geaendertes_befallsmuster is None:
+            setze_status(
+                "Keine neue ausgefüllte Angabe; leere Felder löschen keine Historie.",
+                fehler=True,
+            )
+            return
+        try:
+            with get_session() as sitzung:
+                anzahl = speichere_manuelle_stammdaten(
+                    sitzung,
+                    zustand.patient_id,
+                    ManuelleCEDStammdaten(
+                        erstdiagnose=geaenderte_erstdiagnose,
+                        befallsmuster=geaendertes_befallsmuster,
+                    ),
+                )
+        except (SQLAlchemyError, ValueError) as fehler:
+            # Kein Fallback auf den Formularstand: Bei Fehler bleibt die Bearbeitung
+            # offen. Zum Debugging dürfen Feldwerte nicht protokolliert werden.
+            setze_status(f"CED-Stammdaten konnten nicht gespeichert werden: {fehler}", fehler=True)
+            return
+        setze_stammdaten_bearbeitung(False)
+        oeffne_patientenansicht()
+        setze_status(f"{anzahl} CED-Stammdatenfeld(er) versioniert gespeichert")
+
     def setze_patientenansicht_zurueck() -> None:
         """Entfernt sichtbare Patientendaten unmittelbar bei aufgehobener Zuordnung."""
         patientenansicht_navigation.disable()
@@ -628,6 +722,8 @@ def zeige_hauptseite() -> None:
         patientenansicht_stammdaten.text = ""
         erstdiagnose_ausgabe.value = ""
         befallsmuster_ausgabe.value = ""
+        stammdaten_original.update(erstdiagnose="", befallsmuster="")
+        setze_stammdaten_bearbeitung(False)
         diagnosen_liste.clear()
         letzte_befunde_tabelle.options["rowData"] = []
         letzte_befunde_tabelle.update()
@@ -731,17 +827,15 @@ def zeige_hauptseite() -> None:
                 )
                 ui.label(f"• {diagnose.bezeichnung} · {diagnose.status} · {datum}")
 
-        erstdiagnosen = [
-            diagnose.erstdiagnose
-            for diagnose in uebersicht.diagnosen
-            if diagnose.erstdiagnose is not None
-        ]
         erstdiagnose_ausgabe.value = (
-            min(erstdiagnosen).strftime("%d.%m.%Y")
-            if erstdiagnosen
-            else ""
+            uebersicht.erstdiagnose.isoformat() if uebersicht.erstdiagnose else ""
         )
-        befallsmuster_ausgabe.value = ""
+        befallsmuster_ausgabe.value = uebersicht.befallsmuster or ""
+        stammdaten_original.update(
+            erstdiagnose=str(erstdiagnose_ausgabe.value or ""),
+            befallsmuster=str(befallsmuster_ausgabe.value or ""),
+        )
+        setze_stammdaten_bearbeitung(False)
 
         letzte_befunde_tabelle.options["rowData"] = [
             {
@@ -1338,6 +1432,9 @@ def zeige_hauptseite() -> None:
     ced_speichern.on_click(speichere_gepruefte_ced_daten)
     ced_navigation.on_click(oeffne_ced_pruefung)
     patientenansicht_navigation.on_click(oeffne_patientenansicht)
+    stammdaten_bearbeiten.on_click(beginne_stammdaten_bearbeitung)
+    stammdaten_speichern.on_click(speichere_patientenstammdaten)
+    stammdaten_abbrechen.on_click(breche_stammdaten_bearbeitung_ab)
     verlauf_navigation.on_click(oeffne_klinischen_verlauf)
     klinischer_verlauf_kachel.on_click(oeffne_klinischen_verlauf)
     upload.on_upload(uebernehme_datei)

@@ -155,9 +155,9 @@ nicht gespeichert; bei fehlendem oder zukünftigem Geburtsdatum wird ausdrückli
 Darunter erscheinen bereits gespeicherte Diagnosen mit Status und möglichem
 Erstdiagnosedatum sowie die Werte des jüngsten bestätigten CED-Befunddatums. Da das
 aktuelle Datenmodell Haupt- und Nebendiagnosen noch nicht sicher unterscheidet, wird
-keine Diagnose willkürlich zur Hauptdiagnose erklärt. CED-Stammdaten wie
-Befallsmuster sowie medikamentöser und chirurgischer Therapieverlauf bleiben bis zu
-ihrer späteren strukturierten Erfassung sichtbar leer.
+keine Diagnose willkürlich zur Hauptdiagnose erklärt. CED-Stammdaten sowie der
+medikamentöse und chirurgische Therapieverlauf bleiben ohne bestätigte Erfassung
+sichtbar leer.
 
 Die vorgesehenen Bereiche Labor, Calprotectin, Endoskopie, Sonografie und MRT/CT
 sind bereits als Orientierung angeordnet, aber noch deaktiviert. Sie werden in
@@ -176,10 +176,14 @@ dargestellt.
 
 Auch die kompakte Tabelle des letzten CED-Befunds besitzt nun einen begrenzten
 Scrollbereich und kann den Patientenbildschirm nicht mehr unbegrenzt verbreitern oder
-verlängern. Erstdiagnose und Befallsmuster werden bereits als beschreibbare, vorerst
-schreibgeschützte Formfelder dargestellt. In einem folgenden Freigabeschritt sollen
-fehlende Stammdaten dort manuell ergänzt werden können, ohne aus Dokumentfreitext
-automatisch Ersatzwerte zu erzeugen; Änderungen benötigen dann Quelle und Auditspur.
+verlängern. Erstdiagnose und Befallsmuster starten als schreibgeschützte Formfelder.
+Über „Stammdaten bearbeiten“ können fehlende oder zu korrigierende Angaben bewusst
+freigegeben und gespeichert werden. Jede Speicherung legt eine neue bestätigte
+Version mit der Quelle „MANUELL“ und einem Audit-Eintrag an; ältere Versionen bleiben
+erhalten. Leere Felder löschen keine frühere Angabe und unveränderte Werte werden
+nicht erneut versioniert. Die automatische Übernahme solcher Stammdaten aus
+Dokumenten bleibt einem späteren, ebenfalls bestätigungspflichtigen Schritt
+vorbehalten.
 
 > **Debugging-Hinweis:** Bleibt die Übersicht trotz gespeicherter CED-Werte leer,
 > zunächst prüfen, ob `confirmed_by_user` gesetzt ist und `patient_id` mit dem oben
