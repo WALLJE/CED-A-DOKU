@@ -163,15 +163,20 @@ def zeige_hauptseite() -> None:
           }
           .ergebnistext textarea { min-height: 330px !important;
             font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
-          /* Die CED-Prüfung besitzt einen eigenen Vollbild-Arbeitsbereich. Die feste
-             Tabellenhöhe hält Kopf, Befunddatum und Speicherschalter erreichbar;
-             umfangreiche Befundlisten scrollen ausschließlich innerhalb des Rasters. */
-          .ced-pruefdialog .q-dialog__inner { padding: 0; }
-          .ced-pruefseite { width: 100vw; max-width: none !important; min-height: 100vh;
+          /* Die feste Tabellenhöhe hält Kopf, Befunddatum und Speicherschalter
+             erreichbar; umfangreiche Listen scrollen innerhalb des Rasters. */
+          /* Die Arbeitsansichten belegen nur den Bereich rechts neben dem Drawer.
+             ``seamless`` lässt die Navigation bedienbar und vermeidet eine modale
+             Vollbildschicht. Bei geänderter Drawerbreite beide 300px-Werte anpassen. */
+          .ced-pruefdialog .q-dialog__inner { padding: 0; left: 300px; }
+          .ced-pruefseite { width: calc(100vw - 300px); max-width: none !important; min-height: 100vh;
             border-radius: 0; margin: 0; background: #f3f7f7; }
           .ced-tabellenrahmen { height: min(58vh, 680px); min-height: 320px; }
           .patienten-kurztabelle { height: 280px; min-height: 220px; }
           .verlaufs-tabelle { height: min(66vh, 720px); min-height: 360px; }
+          .ced-fehler { color: #991b1b !important; background: #fee2e2;
+            border: 2px solid #dc2626; border-radius: 10px; padding: 12px 14px;
+            font-weight: 700; width: 100%; }
         </style>
     """)
 
@@ -193,11 +198,35 @@ def zeige_hauptseite() -> None:
             "font-semibold text-slate-700"
         )
         aktiver_patient_auswahl = ui.select(
-            options={}, label="Patient für die Fachansichten"
+            options={}, label="Patient auswählen"
         ).props("outlined dense clearable").classes("w-full mt-1")
+        dokument_patienten_hinweis = ui.label("").classes("text-xs text-slate-600")
+        neuer_patient_schalter = ui.button(
+            "Neuer Patient", icon="person_add"
+        ).props("outline color=teal-8").classes("w-full")
+        with ui.column().classes("w-full gap-2") as neuer_patient_formular:
+            neue_patienten_id = ui.input("Patienten-ID").props(
+                "outlined dense"
+            ).classes("w-full")
+            neuer_nachname = ui.input("Nachname").props(
+                "outlined dense"
+            ).classes("w-full")
+            neuer_vorname = ui.input("Vorname").props(
+                "outlined dense"
+            ).classes("w-full")
+            neues_geburtsdatum = ui.input("Geburtsdatum").props(
+                "outlined dense type=date"
+            ).classes("w-full")
+            patient_anlegen = ui.button(
+                "Patient anlegen", icon="person_add"
+            ).props("color=teal-8").classes("w-full")
+        neuer_patient_formular.set_visibility(False)
         ced_navigation = ui.button(
-            "CED-Daten einlesen", icon="fact_check"
+            "Daten zuordnen", icon="fact_check"
         ).props("outline color=teal-8").classes("w-full mt-3")
+        einlesen_navigation = ui.button(
+            "Dokument einlesen", icon="document_scanner"
+        ).props("outline color=teal-8").classes("w-full mt-2")
         patientenansicht_navigation = ui.button(
             "Patientenübersicht", icon="person"
         ).props("outline color=teal-8").classes("w-full mt-2")
@@ -221,8 +250,11 @@ def zeige_hauptseite() -> None:
         # Patientendaten oder vorbereitete Befunde ermöglichen.
         datenbank_navigation_titel.set_visibility(False)
         aktiver_patient_auswahl.set_visibility(False)
+        dokument_patienten_hinweis.set_visibility(False)
+        neuer_patient_schalter.set_visibility(False)
         ced_navigation.set_visibility(False)
         ced_navigation.disable()
+        einlesen_navigation.set_visibility(False)
         patientenansicht_navigation.set_visibility(False)
         patientenansicht_navigation.disable()
         verlauf_navigation.set_visibility(False)
@@ -268,7 +300,9 @@ def zeige_hauptseite() -> None:
     with ui.column().classes("w-full min-h-screen"):
         with ui.column().classes("medizin-kopf w-full px-8 py-7 gap-1"):
             ui.label("Medizinische Dokumentation").classes("medizin-kicker")
-            ui.label("CED-A-DOKU").classes("text-3xl font-bold")
+            hauptueberschrift = ui.label("Auslesen von Dokumenten").classes(
+                "text-3xl font-bold"
+            )
             ui.label("Assistierte Auslesung medizinischer Dokumente").classes(
                 "text-teal-50"
             )
@@ -339,47 +373,10 @@ def zeige_hauptseite() -> None:
                             "Angezeigten Text kopieren", icon="content_copy"
                         ).props("color=teal-8 unelevated").classes("w-full")
 
-                    # Der Bereich bleibt nicht nur deaktiviert, sondern vollständig
-                    # verborgen, bis das Administrationspasswort bestätigt wurde.
-                    # Seine Auswahlliste wird erst beim Entsperren aus SQLite gefüllt,
-                    # damit Patientendaten vorher nicht an den Browser gelangen.
-                    with ui.card().classes("arbeitskarte w-full p-5") as patienten_karte:
-                        ui.label("Patientenzuordnung").classes("bereichstitel")
-                        patienten_hinweis = ui.label(
-                            "Nach dem Auslesen werden mögliche Patienten vorgeschlagen."
-                        ).classes("text-slate-600")
-                        patienten_auswahl = ui.select(
-                            options={}, label="Patient aus Verzeichnis auswählen"
-                        ).props("outlined dense clearable").classes("w-full")
-                        patient_bestaetigen = ui.button(
-                            "Ausgewählten Patienten bestätigen", icon="person_check"
-                        ).props("color=teal-8 unelevated").classes("w-full")
-                        ui.separator()
-                        ui.label("Oder neuen Patienten anlegen").classes(
-                            "font-semibold text-slate-700"
-                        )
-                        neue_patienten_id = ui.input("Patienten-ID").props(
-                            "outlined dense"
-                        ).classes("w-full")
-                        neuer_nachname = ui.input("Nachname").props(
-                            "outlined dense"
-                        ).classes("w-full")
-                        neuer_vorname = ui.input("Vorname").props(
-                            "outlined dense"
-                        ).classes("w-full")
-                        neues_geburtsdatum = ui.input("Geburtsdatum").props(
-                            "outlined dense type=date"
-                        ).classes("w-full")
-                        patient_anlegen = ui.button(
-                            "Patient anlegen und bestätigen", icon="person_add"
-                        ).props("outline color=teal-8").classes("w-full")
-                    patienten_karte.set_visibility(False)
-
-                    # Die Prüfung liegt in einem maximierten Dialog und damit auf
-                    # einem eigenen Arbeitsbildschirm. Der Einlesebereich bleibt im
-                    # Hintergrund unverändert erhalten und kann über "Zurück" ohne
-                    # erneute Bildanalyse wieder geöffnet werden.
-                    with ui.dialog().props("maximized").classes(
+                    # Die Arbeitsansicht bleibt rechts neben der Navigation. Der
+                    # Einlesebereich bleibt im Hintergrund unverändert erhalten und
+                    # wird über den Seitenleistenpunkt ohne neue KI-Anfrage sichtbar.
+                    with ui.dialog().props("maximized seamless").classes(
                         "ced-pruefdialog"
                     ) as ced_dialog:
                         with ui.card().classes(
@@ -393,11 +390,6 @@ def zeige_hauptseite() -> None:
                                     ced_patientenkopf = ui.label(
                                         "Noch kein Patient bestätigt"
                                     ).classes("text-slate-600")
-                                ui.button(
-                                    "Zurück zum Einlesen",
-                                    icon="arrow_back",
-                                    on_click=ced_dialog.close,
-                                ).props("outline color=teal-8")
                             ced_pruefung_hinweis = ui.label(
                                 "Bitte zuerst einen Patienten bestätigen."
                             ).classes("text-slate-600")
@@ -461,7 +453,7 @@ def zeige_hauptseite() -> None:
                     # Übersicht. Noch nicht strukturierte Bereiche bleiben sichtbar
                     # leer, damit keine medizinischen Inhalte aus Freitext geraten
                     # oder vermeintlich vollständig dargestellt werden.
-                    with ui.dialog().props("maximized").classes(
+                    with ui.dialog().props("maximized seamless").classes(
                         "ced-pruefdialog"
                     ) as patientenansicht_dialog:
                         with ui.card().classes("ced-pruefseite p-6 md:p-8 gap-5"):
@@ -475,11 +467,6 @@ def zeige_hauptseite() -> None:
                                     patientenansicht_stammdaten = ui.label("").classes(
                                         "text-slate-600"
                                     )
-                                ui.button(
-                                    "Zurück zum Einlesen",
-                                    icon="arrow_back",
-                                    on_click=patientenansicht_dialog.close,
-                                ).props("outline color=teal-8")
 
                             with ui.row().classes(
                                 "w-full gap-4 items-stretch flex-wrap lg:flex-nowrap"
@@ -566,7 +553,7 @@ def zeige_hauptseite() -> None:
                     # Die kumulative Ansicht erhält einen eigenen Arbeitsbildschirm.
                     # Dynamische Datumsspalten können horizontal und zahlreiche
                     # Parameter vertikal innerhalb des Rasters gescrollt werden.
-                    with ui.dialog().props("maximized").classes(
+                    with ui.dialog().props("maximized seamless").classes(
                         "ced-pruefdialog"
                     ) as verlauf_dialog:
                         with ui.card().classes("ced-pruefseite p-6 md:p-8 gap-4"):
@@ -574,17 +561,12 @@ def zeige_hauptseite() -> None:
                                 "w-full items-start justify-between gap-3"
                             ):
                                 with ui.column().classes("gap-0"):
-                                    ui.label("Klinischer CED-Verlauf").classes(
+                                    verlauf_patientenkopf = ui.label("").classes(
                                         "text-2xl font-bold text-teal-900"
                                     )
-                                    verlauf_patientenkopf = ui.label("").classes(
+                                    ui.label("Klinischer CED-Verlauf").classes(
                                         "text-slate-600"
                                     )
-                                ui.button(
-                                    "Zur Patientenübersicht",
-                                    icon="arrow_back",
-                                    on_click=verlauf_dialog.close,
-                                ).props("outline color=teal-8")
                             verlauf_hinweis = ui.label("").classes("text-slate-600")
                             verlauf_tabelle = ui.aggrid(
                                 {
@@ -609,7 +591,7 @@ def zeige_hauptseite() -> None:
                     # Alle weiteren Fachbereiche verwenden dasselbe dynamische
                     # Tabellenlayout. Lediglich die ausdrücklich erlaubten
                     # Kategoriegruppen unterscheiden sich je Navigationspunkt.
-                    with ui.dialog().props("maximized").classes(
+                    with ui.dialog().props("maximized seamless").classes(
                         "ced-pruefdialog"
                     ) as fachverlauf_dialog:
                         with ui.card().classes("ced-pruefseite p-6 md:p-8 gap-4"):
@@ -617,17 +599,12 @@ def zeige_hauptseite() -> None:
                                 "w-full items-start justify-between gap-3"
                             ):
                                 with ui.column().classes("gap-0"):
-                                    fachverlauf_titel = ui.label("Fachverlauf").classes(
+                                    fachverlauf_patientenkopf = ui.label("").classes(
                                         "text-2xl font-bold text-teal-900"
                                     )
-                                    fachverlauf_patientenkopf = ui.label("").classes(
+                                    fachverlauf_titel = ui.label("Fachverlauf").classes(
                                         "text-slate-600"
                                     )
-                                ui.button(
-                                    "Zurück",
-                                    icon="arrow_back",
-                                    on_click=fachverlauf_dialog.close,
-                                ).props("outline color=teal-8")
                             fachverlauf_hinweis = ui.label("").classes("text-slate-600")
                             fachverlauf_tabelle = ui.aggrid(
                                 {
@@ -652,6 +629,21 @@ def zeige_hauptseite() -> None:
         arbeitsstatus.classes(remove="meldungsfehler")
         if fehler:
             arbeitsstatus.classes(add="meldungsfehler")
+
+    def setze_ced_hinweis(text: str, *, fehler: bool = False) -> None:
+        """Hebt Speicherfehler im sichtbaren CED-Arbeitsbereich deutlich hervor."""
+        ced_pruefung_hinweis.text = text
+        ced_pruefung_hinweis.classes(remove="ced-fehler")
+        if fehler:
+            ced_pruefung_hinweis.classes(add="ced-fehler")
+
+    def zeige_einlesebereich() -> None:
+        """Schließt medizinische Arbeitsansichten, die Seitenleiste bleibt bestehen."""
+        ced_dialog.close()
+        patientenansicht_dialog.close()
+        verlauf_dialog.close()
+        fachverlauf_dialog.close()
+        setze_status("Dokumenteinlesung geöffnet")
 
     def aktualisiere_anbieter() -> None:
         """Wechselt bewusst den Anbieter, behält aber Dokument und Ergebnis bei."""
@@ -865,6 +857,9 @@ def zeige_hauptseite() -> None:
             if verlauf.daten
             else "Noch keine bestätigten CED-Fragebogendaten vorhanden"
         )
+        ced_dialog.close()
+        patientenansicht_dialog.close()
+        fachverlauf_dialog.close()
         verlauf_dialog.open()
         setze_status("Klinischen CED-Verlauf geöffnet")
 
@@ -929,6 +924,9 @@ def zeige_hauptseite() -> None:
             if fachverlauf.daten
             else "Noch keine bestätigten Daten für diesen Fachbereich vorhanden"
         )
+        ced_dialog.close()
+        patientenansicht_dialog.close()
+        verlauf_dialog.close()
         fachverlauf_dialog.open()
         setze_status(f"{titel} geöffnet")
 
@@ -1030,6 +1028,9 @@ def zeige_hauptseite() -> None:
         else:
             letzte_befunde_titel.text = "Letzter bestätigter CED-Befund"
             letzte_befunde_hinweis.text = "Noch keine bestätigten Befunde vorhanden"
+        ced_dialog.close()
+        verlauf_dialog.close()
+        fachverlauf_dialog.close()
         patientenansicht_dialog.open()
         setze_status("Patientenübersicht geöffnet")
 
@@ -1042,14 +1043,14 @@ def zeige_hauptseite() -> None:
             return
         # Die Übersicht bleibt im Datenbankmodus erreichbar. Fehlt die Zuordnung,
         # verweist ihr Klick auf die Patientenauswahl in der Seitenleiste.
-        patientenansicht_navigation.enable()
+        ced_navigation.enable()
         if zustand.patient_id is None:
-            ced_navigation.disable()
+            patientenansicht_navigation.disable()
             verlauf_navigation.disable()
             return
+        patientenansicht_navigation.enable()
         verlauf_navigation.enable()
         ist_ced_fragebogen = zustand.dokumenttyp == Dokumenttyp.CED_FRAGEBOGEN.value
-        ced_navigation.set_enabled(ist_ced_fragebogen)
         if ist_ced_fragebogen:
             ced_pruefung_hinweis.text = (
                 "Die Werte werden aus der vorhandenen strukturierten Darstellung gelesen. "
@@ -1070,6 +1071,7 @@ def zeige_hauptseite() -> None:
         if zustand.dokumenttyp != Dokumenttyp.CED_FRAGEBOGEN.value:
             setze_status("Die CED-Extraktion ist nur für CED-Patientenfragebögen verfügbar.", fehler=True)
             return
+        setze_ced_hinweis("CED-Daten werden zur Prüfung vorbereitet.")
         datumsvorschlag = erkenne_befunddatum(
             zustand.ausgelesener_inhalt,
             zustand.strukturierte_darstellung,
@@ -1114,6 +1116,9 @@ def zeige_hauptseite() -> None:
                 "es werden keine Werte geraten oder automatisch ersetzt."
             )
             setze_status("Keine CED-Felder für die Prüftabelle erkannt", fehler=True)
+            patientenansicht_dialog.close()
+            verlauf_dialog.close()
+            fachverlauf_dialog.close()
             ced_dialog.open()
             return
         datumshinweis = (
@@ -1131,6 +1136,9 @@ def zeige_hauptseite() -> None:
             + f" · {datumshinweis}. Bitte alle Angaben vor der Speicherung prüfen."
         )
         setze_status("CED-Daten wurden zur manuellen Prüfung vorbereitet")
+        patientenansicht_dialog.close()
+        verlauf_dialog.close()
+        fachverlauf_dialog.close()
         ced_dialog.open()
 
     async def speichere_gepruefte_ced_daten() -> None:
@@ -1141,10 +1149,14 @@ def zeige_hauptseite() -> None:
         nur die Zeilenanzahl betrachtet werden; Tabellenwerte gehören nicht in Logs.
         """
         if zustand.patient_id is None:
-            setze_status("Bitte zuerst einen Patienten ausdrücklich bestätigen.", fehler=True)
+            fehlermeldung = "Bitte zuerst links einen Patienten auswählen und Daten zuordnen."
+            setze_ced_hinweis(fehlermeldung, fehler=True)
+            setze_status(fehlermeldung, fehler=True)
             return
         if zustand.gespeichertes_dokument_id is not None:
-            setze_status("Diese Prüfung wurde bereits gespeichert.", fehler=True)
+            fehlermeldung = "Diese Prüfung wurde bereits gespeichert."
+            setze_ced_hinweis(fehlermeldung, fehler=True)
+            setze_status(fehlermeldung, fehler=True)
             return
         try:
             datum = date.fromisoformat(befunddatum.value or "")
@@ -1152,17 +1164,18 @@ def zeige_hauptseite() -> None:
             fehlermeldung = (
                 "Speichern nicht möglich: Bitte ein vollständiges Befunddatum eingeben."
             )
-            ced_pruefung_hinweis.text = fehlermeldung
+            setze_ced_hinweis(fehlermeldung, fehler=True)
             setze_status(fehlermeldung, fehler=True)
             return
         try:
             tabellenzeilen = await ced_tabelle.get_client_data()
         except TimeoutError:
-            setze_status(
+            fehlermeldung = (
                 "Tabellenwerte konnten nicht aus dem Browser gelesen werden. "
-                "Bitte die letzte Zelle verlassen und erneut speichern.",
-                fehler=True,
+                "Bitte die letzte Zelle verlassen und erneut speichern."
             )
+            setze_ced_hinweis(fehlermeldung, fehler=True)
+            setze_status(fehlermeldung, fehler=True)
             return
         freigegebene: list[FreigegebenerBefund] = []
         for zeile in tabellenzeilen:
@@ -1198,11 +1211,12 @@ def zeige_hauptseite() -> None:
                 )
             )
         if zustand.ergebnis_anbieter not in {"uk", "openai"}:
-            setze_status(
+            fehlermeldung = (
                 "Der Anbieter des sichtbaren Ergebnisses ist nicht eindeutig. "
-                "Bitte das Dokument erneut auslesen.",
-                fehler=True,
+                "Bitte das Dokument erneut auslesen."
             )
+            setze_ced_hinweis(fehlermeldung, fehler=True)
+            setze_status(fehlermeldung, fehler=True)
             return
         provider_name = "UK-API" if zustand.ergebnis_anbieter == "uk" else "OpenAI"
         modell = (
@@ -1227,7 +1241,7 @@ def zeige_hauptseite() -> None:
             # Es gibt keinen zweiten Speicherweg. Bei SQL-Problemen kann lokal der
             # Exception-Typ ergänzt werden, ohne Werte oder Patientendaten auszugeben.
             fehlermeldung = f"CED-Daten konnten nicht gespeichert werden: {fehler}"
-            ced_pruefung_hinweis.text = fehlermeldung
+            setze_ced_hinweis(fehlermeldung, fehler=True)
             setze_status(fehlermeldung, fehler=True)
             return
         zustand.gespeichertes_dokument_id = dokument_id
@@ -1254,7 +1268,6 @@ def zeige_hauptseite() -> None:
         """
         if zustand.arbeitsmodus != DATENBANKMODUS:
             return
-        patienten_karte.set_visibility(True)
         zustand.patient_id = None
         setze_ced_pruefung_zurueck()
         setze_patientenansicht_zurueck()
@@ -1263,11 +1276,8 @@ def zeige_hauptseite() -> None:
         )
         erkannt = zustand.erkannte_patientendaten
         neue_patienten_id.value = erkannt.externe_id or ""
-        # Ein erkannter Gesamtname wird nicht automatisch in Vor- und Nachname
-        # zerlegt. Mehrteilige Namen müssen vor einer Neuanlage fachlich zugeordnet
-        # und deshalb bewusst in beide getrennten Felder eingetragen werden.
-        neuer_nachname.value = ""
-        neuer_vorname.value = ""
+        neuer_nachname.value = erkannt.nachname or ""
+        neuer_vorname.value = erkannt.vorname or ""
         neues_geburtsdatum.value = (
             erkannt.geburtsdatum.isoformat() if erkannt.geburtsdatum else ""
         )
@@ -1294,69 +1304,116 @@ def zeige_hauptseite() -> None:
                     f"{patient.external_id or 'ohne ID'} · {patient.display_name} · "
                     f"{patient.birth_date.strftime('%d.%m.%Y') if patient.birth_date else 'ohne Geburtsdatum'}"
                 )
-        patienten_auswahl.options = optionen
-        patienten_auswahl.value = None
-        patienten_auswahl.update()
         aktiver_patient_auswahl.options = optionen
         aktiver_patient_auswahl.value = None
         aktiver_patient_auswahl.update()
         setze_patientenkopf(None)
 
         if not zustand.ausgelesener_inhalt:
-            patienten_hinweis.text = (
-                "Bitte zunächst ein Dokument auslesen. Alternativ kann ein Patient "
-                "bewusst aus dem lokalen Verzeichnis ausgewählt werden."
+            dokument_patienten_hinweis.text = (
+                "Patient auswählen und anschließend „Daten zuordnen“ verwenden."
             )
         elif trefferliste:
             erster = trefferliste[0]
             details = ", ".join(erster.begruendung)
-            patienten_hinweis.text = (
-                f"{erster.status}: {details}. Bitte den Patienten ausdrücklich auswählen und bestätigen."
+            erkannter_name = erkannt.name or "nicht erkannt"
+            erkanntes_geburtsdatum = (
+                erkannt.geburtsdatum.strftime("%d.%m.%Y")
+                if erkannt.geburtsdatum
+                else "nicht erkannt"
+            )
+            dokument_patienten_hinweis.text = (
+                f"Im Dokument: {erkannt.externe_id or 'ID nicht erkannt'} · "
+                f"{erkannter_name} · geb. {erkanntes_geburtsdatum}. "
+                f"Vorschlag: {erster.bezeichnung} · {details}"
             )
         elif not erkannt.name:
-            patienten_hinweis.text = (
-                "Kein Patientenname wurde eingelesen oder erkannt. Bitte einen Patienten "
-                "aus dem Verzeichnis auswählen oder alle Stammdaten für eine Neuanlage eingeben."
+            dokument_patienten_hinweis.text = (
+                f"Im Dokument: {erkannt.externe_id or 'ID nicht erkannt'} · "
+                "Name nicht erkannt · "
+                f"Geburtsdatum: {erkannt.geburtsdatum.strftime('%d.%m.%Y') if erkannt.geburtsdatum else 'nicht erkannt'}. "
+                "Keine ausreichenden Stammdaten für einen sicheren Vorschlag."
             )
         else:
-            patienten_hinweis.text = (
-                "Kein eindeutig passender Patient gefunden. Bitte einen Patienten aus "
-                "dem Verzeichnis auswählen oder die vorbelegten Stammdaten prüfen und neu anlegen."
+            dokument_patienten_hinweis.text = (
+                f"Im Dokument: {erkannt.externe_id or 'ID nicht erkannt'} · "
+                f"{erkannt.name} · "
+                f"Geburtsdatum: {erkannt.geburtsdatum.strftime('%d.%m.%Y') if erkannt.geburtsdatum else 'nicht erkannt'}. "
+                "Kein passender Bestandspatient; Auswahl prüfen oder neuen Patienten anlegen."
             )
         aktualisiere_ced_bereitschaft()
 
-    def bestaetige_patient() -> None:
-        """Übernimmt genau die bewusst gewählte Datenbank-ID in die aktuelle Sitzung."""
+    def ordne_daten_patient_zu() -> None:
+        """Prüft Dokumentstammdaten und bestätigt dann die Sidebar-Auswahl."""
         if zustand.arbeitsmodus != DATENBANKMODUS:
             setze_status("Patientenzuordnung erfordert den geschützten Datenbankmodus.", fehler=True)
             return
-        if patienten_auswahl.value is None:
-            setze_status("Bitte zuerst einen Patienten aus dem Verzeichnis auswählen.", fehler=True)
+        if aktiver_patient_auswahl.value is None:
+            setze_status("Bitte links zuerst einen Patienten auswählen.", fehler=True)
             return
-        patient_id = int(patienten_auswahl.value)
+        patient_id = int(aktiver_patient_auswahl.value)
         with get_session() as sitzung:
             patient = sitzung.get(Patient, patient_id)
             if patient is None:
                 setze_status("Der ausgewählte Patient ist nicht mehr vorhanden.", fehler=True)
                 return
+            treffer = ermittle_patiententreffer(
+                zustand.erkannte_patientendaten, [patient]
+            )
             bezeichnung = f"{patient.external_id} · {patient.display_name}"
+        erkannt = zustand.erkannte_patientendaten
+        if erkannt.ausreichend_fuer_vorschlag and not treffer:
+            dokument_patienten_hinweis.text = (
+                "WARNUNG: Die Stammdaten des Dokuments passen nicht zum ausgewählten Patienten. "
+                "Die Daten wurden nicht zugeordnet."
+            )
+            dokument_patienten_hinweis.classes(add="ced-fehler")
+            setze_status("Patientenabweichung erkannt · keine Zuordnung", fehler=True)
+            return
+        if treffer and treffer[0].widerspruch:
+            dokument_patienten_hinweis.text = (
+                "WARNUNG: Zur gleichen Patienten-ID wurden widersprüchliche Stammdaten erkannt."
+            )
+            dokument_patienten_hinweis.classes(add="ced-fehler")
+            setze_status("Widersprüchliche Patientenstammdaten · keine Zuordnung", fehler=True)
+            return
         zustand.patient_id = patient_id
-        patienten_hinweis.text = f"Bestätigter Patient: {bezeichnung}"
+        dokument_patienten_hinweis.classes(remove="ced-fehler")
+        dokument_patienten_hinweis.text = f"Zugeordnet: {bezeichnung}"
         setze_patientenkopf(patient)
         aktualisiere_ced_bereitschaft()
-        setze_status("Patientenzuordnung wurde ausdrücklich bestätigt")
-
-    def aktiviere_patient_aus_seitenleiste() -> None:
-        """Übernimmt die bewusste Auswahl aus der geschützten Seitenleiste."""
-        if aktiver_patient_auswahl.value is None:
+        if not erkannt.ausreichend_fuer_vorschlag and zustand.ausgelesener_inhalt:
             setze_status(
-                "Bitte in der Seitenleiste zuerst einen Patienten auswählen.",
-                fehler=True,
+                "Daten zugeordnet · Dokument enthielt keine sicher prüfbaren Patientenstammdaten"
             )
+        else:
+            setze_status("Dokumentdaten wurden dem ausgewählten Patienten zugeordnet")
+        if zustand.dokumenttyp == Dokumenttyp.CED_FRAGEBOGEN.value:
+            oeffne_ced_pruefung()
+
+    def merke_patientenauswahl_vor() -> None:
+        """Markiert eine Dropdownwahl erst nach „Daten zuordnen“ als aktiv."""
+        if zustand.arbeitsmodus != DATENBANKMODUS:
             return
-        patienten_auswahl.value = aktiver_patient_auswahl.value
-        patienten_auswahl.update()
-        bestaetige_patient()
+        if aktiver_patient_auswahl.value is None:
+            zustand.patient_id = None
+            setze_patientenkopf(None)
+            aktualisiere_ced_bereitschaft()
+            return
+        ausgewaehlte_id = int(aktiver_patient_auswahl.value)
+        if ausgewaehlte_id == zustand.patient_id:
+            return
+        zustand.patient_id = None
+        aktiver_patient_hinweis.text = "Aktiver Patient: noch nicht zugeordnet"
+        dokument_patienten_hinweis.text = (
+            "Auswahl vorgemerkt · mit „Daten zuordnen“ bestätigen und prüfen."
+        )
+        dokument_patienten_hinweis.classes(remove="ced-fehler")
+        aktualisiere_ced_bereitschaft()
+
+    def wechsle_neuer_patient_formular() -> None:
+        """Blendet die selten benötigte Patientenneuanlage bewusst ein oder aus."""
+        neuer_patient_formular.set_visibility(not neuer_patient_formular.visible)
 
     def lege_patient_an() -> None:
         """Legt nach vollständiger manueller Prüfung einen neuen Patienten an."""
@@ -1400,13 +1457,10 @@ def zeige_hauptseite() -> None:
             sitzung.commit()
             neue_id = patient.id
         aktualisiere_patientenvorschlaege()
-        patienten_auswahl.value = neue_id
-        patienten_auswahl.update()
-        # ``aktualisiere_patientenvorschlaege`` setzt die Zuordnung absichtlich
-        # zurück. Deshalb wird der neue, gerade manuell bestätigte Datensatz danach
-        # ausdrücklich wieder als Sitzungszuordnung gesetzt.
+        aktiver_patient_auswahl.value = neue_id
+        aktiver_patient_auswahl.update()
         zustand.patient_id = neue_id
-        patienten_hinweis.text = (
+        dokument_patienten_hinweis.text = (
             f"Neuer Patient bestätigt: {externe_id} · {nachname}, {vorname}"
         )
         with get_session() as sitzung:
@@ -1415,6 +1469,7 @@ def zeige_hauptseite() -> None:
                 setze_status("Der neu angelegte Patient konnte nicht geladen werden.", fehler=True)
                 return
             setze_patientenkopf(neuer_patient)
+        neuer_patient_formular.set_visibility(False)
         aktualisiere_ced_bereitschaft()
         setze_status("Patient wurde angelegt und für dieses Dokument bestätigt")
 
@@ -1426,18 +1481,19 @@ def zeige_hauptseite() -> None:
             passwort.set_visibility(True)
             datenbank_schalter.text = "CED-Datenbank aktivieren"
             datenbank_status.text = "Datenbank: nicht aktiviert · Lesemodus aktiv"
+            hauptueberschrift.text = "Auslesen von Dokumenten"
             zustand.patient_id = None
-            patienten_auswahl.options = {}
-            patienten_auswahl.value = None
-            patienten_auswahl.update()
             aktiver_patient_auswahl.options = {}
             aktiver_patient_auswahl.value = None
             aktiver_patient_auswahl.update()
-            patienten_karte.set_visibility(False)
             aktiver_patient_auswahl.set_visibility(False)
+            dokument_patienten_hinweis.set_visibility(False)
+            neuer_patient_schalter.set_visibility(False)
+            neuer_patient_formular.set_visibility(False)
             datenbank_navigation_titel.set_visibility(False)
             aktiver_patient_hinweis.set_visibility(False)
             ced_navigation.set_visibility(False)
+            einlesen_navigation.set_visibility(False)
             patientenansicht_navigation.set_visibility(False)
             verlauf_navigation.set_visibility(False)
             fachnavigation.set_visibility(False)
@@ -1460,10 +1516,14 @@ def zeige_hauptseite() -> None:
         passwort.set_visibility(False)
         datenbank_schalter.text = "Datenbankmodus beenden"
         datenbank_status.text = "Datenbank: aktiviert · geschützter Modus"
+        hauptueberschrift.text = "CED-A-DOKU"
         datenbank_navigation_titel.set_visibility(True)
         aktiver_patient_auswahl.set_visibility(True)
+        dokument_patienten_hinweis.set_visibility(True)
+        neuer_patient_schalter.set_visibility(True)
         aktiver_patient_hinweis.set_visibility(True)
         ced_navigation.set_visibility(True)
+        einlesen_navigation.set_visibility(True)
         patientenansicht_navigation.set_visibility(True)
         verlauf_navigation.set_visibility(True)
         fachnavigation.set_visibility(True)
@@ -1673,18 +1733,12 @@ def zeige_hauptseite() -> None:
     anbieter_auswahl.on_value_change(lambda _: aktualisiere_anbieter())
     datenbank_schalter.text = "CED-Datenbank aktivieren"
     datenbank_schalter.on_click(aktualisiere_datenbankmodus)
-    # Im geschützten Dropdown ist die Auswahl selbst die ausdrückliche Aktion. Ein
-    # zweiter, leicht zu übersehender Bestätigungsklick ist daher nicht erforderlich.
-    aktiver_patient_auswahl.on_value_change(
-        lambda _: aktiviere_patient_aus_seitenleiste()
-        if aktiver_patient_auswahl.value is not None
-        and int(aktiver_patient_auswahl.value) != zustand.patient_id
-        else None
-    )
-    patient_bestaetigen.on_click(bestaetige_patient)
+    aktiver_patient_auswahl.on_value_change(lambda _: merke_patientenauswahl_vor())
+    neuer_patient_schalter.on_click(wechsle_neuer_patient_formular)
     patient_anlegen.on_click(lege_patient_an)
     ced_speichern.on_click(speichere_gepruefte_ced_daten)
-    ced_navigation.on_click(oeffne_ced_pruefung)
+    ced_navigation.on_click(ordne_daten_patient_zu)
+    einlesen_navigation.on_click(zeige_einlesebereich)
     patientenansicht_navigation.on_click(oeffne_patientenansicht)
     stammdaten_bearbeiten.on_click(beginne_stammdaten_bearbeitung)
     stammdaten_speichern.on_click(speichere_patientenstammdaten)

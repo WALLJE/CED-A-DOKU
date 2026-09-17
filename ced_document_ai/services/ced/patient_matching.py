@@ -52,6 +52,8 @@ class ErkanntePatientendaten:
 
     externe_id: str | None = None
     name: str | None = None
+    vorname: str | None = None
+    nachname: str | None = None
     geburtsdatum: date | None = None
 
     @property
@@ -81,6 +83,10 @@ _FELDMUSTER = {
     "name": re.compile(
         r"(?im)^\s*(?:patient(?:in)?|name|patientenname)\s*:\s*([^\n\r]+?)\s*$"
     ),
+    "vorname": re.compile(r"(?im)^\s*(?:vorname[n]?)\s*:\s*([^\n\r]+?)\s*$"),
+    "nachname": re.compile(
+        r"(?im)^\s*(?:nachname|familienname)\s*:\s*([^\n\r]+?)\s*$"
+    ),
     "geburtsdatum": re.compile(
         r"(?im)^\s*(?:geburtsdatum|geb\.?\s*(?:am|datum)?)\s*:\s*([^\n\r]+?)\s*$"
     ),
@@ -108,9 +114,18 @@ def _parse_datum(wert: str | None) -> date | None:
 
 def erkenne_patientendaten(text: str) -> ErkanntePatientendaten:
     """Extrahiert nur eindeutig beschriftete Patientenmerkmale aus dem Rohtext."""
+    vorname = _erster_wert(text or "", "vorname")
+    nachname = _erster_wert(text or "", "nachname")
+    gesamtname = _erster_wert(text or "", "name")
+    if gesamtname is None and vorname and nachname:
+        # Beide Bestandteile sind ausdrücklich beschriftet; ihre Kombination ist
+        # daher keine geratenen Namensaufteilung.
+        gesamtname = f"{vorname} {nachname}"
     return ErkanntePatientendaten(
         externe_id=_erster_wert(text or "", "externe_id"),
-        name=_erster_wert(text or "", "name"),
+        name=gesamtname,
+        vorname=vorname,
+        nachname=nachname,
         geburtsdatum=_parse_datum(_erster_wert(text or "", "geburtsdatum")),
     )
 

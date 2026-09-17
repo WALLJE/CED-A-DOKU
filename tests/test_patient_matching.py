@@ -72,3 +72,15 @@ def test_mehrere_verschiedene_namenszeilen_werden_nicht_geraten() -> None:
 
     assert erkannt.name is None
     assert not erkannt.ausreichend_fuer_vorschlag
+
+
+def test_getrennt_beschriftete_namen_werden_ohne_raten_uebernommen() -> None:
+    erkannt = erkenne_patientendaten(
+        "Patienten-ID: TEST-002\nNachname: Beispiel\nVorname: Max\n"
+        "Geburtsdatum: 04.05.1990"
+    )
+
+    assert erkannt.nachname == "Beispiel"
+    assert erkannt.vorname == "Max"
+    assert erkannt.name == "Max Beispiel"
+    assert erkannt.ausreichend_fuer_vorschlag

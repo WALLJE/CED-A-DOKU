@@ -83,10 +83,18 @@ und Geburtsdatumszeilen aus dem bereits erzeugten Rohtext und sucht damit lokal 
 Patientenverzeichnis. Das Verzeichnis wird nicht an den KI-Anbieter übertragen.
 
 Ein gefundener Patient ist immer nur ein Vorschlag und muss ausdrücklich bestätigt
-werden. Gibt es keinen eindeutigen Treffer oder wurde kein Name erkannt, fordert die
-Oberfläche zur Auswahl aus dem Verzeichnis oder zur vollständigen manuellen Eingabe
-von Patienten-ID, Name und Geburtsdatum auf. Ein neuer Patient wird erst durch den
-zugehörigen Bestätigungsschalter angelegt. Testpatienten können über die Oberfläche
+werden. Die Zuordnung erfolgt vollständig in der geschützten Seitenleiste: Patient
+auswählen und anschließend „Daten zuordnen“ verwenden. Erkannte Patienten-ID, getrennt
+beschrifteter Vor- und Nachname sowie Geburtsdatum werden gegen den ausgewählten
+Datensatz geprüft. Bei einem Widerspruch wird nicht zugeordnet und eine Warnung
+angezeigt. Sind nicht genügend Stammdaten im Dokument enthalten, wird auf die nur
+manuell prüfbare Zuordnung hingewiesen.
+
+Gibt es keinen passenden Bestandspatienten, kann „Neuer Patient“ in der Seitenleiste
+die selten benötigte Neuanlage einblenden. Eindeutig beschriftete Patienten-ID,
+Vorname, Nachname und Geburtsdatum aus Briefkopf oder Patientenkleber werden dabei
+vorbelegt; ein ungetrennter Gesamtname wird nicht geraten. Ein neuer Patient wird erst
+durch den zugehörigen Schalter angelegt. Testpatienten können über die Oberfläche
 angelegt und anschließend durch Löschen der lokalen Entwicklungsdatenbank
 `data/ced_document_ai.sqlite3` vollständig entfernt werden.
 
@@ -104,11 +112,12 @@ allgemeine Dokument- und Textextraktion wird dadurch nicht verändert. Erkannter
 Wert, Einheit, Qualitätsstatus und unveränderte Quellzeile werden nebeneinander
 angezeigt und können vor einer späteren Speicherung geprüft werden.
 
-Die CED-Prüfung wird über den Menüpunkt „CED-Daten einlesen“ in der linken geschützten
-Steuerung als eigener Vollbild-Arbeitsbereich geöffnet. Beim Klick werden die
-CED-Felder unmittelbar extrahiert und in der Tabelle angezeigt; ein zusätzlicher
-Extraktionsschalter ist nicht erforderlich. „Zurück zum Einlesen“ führt ohne erneute
-KI-Anfrage zum Dokument zurück. Im Kopf stehen der gespeicherte Name und das
+Die CED-Prüfung wird nach der Patientenauswahl über „Daten zuordnen“ in der linken
+geschützten Steuerung geöffnet. Die Arbeitsansicht belegt nur den Bereich rechts neben
+der weiterhin bedienbaren Seitenleiste. „Dokument einlesen“ sowie die übrigen
+Patientenansichten können direkt in derselben Navigation geöffnet werden; gesonderte
+Zurück-Schalter sind nicht erforderlich. Die CED-Felder werden unmittelbar extrahiert
+und in der Tabelle angezeigt. Im Kopf stehen der gespeicherte Name und das
 Geburtsdatum des ausdrücklich bestätigten Patienten zur Kontrolle. Umfangreiche
 Befundlisten besitzen innerhalb der Tabelle einen eigenen vertikalen Scrollbereich,
 sodass Befunddatum und Speicherschalter erreichbar bleiben.
@@ -158,9 +167,9 @@ nicht gespeichert; bei fehlendem oder zukünftigem Geburtsdatum wird ausdrückli
 
 Direkt nach Aktivierung des Datenbankmodus wird das lokale Patientenverzeichnis in
 der Seitenleiste angeboten. Damit kann die Patientenübersicht auch ohne zuvor
-eingelesenes Dokument geöffnet werden: Die Auswahl im Dropdown aktiviert den
-Patienten unmittelbar; ein zusätzlicher Bestätigungsschalter ist nicht erforderlich.
-Anschließend kann „Patientenübersicht“ aufgerufen werden. Unter dem am unteren Rand
+eingelesenes Dokument geöffnet werden: Patient im Dropdown wählen und mit „Daten
+zuordnen“ als aktiven Patienten bestätigen. Anschließend kann „Patientenübersicht“
+aufgerufen werden. Unter dem am unteren Rand
 angeordneten Schalter „Datenbankmodus beenden“ bleibt Name und Geburtsdatum des
 aktiven Patienten sichtbar. Beim Dokumentwechsel wird diese Zuordnung aus
 Sicherheitsgründen aufgehoben und muss erneut bestätigt werden.
