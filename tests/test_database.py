@@ -19,10 +19,10 @@ def test_initialize_database_creates_required_tables(tmp_path: Path) -> None:
         "finding_categories",
         "findings",
         "diagnoses",
+        "patient_ced_attributes",
         "ai_results",
         "ai_warnings",
         "follow_up_items",
         "user_preferences",
         "audit_log",
     }.issubset(set(inspector.get_table_names()))
-

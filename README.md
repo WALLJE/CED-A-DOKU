@@ -57,6 +57,14 @@ Währenddessen kennzeichnen ein drehendes Statussymbol und ein Statustext die la
 Bearbeitung. Da die automatische Reihenfolge nur ein Vorschlag sein kann, muss das
 Ergebnis weiterhin medizinisch geprüft werden.
 
+Die Auswahl zwischen Rohtext, strukturierter Darstellung und KI-Zusammenfassung
+startet keine neue Bildanalyse. Bei einem einzelnen Bild erzeugt genau eine
+multimodale Anfrage alle drei Ansichten gemeinsam. Bei mehreren Dokumentteilen wird
+jeder Teil einmal vollständig transkribiert; anschließend erzeugt genau eine weitere
+reine Textanfrage Dokumenttyp, strukturierten Text und KIS-Zusammenfassung aus diesen
+Transkriptionen. Nur der ausdrücklich betätigte Schalter zur erneuten Bearbeitung
+sendet das Dokument nochmals an den gewählten Anbieter.
+
 Die `.env` ist in `.gitignore` ausgeschlossen. `.env.example` bleibt dagegen als
 leere, sichere Vorlage versioniert. Bereits außerhalb der Datei gesetzte
 Umgebungsvariablen haben Vorrang vor Einträgen aus `.env`.
@@ -65,3 +73,119 @@ Umgebungsvariablen haben Vorrang vor Einträgen aus `.env`.
 > die Datei wirklich `.env` heißt, im selben Ordner wie `main.py` liegt und kein
 > Leerzeichen vor dem Variablennamen enthält. Schlüsselwerte nicht in Logs oder
 > Screenshots ausgeben.
+
+## Geschützte Patientenzuordnung
+
+Die normale Textextraktion bleibt ohne Datenbankfreigabe nutzbar. Erst nach Eingabe
+des in `CED_DATA_PASS` gesetzten Passworts wird die lokale Patientenzuordnung
+eingeblendet. Das Werkzeug liest ausdrücklich beschriftete Patienten-ID-, Namens-
+und Geburtsdatumszeilen aus dem bereits erzeugten Rohtext und sucht damit lokal im
+Patientenverzeichnis. Das Verzeichnis wird nicht an den KI-Anbieter übertragen.
+
+Ein gefundener Patient ist immer nur ein Vorschlag und muss ausdrücklich bestätigt
+werden. Gibt es keinen eindeutigen Treffer oder wurde kein Name erkannt, fordert die
+Oberfläche zur Auswahl aus dem Verzeichnis oder zur vollständigen manuellen Eingabe
+von Patienten-ID, Name und Geburtsdatum auf. Ein neuer Patient wird erst durch den
+zugehörigen Bestätigungsschalter angelegt. Testpatienten können über die Oberfläche
+angelegt und anschließend durch Löschen der lokalen Entwicklungsdatenbank
+`data/ced_document_ai.sqlite3` vollständig entfernt werden.
+
+> **Debugging-Hinweis:** Wenn trotz sichtbarer Stammdaten kein Vorschlag erscheint,
+> zuerst prüfen, ob jede Angabe im Rohtext in einer eigenen, eindeutig beschrifteten
+> Zeile wie `Patienten-ID:`, `Name:` und `Geburtsdatum:` steht. Medizinische Inhalte
+> oder Stammdaten nicht zur Fehlersuche in Konsolen- oder Server-Logs ausgeben.
+
+## CED-Prüftabelle
+
+Nach bestätigter Patientenzuordnung kann ein als `CED-Patientenfragebogen` erkanntes
+Dokument in eine vorläufige Prüftabelle übernommen werden. Der dafür verwendete
+Reintextparser arbeitet auf der bereits vorhandenen strukturierten Darstellung; die
+allgemeine Dokument- und Textextraktion wird dadurch nicht verändert. Erkannter
+Wert, Einheit, Qualitätsstatus und unveränderte Quellzeile werden nebeneinander
+angezeigt und können vor einer späteren Speicherung geprüft werden.
+
+Die CED-Prüfung wird über den Menüpunkt „CED-Daten einlesen“ in der linken geschützten
+Steuerung als eigener Vollbild-Arbeitsbereich geöffnet. Beim Klick werden die
+CED-Felder unmittelbar extrahiert und in der Tabelle angezeigt; ein zusätzlicher
+Extraktionsschalter ist nicht erforderlich. „Zurück zum Einlesen“ führt ohne erneute
+KI-Anfrage zum Dokument zurück. Umfangreiche Befundlisten besitzen innerhalb der
+Tabelle einen eigenen vertikalen Scrollbereich, sodass Befunddatum und
+Speicherschalter erreichbar bleiben.
+
+Ein eindeutig beschriftetes `Befunddatum`, `Fragebogendatum`, Erhebungs- oder
+Untersuchungsdatum wird aus dem bereits eingelesenen Text als Vorschlag übernommen.
+Das Geburtsdatum wird dabei ausdrücklich nicht verwendet. Bei mehreren
+widersprüchlichen gleichrangigen Datumsangaben oder wenn kein gültiges Datum erkannt
+wird, bleibt das Feld leer und muss manuell ausgefüllt werden. Ein vorgeschlagenes
+Datum kann vor der Speicherung jederzeit korrigiert werden.
+
+Auch zusätzliche, klar mit `Feldname: Wert` beschriftete Angaben bleiben sichtbar.
+Sie werden als **neue Kategorie** gekennzeichnet und sind zunächst ausdrücklich von
+der Übernahme ausgeschlossen. Damit kann eine neue Kategorie später bewusst
+bestätigt oder einer vorhandenen Kategorie zugeordnet werden; unbekannte Felder
+werden weder automatisch dauerhaft angelegt noch verworfen. Das Befunddatum bleibt
+ebenfalls eine verpflichtende manuelle Angabe.
+
+Mit „Geprüfte CED-Daten speichern“ werden ausschließlich die in der Tabelle zur
+Übernahme markierten Zeilen zusammen mit Dokumentbezug, unveränderter KI-Rohantwort
+und KIS-Vorschlag in einer gemeinsamen SQLite-Transaktion gespeichert. Auch eine
+neue Kategorie wird nur angelegt, wenn ihre Zeile zuvor ausdrücklich aktiviert
+wurde. Schlägt ein Teil der Speicherung fehl, werden keine Teildaten übernommen.
+Nach erfolgreicher Speicherung ist der Schalter für diese Prüfung gesperrt, damit
+dasselbe Dokument nicht versehentlich doppelt angelegt wird.
+
+Solange ausschließlich Testdaten verwendet werden, kann der gesamte lokale
+Testbestand bei beendeter Anwendung durch Löschen von
+`data/ced_document_ai.sqlite3` entfernt werden. Dieser Schritt löscht die komplette
+Datenbank und darf deshalb später mit realen Daten nicht mehr verwendet werden.
+
+> **Debugging-Hinweis:** Erscheint eine erwartete Angabe nicht in der Prüftabelle,
+> die strukturierte Darstellung auf eine eigene Zeile im Format `Feldname: Wert`
+> prüfen. Unbeschrifteter Freitext wird absichtlich nicht geraten. Zum Debugging
+> höchstens Feldname und Parserstatus verwenden, niemals den medizinischen Wert.
+
+## Patientenübersicht
+
+Nach bestätigter Patientenzuordnung steht in der geschützten Seitenleiste zusätzlich
+„Patientenübersicht“ zur Verfügung. Die lesende Übersicht zeigt Name, Geburtsdatum,
+Patienten-ID und das am aktuellen Tag berechnete vollendete Alter. Das Alter wird
+nicht gespeichert; bei fehlendem oder zukünftigem Geburtsdatum wird ausdrücklich
+„nicht berechenbar“ angezeigt.
+
+Darunter erscheinen bereits gespeicherte Diagnosen mit Status und möglichem
+Erstdiagnosedatum sowie die Werte des jüngsten bestätigten CED-Befunddatums. Da das
+aktuelle Datenmodell Haupt- und Nebendiagnosen noch nicht sicher unterscheidet, wird
+keine Diagnose willkürlich zur Hauptdiagnose erklärt. CED-Stammdaten sowie der
+medikamentöse und chirurgische Therapieverlauf bleiben ohne bestätigte Erfassung
+sichtbar leer.
+
+Die vorgesehenen Bereiche Labor, Calprotectin, Endoskopie, Sonografie und MRT/CT
+sind bereits als Orientierung angeordnet, aber noch deaktiviert. Sie werden in
+weiteren Schritten jeweils mit bestätigten, quellenbezogenen Dokumentdaten verbunden.
+Es wird kein Ersatzinhalt aus Freitext oder medizinischem Allgemeinwissen erzeugt.
+
+Die Fachansicht „Klinischer Verlauf“ ist bereits aktiv. Sie stellt sämtliche
+bestätigten Kategorien aus CED-Fragebögen als kumulative Tabelle dar: Kategorien
+stehen in den Zeilen, Befundzeitpunkte in dynamisch erzeugten Spalten. Dadurch lassen
+sich beispielsweise Stuhlfrequenz, Blut im Stuhl, Bauchschmerzen, Skalenwerte und
+Gewicht über mehrere Fragebögen vergleichen. Die Parameter-Spalte bleibt beim
+horizontalen Scrollen sichtbar; viele Parameter und Datumswerte können innerhalb der
+Tabelle vertikal beziehungsweise horizontal gescrollt werden. Laborwerte bleiben
+bewusst außerhalb dieser Ansicht und werden später in der eigenen Laboransicht
+dargestellt.
+
+Auch die kompakte Tabelle des letzten CED-Befunds besitzt nun einen begrenzten
+Scrollbereich und kann den Patientenbildschirm nicht mehr unbegrenzt verbreitern oder
+verlängern. Erstdiagnose und Befallsmuster starten als schreibgeschützte Formfelder.
+Über „Stammdaten bearbeiten“ können fehlende oder zu korrigierende Angaben bewusst
+freigegeben und gespeichert werden. Jede Speicherung legt eine neue bestätigte
+Version mit der Quelle „MANUELL“ und einem Audit-Eintrag an; ältere Versionen bleiben
+erhalten. Leere Felder löschen keine frühere Angabe und unveränderte Werte werden
+nicht erneut versioniert. Die automatische Übernahme solcher Stammdaten aus
+Dokumenten bleibt einem späteren, ebenfalls bestätigungspflichtigen Schritt
+vorbehalten.
+
+> **Debugging-Hinweis:** Bleibt die Übersicht trotz gespeicherter CED-Werte leer,
+> zunächst prüfen, ob `confirmed_by_user` gesetzt ist und `patient_id` mit dem oben
+> bestätigten Patienten übereinstimmt. In Debug-Ausgaben nur IDs und Trefferanzahlen,
+> niemals Namen, Diagnosen oder Befundwerte verwenden.
