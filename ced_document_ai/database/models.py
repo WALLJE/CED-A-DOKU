@@ -90,6 +90,26 @@ class Diagnosis(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class PatientCEDAttribute(Base):
+    """Versionierter CED-Stammdatenwert mit optionalem Dokumentbezug.
+
+    Änderungen überschreiben bewusst keinen früheren Wert. Die jeweils jüngste
+    bestätigte Version wird in der Patientenübersicht angezeigt; ältere Versionen
+    bleiben für eine spätere Historien- und Quellenansicht erhalten.
+    """
+
+    __tablename__ = "patient_ced_attributes"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    patient_id: Mapped[int] = mapped_column(ForeignKey("patients.id"))
+    attribute_type: Mapped[str] = mapped_column(String(100))
+    text_value: Mapped[str | None] = mapped_column(Text)
+    date_value: Mapped[date | None] = mapped_column(Date)
+    source_document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id"))
+    source_type: Mapped[str] = mapped_column(String(30), default="MANUELL")
+    confirmed_by_user: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class AIResult(Base):
     __tablename__ = "ai_results"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -146,4 +166,3 @@ class AuditLog(Base):
     # API-Antworten gehören nicht in Debug- beziehungsweise Audit-Nachrichten.
     details: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
