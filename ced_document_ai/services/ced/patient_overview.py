@@ -21,7 +21,12 @@ from ced_document_ai.database.models import (
     Patient,
     PatientCEDAttribute,
 )
-from ced_document_ai.services.ced.patient_profile import BEFALLSMUSTER, ERSTDIAGNOSE
+from ced_document_ai.services.ced.patient_profile import (
+    BEFALLSMUSTER,
+    ERSTDIAGNOSE,
+    THERAPIE_CHIRURGISCH,
+    THERAPIE_MEDIKAMENTOES,
+)
 
 
 @dataclass(frozen=True)
@@ -53,6 +58,8 @@ class PatientenUebersicht:
     alter: int | None
     erstdiagnose: date | None
     befallsmuster: str | None
+    therapie_medikamentoes: str | None
+    therapie_chirurgisch: str | None
     diagnosen: tuple[DiagnoseUebersicht, ...]
     letztes_befunddatum: date | None
     letzte_befunde: tuple[BefundUebersicht, ...]
@@ -157,12 +164,17 @@ def lade_patientenuebersicht(
             )
             .limit(1)
         )
-        for attributtyp in (ERSTDIAGNOSE, BEFALLSMUSTER)
+        for attributtyp in (
+            ERSTDIAGNOSE,
+            BEFALLSMUSTER,
+            THERAPIE_MEDIKAMENTOES,
+            THERAPIE_CHIRURGISCH,
+        )
     }
     return PatientenUebersicht(
         patient_id=patient.id,
         externe_id=patient.external_id,
-        name=patient.name,
+        name=patient.display_name,
         geburtsdatum=patient.birth_date,
         alter=berechne_alter(patient.birth_date, am=stichtag),
         erstdiagnose=(
@@ -170,6 +182,16 @@ def lade_patientenuebersicht(
         ),
         befallsmuster=(
             attribute[BEFALLSMUSTER].text_value if attribute[BEFALLSMUSTER] else None
+        ),
+        therapie_medikamentoes=(
+            attribute[THERAPIE_MEDIKAMENTOES].text_value
+            if attribute[THERAPIE_MEDIKAMENTOES]
+            else None
+        ),
+        therapie_chirurgisch=(
+            attribute[THERAPIE_CHIRURGISCH].text_value
+            if attribute[THERAPIE_CHIRURGISCH]
+            else None
         ),
         diagnosen=diagnosen,
         letztes_befunddatum=letztes_datum,
@@ -221,3 +243,57 @@ def lade_klinischen_verlauf(sitzung: Session, patient_id: int) -> KlinischerVerl
         for kategorie, werte_nach_datum in sorted(sammlung.items())
     )
     return KlinischerVerlauf(daten=daten, zeilen=zeilen)
+
+
+def lade_fachverlauf(
+    sitzung: Session,
+    patient_id: int,
+    gruppen: tuple[str, ...],
+) -> KlinischerVerlauf:
+    """Lädt bestätigte Werte ausgewählter Fachgruppen als gemeinsame Zeitmatrix.
+
+    Die aufrufende Ansicht benennt ihre erlaubten Gruppen ausdrücklich. Dadurch
+    geraten beispielsweise Laborwerte nicht versehentlich in eine Bildgebungsansicht.
+    Debugging-Hinweis: Bei leeren Ansichten Gruppenname und Trefferanzahl prüfen,
+    niemals medizinische Werte in ein Log schreiben.
+    """
+    if not gruppen:
+        raise ValueError("Mindestens eine Fachgruppe muss angegeben werden.")
+    if sitzung.get(Patient, patient_id) is None:
+        raise ValueError("Der bestätigte Patient ist nicht mehr vorhanden.")
+    eintraege = list(
+        sitzung.execute(
+            select(Finding, FindingCategory)
+            .join(FindingCategory, Finding.category_id == FindingCategory.id)
+            .where(
+                Finding.patient_id == patient_id,
+                Finding.confirmed_by_user.is_(True),
+                FindingCategory.group_name.in_(gruppen),
+            )
+            .order_by(FindingCategory.name, Finding.finding_date)
+        )
+    )
+    daten = tuple(sorted({befund.finding_date for befund, _ in eintraege}))
+    sammlung: dict[str, dict[date, list[str]]] = {}
+    for befund, kategorie in eintraege:
+        wert = befund.text_value or (
+            str(befund.numeric_value) if befund.numeric_value is not None else ""
+        )
+        if befund.unit and befund.unit not in wert:
+            wert = f"{wert} {befund.unit}".strip()
+        sammlung.setdefault(kategorie.name, {}).setdefault(
+            befund.finding_date, []
+        ).append(wert)
+    return KlinischerVerlauf(
+        daten=daten,
+        zeilen=tuple(
+            Verlaufszeile(
+                kategorie=kategorie,
+                werte=tuple(
+                    (datum, " | ".join(werte))
+                    for datum, werte in sorted(werte_nach_datum.items())
+                ),
+            )
+            for kategorie, werte_nach_datum in sorted(sammlung.items())
+        ),
+    )

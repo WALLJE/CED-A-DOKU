@@ -12,6 +12,8 @@ from ced_document_ai.database.models import AuditLog, Patient, PatientCEDAttribu
 
 ERSTDIAGNOSE = "ERSTDIAGNOSE"
 BEFALLSMUSTER = "BEFALLSMUSTER"
+THERAPIE_MEDIKAMENTOES = "THERAPIE_MEDIKAMENTOES"
+THERAPIE_CHIRURGISCH = "THERAPIE_CHIRURGISCH"
 
 
 @dataclass(frozen=True)

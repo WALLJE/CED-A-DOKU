@@ -37,6 +37,7 @@ from ced_document_ai.services.ced.patient_matching import (
     ermittle_patiententreffer,
 )
 from ced_document_ai.services.ced.patient_overview import (
+    lade_fachverlauf,
     lade_klinischen_verlauf,
     lade_patientenuebersicht,
 )
@@ -188,13 +189,12 @@ def zeige_hauptseite() -> None:
             value="uk",
         ).props("outlined dense").classes("w-full mt-1")
         ui.html('<div class="admin-trenner"></div>')
-        ui.label("CED-Datenbank").classes("font-semibold text-slate-700")
+        datenbank_navigation_titel = ui.label("CED-Datenbank").classes(
+            "font-semibold text-slate-700"
+        )
         aktiver_patient_auswahl = ui.select(
             options={}, label="Patient für die Fachansichten"
         ).props("outlined dense clearable").classes("w-full mt-1")
-        patient_aktivieren = ui.button(
-            "Patient auswählen", icon="person_search"
-        ).props("outline color=teal-8").classes("w-full mt-2")
         ced_navigation = ui.button(
             "CED-Daten einlesen", icon="fact_check"
         ).props("outline color=teal-8").classes("w-full mt-3")
@@ -204,22 +204,23 @@ def zeige_hauptseite() -> None:
         verlauf_navigation = ui.button(
             "Klinischer Verlauf", icon="table_chart"
         ).props("outline color=teal-8").classes("w-full mt-2")
+        fachnavigation_schalter: dict[str, object] = {}
         fachnavigation = ui.column().classes("w-full gap-2 mt-2")
         with fachnavigation:
-            for titel, symbol in (
-                ("Labor", "biotech"),
-                ("Calprotectin", "monitoring"),
-                ("Endoskopie", "video_camera_front"),
-                ("Sonografie", "ultrasound"),
-                ("MRT / CT", "radiology"),
+            for schluessel, titel, symbol in (
+                ("labor", "Labor", "biotech"),
+                ("calprotectin", "Calprotectin", "monitoring"),
+                ("endoskopie", "Endoskopie", "video_camera_front"),
+                ("sonografie", "Sonografie", "ultrasound"),
+                ("schnittbild", "MRT / CT", "radiology"),
             ):
-                ui.button(titel, icon=symbol).props(
-                    "outline color=teal-8 disable"
-                ).classes("w-full")
+                fachnavigation_schalter[schluessel] = ui.button(
+                    titel, icon=symbol
+                ).props("outline color=teal-8").classes("w-full")
         # Der Menüpunkt darf vor der Passwortfreigabe keine Rückschlüsse auf
         # Patientendaten oder vorbereitete Befunde ermöglichen.
+        datenbank_navigation_titel.set_visibility(False)
         aktiver_patient_auswahl.set_visibility(False)
-        patient_aktivieren.set_visibility(False)
         ced_navigation.set_visibility(False)
         ced_navigation.disable()
         patientenansicht_navigation.set_visibility(False)
@@ -360,7 +361,10 @@ def zeige_hauptseite() -> None:
                         neue_patienten_id = ui.input("Patienten-ID").props(
                             "outlined dense"
                         ).classes("w-full")
-                        neuer_patientenname = ui.input("Name").props(
+                        neuer_nachname = ui.input("Nachname").props(
+                            "outlined dense"
+                        ).classes("w-full")
+                        neuer_vorname = ui.input("Vorname").props(
                             "outlined dense"
                         ).classes("w-full")
                         neues_geburtsdatum = ui.input("Geburtsdatum").props(
@@ -522,10 +526,10 @@ def zeige_hauptseite() -> None:
                             ):
                                 with ui.card().classes("arbeitskarte w-full p-5"):
                                     ui.label("Therapieverlauf").classes("bereichstitel")
-                                    ui.label(
+                                    therapie_medikamentoes_ausgabe = ui.label(
                                         "Medikamentös: noch kein bestätigter Verlauf"
                                     )
-                                    ui.label(
+                                    therapie_chirurgisch_ausgabe = ui.label(
                                         "Chirurgisch: noch kein bestätigter Verlauf"
                                     )
 
@@ -598,6 +602,42 @@ def zeige_hauptseite() -> None:
                                             "minWidth": 220,
                                         }
                                     ],
+                                    "rowData": [],
+                                }
+                            ).classes("verlaufs-tabelle w-full")
+
+                    # Alle weiteren Fachbereiche verwenden dasselbe dynamische
+                    # Tabellenlayout. Lediglich die ausdrücklich erlaubten
+                    # Kategoriegruppen unterscheiden sich je Navigationspunkt.
+                    with ui.dialog().props("maximized").classes(
+                        "ced-pruefdialog"
+                    ) as fachverlauf_dialog:
+                        with ui.card().classes("ced-pruefseite p-6 md:p-8 gap-4"):
+                            with ui.row().classes(
+                                "w-full items-start justify-between gap-3"
+                            ):
+                                with ui.column().classes("gap-0"):
+                                    fachverlauf_titel = ui.label("Fachverlauf").classes(
+                                        "text-2xl font-bold text-teal-900"
+                                    )
+                                    fachverlauf_patientenkopf = ui.label("").classes(
+                                        "text-slate-600"
+                                    )
+                                ui.button(
+                                    "Zurück",
+                                    icon="arrow_back",
+                                    on_click=fachverlauf_dialog.close,
+                                ).props("outline color=teal-8")
+                            fachverlauf_hinweis = ui.label("").classes("text-slate-600")
+                            fachverlauf_tabelle = ui.aggrid(
+                                {
+                                    "defaultColDef": {
+                                        "resizable": True,
+                                        "sortable": False,
+                                        "filter": True,
+                                        "minWidth": 145,
+                                    },
+                                    "columnDefs": [],
                                     "rowData": [],
                                 }
                             ).classes("verlaufs-tabelle w-full")
@@ -727,6 +767,7 @@ def zeige_hauptseite() -> None:
         verlauf_navigation.disable()
         patientenansicht_dialog.close()
         verlauf_dialog.close()
+        fachverlauf_dialog.close()
         patientenansicht_name.text = "Patientenübersicht"
         patientenansicht_stammdaten.text = ""
         erstdiagnose_ausgabe.value = ""
@@ -734,10 +775,19 @@ def zeige_hauptseite() -> None:
         stammdaten_original.update(erstdiagnose="", befallsmuster="")
         setze_stammdaten_bearbeitung(False)
         diagnosen_liste.clear()
+        hauptdiagnose_ausgabe.text = "Hauptdiagnose: noch nicht klassifiziert"
+        therapie_medikamentoes_ausgabe.text = (
+            "Medikamentös: noch kein bestätigter Verlauf"
+        )
+        therapie_chirurgisch_ausgabe.text = (
+            "Chirurgisch: noch kein bestätigter Verlauf"
+        )
         letzte_befunde_tabelle.options["rowData"] = []
         letzte_befunde_tabelle.update()
         verlauf_tabelle.options["rowData"] = []
         verlauf_tabelle.update()
+        fachverlauf_tabelle.options["rowData"] = []
+        fachverlauf_tabelle.update()
 
     def setze_patientenkopf(patient: Patient | None) -> None:
         """Synchronisiert aktive Zuordnung in Seitenleiste und CED-Prüfkopf.
@@ -758,10 +808,10 @@ def zeige_hauptseite() -> None:
             else "nicht hinterlegt"
         )
         aktiver_patient_hinweis.text = (
-            f"Aktiver Patient: {patient.name} · geb. {geburtsdatum}"
+            f"Aktiver Patient: {patient.display_name} · geb. {geburtsdatum}"
         )
         ced_patientenkopf.text = (
-            f"Name, Vorname: {patient.name} · Geburtsdatum: {geburtsdatum}"
+            f"Nachname, Vorname: {patient.display_name} · Geburtsdatum: {geburtsdatum}"
         )
         aktiver_patient_auswahl.value = patient.id
         aktiver_patient_auswahl.update()
@@ -818,6 +868,70 @@ def zeige_hauptseite() -> None:
         verlauf_dialog.open()
         setze_status("Klinischen CED-Verlauf geöffnet")
 
+    fachbereiche = {
+        "labor": ("Laborverlauf", ("Labor",)),
+        "calprotectin": ("Calprotectin-Verlauf", ("Calprotectin",)),
+        "endoskopie": ("Endoskopiebefunde", ("Endoskopie",)),
+        "sonografie": ("Sonografiebefunde", ("Sonografie",)),
+        "schnittbild": ("MRT- / CT-Befunde", ("MRT", "CT")),
+    }
+
+    def oeffne_fachverlauf(schluessel: str) -> None:
+        """Öffnet die Zeitmatrix genau eines konfigurierten Fachbereichs."""
+        if zustand.arbeitsmodus != DATENBANKMODUS or zustand.patient_id is None:
+            setze_status("Bitte zuerst einen Patienten auswählen.", fehler=True)
+            return
+        if schluessel not in fachbereiche:
+            # Ein unbekannter Schlüssel ist ein Programmierfehler und wird nicht auf
+            # eine andere Ansicht umgeleitet. So bleibt die Gruppentrennung prüfbar.
+            setze_status("Die angeforderte Fachansicht ist nicht konfiguriert.", fehler=True)
+            return
+        titel, gruppen = fachbereiche[schluessel]
+        try:
+            with get_session() as sitzung:
+                uebersicht = lade_patientenuebersicht(sitzung, zustand.patient_id)
+                fachverlauf = lade_fachverlauf(sitzung, zustand.patient_id, gruppen)
+        except (SQLAlchemyError, ValueError) as fehler:
+            setze_status(f"Fachverlauf konnte nicht geladen werden: {fehler}", fehler=True)
+            return
+        fachverlauf_titel.text = titel
+        fachverlauf_patientenkopf.text = (
+            f"{uebersicht.name} · Patienten-ID: "
+            f"{uebersicht.externe_id or 'nicht hinterlegt'}"
+        )
+        fachverlauf_tabelle.options["columnDefs"] = [
+            {
+                "headerName": "Parameter / Befund",
+                "field": "kategorie",
+                "pinned": "left",
+                "minWidth": 240,
+            },
+            *[
+                {
+                    "headerName": datum.strftime("%d.%m.%Y"),
+                    "field": datum.isoformat(),
+                    "minWidth": 180,
+                }
+                for datum in fachverlauf.daten
+            ],
+        ]
+        fachverlauf_tabelle.options["rowData"] = [
+            {
+                "kategorie": zeile.kategorie,
+                **{datum.isoformat(): wert for datum, wert in zeile.werte},
+            }
+            for zeile in fachverlauf.zeilen
+        ]
+        fachverlauf_tabelle.update()
+        fachverlauf_hinweis.text = (
+            f"{len(fachverlauf.zeilen)} Parameter über "
+            f"{len(fachverlauf.daten)} Zeitpunkt(e)"
+            if fachverlauf.daten
+            else "Noch keine bestätigten Daten für diesen Fachbereich vorhanden"
+        )
+        fachverlauf_dialog.open()
+        setze_status(f"{titel} geöffnet")
+
     def oeffne_patientenansicht() -> None:
         """Lädt eine aktuelle lesende Übersicht des ausdrücklich bestätigten Patienten."""
         if zustand.arbeitsmodus != DATENBANKMODUS or zustand.patient_id is None:
@@ -845,10 +959,22 @@ def zeige_hauptseite() -> None:
             f"Patienten-ID: {uebersicht.externe_id or 'nicht hinterlegt'}"
         )
 
-        # Haupt- und Nebendiagnosen können mit dem aktuellen Schema noch nicht sicher
-        # unterschieden werden. Vorhandene Einträge werden deshalb gemeinsam und mit
-        # Status gezeigt, statt willkürlich eine Hauptdiagnose zu bestimmen.
-        hauptdiagnose_ausgabe.text = "Hauptdiagnose: noch nicht klassifiziert"
+        # Nur ein ausdrücklich gespeicherter Status klassifiziert die Hauptdiagnose.
+        # Unklassifizierte Diagnosen werden weiterhin unter den übrigen Diagnosen
+        # gezeigt, statt anhand von Reihenfolge oder Bezeichnung geraten zu werden.
+        hauptdiagnose = next(
+            (
+                diagnose
+                for diagnose in uebersicht.diagnosen
+                if diagnose.status == "HAUPTDIAGNOSE"
+            ),
+            None,
+        )
+        hauptdiagnose_ausgabe.text = (
+            f"Hauptdiagnose: {hauptdiagnose.bezeichnung}"
+            if hauptdiagnose
+            else "Hauptdiagnose: noch nicht klassifiziert"
+        )
         diagnosen_liste.clear()
         with diagnosen_liste:
             if not uebersicht.diagnosen:
@@ -856,12 +982,25 @@ def zeige_hauptseite() -> None:
                     "text-slate-500 italic"
                 )
             for diagnose in uebersicht.diagnosen:
+                if diagnose is hauptdiagnose:
+                    continue
                 datum = (
                     diagnose.erstdiagnose.strftime("%d.%m.%Y")
                     if diagnose.erstdiagnose
                     else "Datum offen"
                 )
                 ui.label(f"• {diagnose.bezeichnung} · {diagnose.status} · {datum}")
+
+        therapie_medikamentoes_ausgabe.text = (
+            f"Medikamentös: {uebersicht.therapie_medikamentoes}"
+            if uebersicht.therapie_medikamentoes
+            else "Medikamentös: noch kein bestätigter Verlauf"
+        )
+        therapie_chirurgisch_ausgabe.text = (
+            f"Chirurgisch: {uebersicht.therapie_chirurgisch}"
+            if uebersicht.therapie_chirurgisch
+            else "Chirurgisch: noch kein bestätigter Verlauf"
+        )
 
         erstdiagnose_ausgabe.value = (
             uebersicht.erstdiagnose.isoformat() if uebersicht.erstdiagnose else ""
@@ -1124,14 +1263,22 @@ def zeige_hauptseite() -> None:
         )
         erkannt = zustand.erkannte_patientendaten
         neue_patienten_id.value = erkannt.externe_id or ""
-        neuer_patientenname.value = erkannt.name or ""
+        # Ein erkannter Gesamtname wird nicht automatisch in Vor- und Nachname
+        # zerlegt. Mehrteilige Namen müssen vor einer Neuanlage fachlich zugeordnet
+        # und deshalb bewusst in beide getrennten Felder eingetragen werden.
+        neuer_nachname.value = ""
+        neuer_vorname.value = ""
         neues_geburtsdatum.value = (
             erkannt.geburtsdatum.isoformat() if erkannt.geburtsdatum else ""
         )
 
         with get_session() as sitzung:
             patienten = list(
-                sitzung.scalars(select(Patient).order_by(Patient.name, Patient.id))
+                sitzung.scalars(
+                    select(Patient).order_by(
+                        Patient.last_name, Patient.first_name, Patient.name, Patient.id
+                    )
+                )
             )
             trefferliste = ermittle_patiententreffer(erkannt, patienten)
 
@@ -1144,7 +1291,7 @@ def zeige_hauptseite() -> None:
         for patient in patienten:
             if patient.id not in optionen:
                 optionen[patient.id] = (
-                    f"{patient.external_id or 'ohne ID'} · {patient.name} · "
+                    f"{patient.external_id or 'ohne ID'} · {patient.display_name} · "
                     f"{patient.birth_date.strftime('%d.%m.%Y') if patient.birth_date else 'ohne Geburtsdatum'}"
                 )
         patienten_auswahl.options = optionen
@@ -1192,7 +1339,7 @@ def zeige_hauptseite() -> None:
             if patient is None:
                 setze_status("Der ausgewählte Patient ist nicht mehr vorhanden.", fehler=True)
                 return
-            bezeichnung = f"{patient.external_id} · {patient.name}"
+            bezeichnung = f"{patient.external_id} · {patient.display_name}"
         zustand.patient_id = patient_id
         patienten_hinweis.text = f"Bestätigter Patient: {bezeichnung}"
         setze_patientenkopf(patient)
@@ -1217,14 +1364,18 @@ def zeige_hauptseite() -> None:
             setze_status("Patientenneuanlage erfordert den geschützten Datenbankmodus.", fehler=True)
             return
         externe_id = (neue_patienten_id.value or "").strip()
-        name = (neuer_patientenname.value or "").strip()
+        nachname = (neuer_nachname.value or "").strip()
+        vorname = (neuer_vorname.value or "").strip()
         try:
             geburtsdatum = date.fromisoformat(neues_geburtsdatum.value or "")
         except ValueError:
             setze_status("Bitte ein vollständiges Geburtsdatum eingeben.", fehler=True)
             return
-        if not externe_id or not name:
-            setze_status("Patienten-ID, Name und Geburtsdatum sind verpflichtend.", fehler=True)
+        if not externe_id or not nachname or not vorname:
+            setze_status(
+                "Patienten-ID, Nachname, Vorname und Geburtsdatum sind verpflichtend.",
+                fehler=True,
+            )
             return
         with get_session() as sitzung:
             vorhanden = sitzung.scalar(
@@ -1238,7 +1389,11 @@ def zeige_hauptseite() -> None:
                 return
             patient = Patient(
                 external_id=externe_id,
-                name=name,
+                first_name=vorname,
+                last_name=nachname,
+                # Die Altspalte wird während der Übergangszeit synchron gehalten;
+                # neue Ansichten verwenden ausschließlich die getrennten Felder.
+                name=f"{nachname}, {vorname}",
                 birth_date=geburtsdatum,
             )
             sitzung.add(patient)
@@ -1251,7 +1406,9 @@ def zeige_hauptseite() -> None:
         # zurück. Deshalb wird der neue, gerade manuell bestätigte Datensatz danach
         # ausdrücklich wieder als Sitzungszuordnung gesetzt.
         zustand.patient_id = neue_id
-        patienten_hinweis.text = f"Neuer Patient bestätigt: {externe_id} · {name}"
+        patienten_hinweis.text = (
+            f"Neuer Patient bestätigt: {externe_id} · {nachname}, {vorname}"
+        )
         with get_session() as sitzung:
             neuer_patient = sitzung.get(Patient, neue_id)
             if neuer_patient is None:
@@ -1278,7 +1435,7 @@ def zeige_hauptseite() -> None:
             aktiver_patient_auswahl.update()
             patienten_karte.set_visibility(False)
             aktiver_patient_auswahl.set_visibility(False)
-            patient_aktivieren.set_visibility(False)
+            datenbank_navigation_titel.set_visibility(False)
             aktiver_patient_hinweis.set_visibility(False)
             ced_navigation.set_visibility(False)
             patientenansicht_navigation.set_visibility(False)
@@ -1303,8 +1460,8 @@ def zeige_hauptseite() -> None:
         passwort.set_visibility(False)
         datenbank_schalter.text = "Datenbankmodus beenden"
         datenbank_status.text = "Datenbank: aktiviert · geschützter Modus"
+        datenbank_navigation_titel.set_visibility(True)
         aktiver_patient_auswahl.set_visibility(True)
-        patient_aktivieren.set_visibility(True)
         aktiver_patient_hinweis.set_visibility(True)
         ced_navigation.set_visibility(True)
         patientenansicht_navigation.set_visibility(True)
@@ -1516,7 +1673,14 @@ def zeige_hauptseite() -> None:
     anbieter_auswahl.on_value_change(lambda _: aktualisiere_anbieter())
     datenbank_schalter.text = "CED-Datenbank aktivieren"
     datenbank_schalter.on_click(aktualisiere_datenbankmodus)
-    patient_aktivieren.on_click(aktiviere_patient_aus_seitenleiste)
+    # Im geschützten Dropdown ist die Auswahl selbst die ausdrückliche Aktion. Ein
+    # zweiter, leicht zu übersehender Bestätigungsklick ist daher nicht erforderlich.
+    aktiver_patient_auswahl.on_value_change(
+        lambda _: aktiviere_patient_aus_seitenleiste()
+        if aktiver_patient_auswahl.value is not None
+        and int(aktiver_patient_auswahl.value) != zustand.patient_id
+        else None
+    )
     patient_bestaetigen.on_click(bestaetige_patient)
     patient_anlegen.on_click(lege_patient_an)
     ced_speichern.on_click(speichere_gepruefte_ced_daten)
@@ -1526,6 +1690,10 @@ def zeige_hauptseite() -> None:
     stammdaten_speichern.on_click(speichere_patientenstammdaten)
     stammdaten_abbrechen.on_click(breche_stammdaten_bearbeitung_ab)
     verlauf_navigation.on_click(oeffne_klinischen_verlauf)
+    for fachschluessel, fachschalter in fachnavigation_schalter.items():
+        fachschalter.on_click(
+            lambda _, schluessel=fachschluessel: oeffne_fachverlauf(schluessel)
+        )
     upload.on_upload(uebernehme_datei)
     neu_schalter.on_click(beginne_neues_dokument)
     alles_loeschen_schalter.on_click(

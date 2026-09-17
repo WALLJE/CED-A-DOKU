@@ -158,24 +158,31 @@ nicht gespeichert; bei fehlendem oder zukünftigem Geburtsdatum wird ausdrückli
 
 Direkt nach Aktivierung des Datenbankmodus wird das lokale Patientenverzeichnis in
 der Seitenleiste angeboten. Damit kann die Patientenübersicht auch ohne zuvor
-eingelesenes Dokument geöffnet werden: Patient auswählen, die Auswahl ausdrücklich
-bestätigen und anschließend „Patientenübersicht“ aufrufen. Unter dem am unteren Rand
+eingelesenes Dokument geöffnet werden: Die Auswahl im Dropdown aktiviert den
+Patienten unmittelbar; ein zusätzlicher Bestätigungsschalter ist nicht erforderlich.
+Anschließend kann „Patientenübersicht“ aufgerufen werden. Unter dem am unteren Rand
 angeordneten Schalter „Datenbankmodus beenden“ bleibt Name und Geburtsdatum des
 aktiven Patienten sichtbar. Beim Dokumentwechsel wird diese Zuordnung aus
 Sicherheitsgründen aufgehoben und muss erneut bestätigt werden.
 
+Neue Patienten werden mit getrennten Feldern für Nachname und Vorname gespeichert
+und in allen neuen Ansichten einheitlich als „Nachname, Vorname“ angezeigt. Die alte
+Gesamtnamenspalte bleibt ausschließlich zur verlustfreien Migration bestehender
+lokaler Testdatenbanken erhalten. Bestehende Namen werden nicht automatisch zerlegt,
+weil dies bei mehrteiligen Namen fachlich falsche Zuordnungen erzeugen könnte.
+
 Darunter erscheinen bereits gespeicherte Diagnosen mit Status und möglichem
-Erstdiagnosedatum sowie die Werte des jüngsten bestätigten CED-Befunddatums. Da das
-aktuelle Datenmodell Haupt- und Nebendiagnosen noch nicht sicher unterscheidet, wird
-keine Diagnose willkürlich zur Hauptdiagnose erklärt. CED-Stammdaten sowie der
-medikamentöse und chirurgische Therapieverlauf bleiben ohne bestätigte Erfassung
+Erstdiagnosedatum sowie die Werte des jüngsten bestätigten CED-Befunddatums. Ein
+Eintrag mit dem ausdrücklichen Status `HAUPTDIAGNOSE` wird hervorgehoben;
+unklassifizierte Diagnosen werden nicht willkürlich zugeordnet. CED-Stammdaten sowie
+der medikamentöse und chirurgische Therapieverlauf bleiben ohne bestätigte Erfassung
 sichtbar leer.
 
-Die Navigation für Labor, Calprotectin, Endoskopie, Sonografie und MRT/CT befindet
-sich zentral in der geschützten Seitenleiste und ist bis zur jeweiligen fachlichen
-Anbindung deaktiviert. Die redundante Fachansicht innerhalb der Patientenübersicht
-entfällt. Es wird kein Ersatzinhalt aus Freitext oder medizinischem Allgemeinwissen
-erzeugt.
+Die aktiven Verlaufsansichten für Labor, Calprotectin, Endoskopie, Sonografie und
+MRT/CT befinden sich zentral in der geschützten Seitenleiste. Jede Ansicht zeigt nur
+bestätigte Werte ihrer ausdrücklich zugeordneten Fachgruppe in einer scrollbaren
+Zeitmatrix. Die redundante Fachansicht innerhalb der Patientenübersicht entfällt. Es
+wird kein Ersatzinhalt aus Freitext oder medizinischem Allgemeinwissen erzeugt.
 
 Die Fachansicht „Klinischer Verlauf“ ist bereits aktiv. Sie stellt sämtliche
 bestätigten Kategorien aus CED-Fragebögen als kumulative Tabelle dar: Kategorien
@@ -184,8 +191,8 @@ sich beispielsweise Stuhlfrequenz, Blut im Stuhl, Bauchschmerzen, Skalenwerte un
 Gewicht über mehrere Fragebögen vergleichen. Die Parameter-Spalte bleibt beim
 horizontalen Scrollen sichtbar; viele Parameter und Datumswerte können innerhalb der
 Tabelle vertikal beziehungsweise horizontal gescrollt werden. Laborwerte bleiben
-bewusst außerhalb dieser Ansicht und werden später in der eigenen Laboransicht
-dargestellt.
+bewusst außerhalb dieser Ansicht und werden ausschließlich in der eigenen aktiven
+Laboransicht dargestellt.
 
 Auch die kompakte Tabelle des letzten CED-Befunds besitzt nun einen begrenzten
 Scrollbereich und kann den Patientenbildschirm nicht mehr unbegrenzt verbreitern oder
@@ -202,3 +209,37 @@ vorbehalten.
 > zunächst prüfen, ob `confirmed_by_user` gesetzt ist und `patient_id` mit dem oben
 > bestätigten Patienten übereinstimmt. In Debug-Ausgaben nur IDs und Trefferanzahlen,
 > niemals Namen, Diagnosen oder Befundwerte verwenden.
+
+## Synthetische Demo-Daten
+
+Für die visuelle Prüfung können fünf vollständig erfundene Patienten mit Haupt- und
+Nebendiagnosen, CED-Stammdaten, medikamentösem und chirurgischem Therapieverlauf
+sowie jeweils drei Zeitpunkten für Fragebogen, Labor, Calprotectin, Endoskopie,
+Sonografie, MRT und CT angelegt werden:
+
+```bash
+PYTHONPATH=. python scripts/seed_demo_data.py
+```
+
+Der Seeder läuft niemals automatisch und verwendet ausschließlich die reservierten
+Patienten-IDs `DEMO-001` bis `DEMO-005`. Existiert bereits eine davon, bricht er mit
+einer verständlichen Meldung ab, statt Datensätze zu überschreiben oder doppelt
+anzulegen. Die Werte sind medizinisch frei erfunden und dürfen nicht als fachliche
+Referenz verwendet werden. Zum Entfernen der Testdaten kann – solange garantiert
+keine realen Daten enthalten sind – die lokale Entwicklungsdatenbank gelöscht werden.
+
+## Verbleibende Entwicklungsschritte
+
+1. **Dokumentbasierte Fachparser:** Labor-, Endoskopie-, Sonografie- und
+   Schnittbilddokumente benötigen je Dokumenttyp eigene Extraktions- und
+   Bestätigungsregeln, bevor ihre Werte aus realen Dokumenten gespeichert werden.
+2. **Stammdatenmigration prüfen:** Altdaten mit ungetrenntem Gesamtnamen benötigen
+   eine manuelle Prüfmaske; eine automatische Zerlegung ist absichtlich ausgeschlossen.
+3. **Diagnose- und Therapieeditor:** Haupt-/Nebendiagnosen und Therapieverläufe sind
+   in der Übersicht sichtbar, benötigen für den Produktivbetrieb aber noch eine
+   versionierte manuelle Bearbeitung mit Dokumentquelle und Auditspur.
+4. **Calprotectin-Grafik:** Zusätzlich zur jetzt aktiven Tabelle ist die geplante
+   skalierbare Zeitgrafik mit Datum auf der X- und Messwert auf der Y-Achse umzusetzen.
+5. **Berechtigungen und Betrieb:** Vor realen Patientendaten sind Benutzerkonten,
+   Rollen, Sitzungsablauf, verschlüsselte Datensicherung und ein Lösch-/Exportkonzept
+   festzulegen und technisch abzusichern.

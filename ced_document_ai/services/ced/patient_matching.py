@@ -27,6 +27,25 @@ class PatientMitStammdaten(Protocol):
     birth_date: date | None
 
 
+def _patientenname(patient: PatientMitStammdaten) -> str:
+    """Verwendet getrennte Namen, ohne einen bestehenden Gesamtnamen zu zerlegen."""
+    vorname = getattr(patient, "first_name", None)
+    nachname = getattr(patient, "last_name", None)
+    if nachname and vorname:
+        return f"{nachname}, {vorname}"
+    return patient.name
+
+
+def _namen_fuer_abgleich(patient: PatientMitStammdaten) -> tuple[str, ...]:
+    """Erlaubt nur explizit gespeicherte Schreibweisen beim lokalen Vergleich."""
+    vorname = getattr(patient, "first_name", None)
+    nachname = getattr(patient, "last_name", None)
+    werte = [patient.name]
+    if nachname and vorname:
+        werte.extend((f"{vorname} {nachname}", f"{nachname}, {vorname}"))
+    return tuple(werte)
+
+
 @dataclass(frozen=True)
 class ErkanntePatientendaten:
     """Unveränderte, ausdrücklich beschriftete Stammdaten aus einem Dokument."""
@@ -121,7 +140,11 @@ def ermittle_patiententreffer(
             and _normalisiere(erkannt.externe_id) == _normalisiere(patient.external_id)
         )
         name_gleich = bool(
-            erkannt.name and _normalisiere(erkannt.name) == _normalisiere(patient.name)
+            erkannt.name
+            and any(
+                _normalisiere(erkannt.name) == _normalisiere(name)
+                for name in _namen_fuer_abgleich(patient)
+            )
         )
         geburt_gleich = bool(
             erkannt.geburtsdatum and erkannt.geburtsdatum == patient.birth_date
@@ -161,7 +184,7 @@ def ermittle_patiententreffer(
                 prioritaet,
                 Patiententreffer(
                     patient_id=patient.id,
-                    bezeichnung=f"{patient.external_id or 'ohne ID'} · {patient.name} · "
+                    bezeichnung=f"{patient.external_id or 'ohne ID'} · {_patientenname(patient)} · "
                     f"{patient.birth_date.strftime('%d.%m.%Y') if patient.birth_date else 'ohne Geburtsdatum'}",
                     status=status,
                     begruendung=tuple(gruende),

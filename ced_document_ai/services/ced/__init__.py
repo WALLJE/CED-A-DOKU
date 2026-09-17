@@ -25,11 +25,14 @@ from ced_document_ai.services.ced.patient_overview import (
     Verlaufszeile,
     berechne_alter,
     lade_klinischen_verlauf,
+    lade_fachverlauf,
     lade_patientenuebersicht,
 )
 from ced_document_ai.services.ced.patient_profile import (
     BEFALLSMUSTER,
     ERSTDIAGNOSE,
+    THERAPIE_CHIRURGISCH,
+    THERAPIE_MEDIKAMENTOES,
     ManuelleCEDStammdaten,
     speichere_manuelle_stammdaten,
 )
@@ -53,9 +56,12 @@ __all__ = [
     "Verlaufszeile",
     "berechne_alter",
     "lade_klinischen_verlauf",
+    "lade_fachverlauf",
     "lade_patientenuebersicht",
     "BEFALLSMUSTER",
     "ERSTDIAGNOSE",
+    "THERAPIE_CHIRURGISCH",
+    "THERAPIE_MEDIKAMENTOES",
     "ManuelleCEDStammdaten",
     "speichere_manuelle_stammdaten",
 ]
