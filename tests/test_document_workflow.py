@@ -40,6 +40,7 @@ def test_vier_abschnitte_bleiben_getrennt_und_leerzeilen_sind_erlaubt() -> None:
     assert ergebnis.ausgelesener_inhalt == "Kein Fieber, CRP 12 mg/l."
     assert ergebnis.strukturierte_darstellung == "Diagnosen: Colitis ulcerosa"
     assert ergebnis.kis_vorschlag == "Kein Fieber; CRP 12 mg/l."
+    assert ergebnis.rohe_ki_antwort.startswith("\n\nDOKUMENTTYP:")
 
 
 @pytest.mark.parametrize(
@@ -131,6 +132,31 @@ def test_mehrere_teile_werden_einzeln_transkribiert_und_gemeinsam_ausgewertet(tm
     assert prompts[-1].endswith("Transkription\n\nTranskription\n\nTranskription")
     assert all("Keine Seitenzahl, Dokumentnummer, Teilnummer" in prompt for prompt in prompts[:-1])
     assert all("Keine Angaben, Platzhalter oder Hinweise ergänzen" in prompt for prompt in prompts[:-1])
+
+
+def test_einzelbild_erzeugt_alle_ansichten_mit_genau_einer_bildanfrage(
+    tmp_path: Path,
+) -> None:
+    seite = tmp_path / "einzelbild.png"
+    seite.write_bytes(b"bild")
+    provider = OpenAICompatibleProvider(
+        "https://example.invalid", "modell", "key", "Test"
+    )
+    antwort = Mock()
+    antwort.raise_for_status.return_value = None
+    antwort.json.return_value = {"choices": [{"message": {"content": _antwort()}}]}
+
+    with patch(
+        "ced_document_ai.services.ai.providers.requests.post", return_value=antwort
+    ) as post:
+        ergebnis = provider.process_document([seite])
+
+    assert post.call_count == 1
+    inhalt = post.call_args.kwargs["json"]["messages"][0]["content"]
+    assert sum(element["type"] == "image_url" for element in inhalt) == 1
+    assert ergebnis.ausgelesener_inhalt == "Kein Fieber, CRP 12 mg/l."
+    assert ergebnis.strukturierte_darstellung == "Diagnosen: Colitis ulcerosa"
+    assert ergebnis.kis_vorschlag == "Kein Fieber; CRP 12 mg/l."
 
 
 def test_parserfehler_startet_keine_weitere_anfrage(tmp_path: Path) -> None:
