@@ -189,12 +189,12 @@ def zeige_hauptseite() -> None:
         ).props("outlined dense").classes("w-full mt-1")
         ui.html('<div class="admin-trenner"></div>')
         ui.label("CED-Datenbank").classes("font-semibold text-slate-700")
-        passwort = ui.input(
-            "Administrationspasswort", password=True, password_toggle_button=True
-        ).props("outlined dense").classes("w-full")
-        datenbank_schalter = ui.button(icon="lock_open").props(
-            "color=teal-8 unelevated"
-        ).classes("w-full mt-3")
+        aktiver_patient_auswahl = ui.select(
+            options={}, label="Patient für die Fachansichten"
+        ).props("outlined dense clearable").classes("w-full mt-1")
+        patient_aktivieren = ui.button(
+            "Patient auswählen", icon="person_search"
+        ).props("outline color=teal-8").classes("w-full mt-2")
         ced_navigation = ui.button(
             "CED-Daten einlesen", icon="fact_check"
         ).props("outline color=teal-8").classes("w-full mt-3")
@@ -204,14 +204,29 @@ def zeige_hauptseite() -> None:
         verlauf_navigation = ui.button(
             "Klinischer Verlauf", icon="table_chart"
         ).props("outline color=teal-8").classes("w-full mt-2")
+        fachnavigation = ui.column().classes("w-full gap-2 mt-2")
+        with fachnavigation:
+            for titel, symbol in (
+                ("Labor", "biotech"),
+                ("Calprotectin", "monitoring"),
+                ("Endoskopie", "video_camera_front"),
+                ("Sonografie", "ultrasound"),
+                ("MRT / CT", "radiology"),
+            ):
+                ui.button(titel, icon=symbol).props(
+                    "outline color=teal-8 disable"
+                ).classes("w-full")
         # Der Menüpunkt darf vor der Passwortfreigabe keine Rückschlüsse auf
         # Patientendaten oder vorbereitete Befunde ermöglichen.
+        aktiver_patient_auswahl.set_visibility(False)
+        patient_aktivieren.set_visibility(False)
         ced_navigation.set_visibility(False)
         ced_navigation.disable()
         patientenansicht_navigation.set_visibility(False)
         patientenansicht_navigation.disable()
         verlauf_navigation.set_visibility(False)
         verlauf_navigation.disable()
+        fachnavigation.set_visibility(False)
 
         # Sämtliche Status- und Bedienhinweise stehen gebündelt am unteren linken
         # Rand der Steuerung. So überdecken weder Toasts noch frei schwebende Chips
@@ -235,6 +250,19 @@ def zeige_hauptseite() -> None:
                     "Bereit · noch kein Dokument geladen"
                 ).classes("arbeitsstatus")
             ki_statussymbol.set_visibility(False)
+            # Anmeldung und Abmeldung stehen bewusst unter den Statusmeldungen. So
+            # bleibt der Sicherheitszustand am unteren Ende der Navigation gebündelt.
+            ui.separator().classes("my-1")
+            passwort = ui.input(
+                "Administrationspasswort", password=True, password_toggle_button=True
+            ).props("outlined dense").classes("w-full")
+            datenbank_schalter = ui.button(icon="lock_open").props(
+                "color=teal-8 unelevated"
+            ).classes("w-full")
+            aktiver_patient_hinweis = ui.label(
+                "Aktiver Patient: keiner ausgewählt"
+            ).classes("arbeitsstatus")
+            aktiver_patient_hinweis.set_visibility(False)
 
     with ui.column().classes("w-full min-h-screen"):
         with ui.column().classes("medizin-kopf w-full px-8 py-7 gap-1"):
@@ -492,7 +520,7 @@ def zeige_hauptseite() -> None:
                             with ui.row().classes(
                                 "w-full gap-4 items-stretch flex-wrap lg:flex-nowrap"
                             ):
-                                with ui.card().classes("arbeitskarte flex-1 p-5"):
+                                with ui.card().classes("arbeitskarte w-full p-5"):
                                     ui.label("Therapieverlauf").classes("bereichstitel")
                                     ui.label(
                                         "Medikamentös: noch kein bestätigter Verlauf"
@@ -500,25 +528,6 @@ def zeige_hauptseite() -> None:
                                     ui.label(
                                         "Chirurgisch: noch kein bestätigter Verlauf"
                                     )
-                                with ui.card().classes("arbeitskarte flex-1 p-5"):
-                                    ui.label("Fachansichten").classes("bereichstitel")
-                                    ui.label(
-                                        "Die Fachbereiche werden schrittweise an bestätigte Dokumentdaten angebunden."
-                                    ).classes("text-slate-600")
-                                    with ui.row().classes("gap-2 flex-wrap"):
-                                        klinischer_verlauf_kachel = ui.button(
-                                            "Klinischer Verlauf", icon="table_chart"
-                                        ).props("outline color=teal-8")
-                                        for titel in (
-                                            "Labor",
-                                            "Calprotectin",
-                                            "Endoskopie",
-                                            "Sonografie",
-                                            "MRT / CT",
-                                        ):
-                                            ui.button(titel).props(
-                                                "outline color=teal-8 disable"
-                                            )
 
                             with ui.card().classes("arbeitskarte w-full p-5"):
                                 letzte_befunde_titel = ui.label(
@@ -730,6 +739,33 @@ def zeige_hauptseite() -> None:
         verlauf_tabelle.options["rowData"] = []
         verlauf_tabelle.update()
 
+    def setze_patientenkopf(patient: Patient | None) -> None:
+        """Synchronisiert aktive Zuordnung in Seitenleiste und CED-Prüfkopf.
+
+        Die Darstellung verwendet den gespeicherten Gesamtnamen, weil das aktuelle
+        Datenmodell Vor- und Nachname noch nicht getrennt führt. Eine automatische
+        Aufteilung würde bei zusammengesetzten Namen unzuverlässige Werte erzeugen.
+        """
+        if patient is None:
+            aktiver_patient_hinweis.text = "Aktiver Patient: keiner ausgewählt"
+            ced_patientenkopf.text = "Noch kein Patient bestätigt"
+            aktiver_patient_auswahl.value = None
+            aktiver_patient_auswahl.update()
+            return
+        geburtsdatum = (
+            patient.birth_date.strftime("%d.%m.%Y")
+            if patient.birth_date
+            else "nicht hinterlegt"
+        )
+        aktiver_patient_hinweis.text = (
+            f"Aktiver Patient: {patient.name} · geb. {geburtsdatum}"
+        )
+        ced_patientenkopf.text = (
+            f"Name, Vorname: {patient.name} · Geburtsdatum: {geburtsdatum}"
+        )
+        aktiver_patient_auswahl.value = patient.id
+        aktiver_patient_auswahl.update()
+
     def oeffne_klinischen_verlauf() -> None:
         """Zeigt alle bestätigten Fragebogenparameter kumulativ über die Zeit."""
         if zustand.arbeitsmodus != DATENBANKMODUS or zustand.patient_id is None:
@@ -860,12 +896,18 @@ def zeige_hauptseite() -> None:
 
     def aktualisiere_ced_bereitschaft() -> None:
         """Öffnet die CED-Prüfung nur bei bestätigtem Patient und passendem Dokument."""
-        if zustand.arbeitsmodus != DATENBANKMODUS or zustand.patient_id is None:
+        if zustand.arbeitsmodus != DATENBANKMODUS:
             ced_navigation.disable()
             patientenansicht_navigation.disable()
             verlauf_navigation.disable()
             return
+        # Die Übersicht bleibt im Datenbankmodus erreichbar. Fehlt die Zuordnung,
+        # verweist ihr Klick auf die Patientenauswahl in der Seitenleiste.
         patientenansicht_navigation.enable()
+        if zustand.patient_id is None:
+            ced_navigation.disable()
+            verlauf_navigation.disable()
+            return
         verlauf_navigation.enable()
         ist_ced_fragebogen = zustand.dokumenttyp == Dokumenttyp.CED_FRAGEBOGEN.value
         ced_navigation.set_enabled(ist_ced_fragebogen)
@@ -968,7 +1010,11 @@ def zeige_hauptseite() -> None:
         try:
             datum = date.fromisoformat(befunddatum.value or "")
         except ValueError:
-            setze_status("Bitte vor der Speicherung ein vollständiges Befunddatum eingeben.", fehler=True)
+            fehlermeldung = (
+                "Speichern nicht möglich: Bitte ein vollständiges Befunddatum eingeben."
+            )
+            ced_pruefung_hinweis.text = fehlermeldung
+            setze_status(fehlermeldung, fehler=True)
             return
         try:
             tabellenzeilen = await ced_tabelle.get_client_data()
@@ -1041,7 +1087,9 @@ def zeige_hauptseite() -> None:
         except (OSError, SQLAlchemyError, ValueError) as fehler:
             # Es gibt keinen zweiten Speicherweg. Bei SQL-Problemen kann lokal der
             # Exception-Typ ergänzt werden, ohne Werte oder Patientendaten auszugeben.
-            setze_status(f"CED-Daten konnten nicht gespeichert werden: {fehler}", fehler=True)
+            fehlermeldung = f"CED-Daten konnten nicht gespeichert werden: {fehler}"
+            ced_pruefung_hinweis.text = fehlermeldung
+            setze_status(fehlermeldung, fehler=True)
             return
         zustand.gespeichertes_dokument_id = dokument_id
         ced_speichern.disable()
@@ -1049,7 +1097,14 @@ def zeige_hauptseite() -> None:
             f"Testdaten als bestätigtes Dokument {dokument_id} gespeichert. "
             "Für Änderungen bitte ein neues Dokument einlesen."
         )
-        setze_status("Geprüfte CED-Daten wurden vollständig gespeichert")
+        # Erst nach vollständig erfolgreicher Transaktion wird die Prüfung verlassen.
+        # Alle vorherigen Validierungs- und Speicherfehler kehren mit ``return`` zurück
+        # und lassen Dialog sowie Eingaben unverändert sichtbar.
+        ced_dialog.close()
+        oeffne_patientenansicht()
+        setze_status(
+            "Geprüfte CED-Daten gespeichert · Patientenübersicht geöffnet"
+        )
 
     def aktualisiere_patientenvorschlaege() -> None:
         """Erkennt Stammdaten und lädt passende Patienten ausschließlich lokal.
@@ -1095,6 +1150,10 @@ def zeige_hauptseite() -> None:
         patienten_auswahl.options = optionen
         patienten_auswahl.value = None
         patienten_auswahl.update()
+        aktiver_patient_auswahl.options = optionen
+        aktiver_patient_auswahl.value = None
+        aktiver_patient_auswahl.update()
+        setze_patientenkopf(None)
 
         if not zustand.ausgelesener_inhalt:
             patienten_hinweis.text = (
@@ -1117,6 +1176,7 @@ def zeige_hauptseite() -> None:
                 "Kein eindeutig passender Patient gefunden. Bitte einen Patienten aus "
                 "dem Verzeichnis auswählen oder die vorbelegten Stammdaten prüfen und neu anlegen."
             )
+        aktualisiere_ced_bereitschaft()
 
     def bestaetige_patient() -> None:
         """Übernimmt genau die bewusst gewählte Datenbank-ID in die aktuelle Sitzung."""
@@ -1135,9 +1195,21 @@ def zeige_hauptseite() -> None:
             bezeichnung = f"{patient.external_id} · {patient.name}"
         zustand.patient_id = patient_id
         patienten_hinweis.text = f"Bestätigter Patient: {bezeichnung}"
-        ced_patientenkopf.text = f"Bestätigter Patient: {bezeichnung}"
+        setze_patientenkopf(patient)
         aktualisiere_ced_bereitschaft()
         setze_status("Patientenzuordnung wurde ausdrücklich bestätigt")
+
+    def aktiviere_patient_aus_seitenleiste() -> None:
+        """Übernimmt die bewusste Auswahl aus der geschützten Seitenleiste."""
+        if aktiver_patient_auswahl.value is None:
+            setze_status(
+                "Bitte in der Seitenleiste zuerst einen Patienten auswählen.",
+                fehler=True,
+            )
+            return
+        patienten_auswahl.value = aktiver_patient_auswahl.value
+        patienten_auswahl.update()
+        bestaetige_patient()
 
     def lege_patient_an() -> None:
         """Legt nach vollständiger manueller Prüfung einen neuen Patienten an."""
@@ -1180,7 +1252,12 @@ def zeige_hauptseite() -> None:
         # ausdrücklich wieder als Sitzungszuordnung gesetzt.
         zustand.patient_id = neue_id
         patienten_hinweis.text = f"Neuer Patient bestätigt: {externe_id} · {name}"
-        ced_patientenkopf.text = f"Bestätigter Patient: {externe_id} · {name}"
+        with get_session() as sitzung:
+            neuer_patient = sitzung.get(Patient, neue_id)
+            if neuer_patient is None:
+                setze_status("Der neu angelegte Patient konnte nicht geladen werden.", fehler=True)
+                return
+            setze_patientenkopf(neuer_patient)
         aktualisiere_ced_bereitschaft()
         setze_status("Patient wurde angelegt und für dieses Dokument bestätigt")
 
@@ -1196,12 +1273,20 @@ def zeige_hauptseite() -> None:
             patienten_auswahl.options = {}
             patienten_auswahl.value = None
             patienten_auswahl.update()
+            aktiver_patient_auswahl.options = {}
+            aktiver_patient_auswahl.value = None
+            aktiver_patient_auswahl.update()
             patienten_karte.set_visibility(False)
+            aktiver_patient_auswahl.set_visibility(False)
+            patient_aktivieren.set_visibility(False)
+            aktiver_patient_hinweis.set_visibility(False)
             ced_navigation.set_visibility(False)
             patientenansicht_navigation.set_visibility(False)
             verlauf_navigation.set_visibility(False)
+            fachnavigation.set_visibility(False)
             setze_ced_pruefung_zurueck()
             setze_patientenansicht_zurueck()
+            setze_patientenkopf(None)
             setze_status("Lesemodus aktiviert · Datenbankmodus beendet")
             return
 
@@ -1218,9 +1303,13 @@ def zeige_hauptseite() -> None:
         passwort.set_visibility(False)
         datenbank_schalter.text = "Datenbankmodus beenden"
         datenbank_status.text = "Datenbank: aktiviert · geschützter Modus"
+        aktiver_patient_auswahl.set_visibility(True)
+        patient_aktivieren.set_visibility(True)
+        aktiver_patient_hinweis.set_visibility(True)
         ced_navigation.set_visibility(True)
         patientenansicht_navigation.set_visibility(True)
         verlauf_navigation.set_visibility(True)
+        fachnavigation.set_visibility(True)
         setze_status(
             "Datenbankmodus aktiviert · Patientenzuordnung ist verfügbar"
         )
@@ -1427,6 +1516,7 @@ def zeige_hauptseite() -> None:
     anbieter_auswahl.on_value_change(lambda _: aktualisiere_anbieter())
     datenbank_schalter.text = "CED-Datenbank aktivieren"
     datenbank_schalter.on_click(aktualisiere_datenbankmodus)
+    patient_aktivieren.on_click(aktiviere_patient_aus_seitenleiste)
     patient_bestaetigen.on_click(bestaetige_patient)
     patient_anlegen.on_click(lege_patient_an)
     ced_speichern.on_click(speichere_gepruefte_ced_daten)
@@ -1436,7 +1526,6 @@ def zeige_hauptseite() -> None:
     stammdaten_speichern.on_click(speichere_patientenstammdaten)
     stammdaten_abbrechen.on_click(breche_stammdaten_bearbeitung_ab)
     verlauf_navigation.on_click(oeffne_klinischen_verlauf)
-    klinischer_verlauf_kachel.on_click(oeffne_klinischen_verlauf)
     upload.on_upload(uebernehme_datei)
     neu_schalter.on_click(beginne_neues_dokument)
     alles_loeschen_schalter.on_click(

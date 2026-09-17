@@ -108,9 +108,10 @@ Die CED-Prüfung wird über den Menüpunkt „CED-Daten einlesen“ in der linke
 Steuerung als eigener Vollbild-Arbeitsbereich geöffnet. Beim Klick werden die
 CED-Felder unmittelbar extrahiert und in der Tabelle angezeigt; ein zusätzlicher
 Extraktionsschalter ist nicht erforderlich. „Zurück zum Einlesen“ führt ohne erneute
-KI-Anfrage zum Dokument zurück. Umfangreiche Befundlisten besitzen innerhalb der
-Tabelle einen eigenen vertikalen Scrollbereich, sodass Befunddatum und
-Speicherschalter erreichbar bleiben.
+KI-Anfrage zum Dokument zurück. Im Kopf stehen der gespeicherte Name und das
+Geburtsdatum des ausdrücklich bestätigten Patienten zur Kontrolle. Umfangreiche
+Befundlisten besitzen innerhalb der Tabelle einen eigenen vertikalen Scrollbereich,
+sodass Befunddatum und Speicherschalter erreichbar bleiben.
 
 Ein eindeutig beschriftetes `Befunddatum`, `Fragebogendatum`, Erhebungs- oder
 Untersuchungsdatum wird aus dem bereits eingelesenen Text als Vorschlag übernommen.
@@ -132,7 +133,10 @@ und KIS-Vorschlag in einer gemeinsamen SQLite-Transaktion gespeichert. Auch eine
 neue Kategorie wird nur angelegt, wenn ihre Zeile zuvor ausdrücklich aktiviert
 wurde. Schlägt ein Teil der Speicherung fehl, werden keine Teildaten übernommen.
 Nach erfolgreicher Speicherung ist der Schalter für diese Prüfung gesperrt, damit
-dasselbe Dokument nicht versehentlich doppelt angelegt wird.
+dasselbe Dokument nicht versehentlich doppelt angelegt wird. Anschließend öffnet die
+Anwendung automatisch die aktualisierte Patientenübersicht. Fehlt beispielsweise das
+Befunddatum oder schlägt die Transaktion fehl, bleibt die CED-Prüfung dagegen offen
+und zeigt den Fehler sowohl im Prüfbereich als auch im Statusfeld an.
 
 Solange ausschließlich Testdaten verwendet werden, kann der gesamte lokale
 Testbestand bei beendeter Anwendung durch Löschen von
@@ -152,6 +156,14 @@ Patienten-ID und das am aktuellen Tag berechnete vollendete Alter. Das Alter wir
 nicht gespeichert; bei fehlendem oder zukünftigem Geburtsdatum wird ausdrücklich
 „nicht berechenbar“ angezeigt.
 
+Direkt nach Aktivierung des Datenbankmodus wird das lokale Patientenverzeichnis in
+der Seitenleiste angeboten. Damit kann die Patientenübersicht auch ohne zuvor
+eingelesenes Dokument geöffnet werden: Patient auswählen, die Auswahl ausdrücklich
+bestätigen und anschließend „Patientenübersicht“ aufrufen. Unter dem am unteren Rand
+angeordneten Schalter „Datenbankmodus beenden“ bleibt Name und Geburtsdatum des
+aktiven Patienten sichtbar. Beim Dokumentwechsel wird diese Zuordnung aus
+Sicherheitsgründen aufgehoben und muss erneut bestätigt werden.
+
 Darunter erscheinen bereits gespeicherte Diagnosen mit Status und möglichem
 Erstdiagnosedatum sowie die Werte des jüngsten bestätigten CED-Befunddatums. Da das
 aktuelle Datenmodell Haupt- und Nebendiagnosen noch nicht sicher unterscheidet, wird
@@ -159,10 +171,11 @@ keine Diagnose willkürlich zur Hauptdiagnose erklärt. CED-Stammdaten sowie der
 medikamentöse und chirurgische Therapieverlauf bleiben ohne bestätigte Erfassung
 sichtbar leer.
 
-Die vorgesehenen Bereiche Labor, Calprotectin, Endoskopie, Sonografie und MRT/CT
-sind bereits als Orientierung angeordnet, aber noch deaktiviert. Sie werden in
-weiteren Schritten jeweils mit bestätigten, quellenbezogenen Dokumentdaten verbunden.
-Es wird kein Ersatzinhalt aus Freitext oder medizinischem Allgemeinwissen erzeugt.
+Die Navigation für Labor, Calprotectin, Endoskopie, Sonografie und MRT/CT befindet
+sich zentral in der geschützten Seitenleiste und ist bis zur jeweiligen fachlichen
+Anbindung deaktiviert. Die redundante Fachansicht innerhalb der Patientenübersicht
+entfällt. Es wird kein Ersatzinhalt aus Freitext oder medizinischem Allgemeinwissen
+erzeugt.
 
 Die Fachansicht „Klinischer Verlauf“ ist bereits aktiv. Sie stellt sämtliche
 bestätigten Kategorien aus CED-Fragebögen als kumulative Tabelle dar: Kategorien
