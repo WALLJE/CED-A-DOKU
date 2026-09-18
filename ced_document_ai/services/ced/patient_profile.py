@@ -21,6 +21,7 @@ ERSTDIAGNOSE = "ERSTDIAGNOSE"
 BEFALLSMUSTER = "BEFALLSMUSTER"
 THERAPIE_MEDIKAMENTOES = "THERAPIE_MEDIKAMENTOES"
 THERAPIE_CHIRURGISCH = "THERAPIE_CHIRURGISCH"
+DIAGNOSE_HINWEISE = "DIAGNOSE_HINWEISE"
 
 
 @dataclass(frozen=True)
@@ -32,21 +33,31 @@ class ManuelleCEDStammdaten:
 
 
 @dataclass(frozen=True)
-class PatientenfallEingabe:
-    """Manuell geprüfte Diagnose- und Therapiefelder der Patientenübersicht."""
+class DiagnosenEingabe:
+    """Manuell geprüfte Diagnosen mit einem getrennten ergänzenden Hinweisfeld."""
 
     hauptdiagnose: str
     nebendiagnosen: tuple[str, ...]
+
+    # Hinweise sind bewusst kein weiterer Diagnoseeintrag. Sie können ergänzende
+    # Zusammenhänge dokumentieren, ohne die strukturierte Diagnosenliste zu verändern.
+    hinweise: str | None
+
+
+@dataclass(frozen=True)
+class TherapienEingabe:
+    """Manuell geprüfte medikamentöse und chirurgische Therapietexte."""
+
     therapie_medikamentoes: str | None
     therapie_chirurgisch: str | None
 
 
-def speichere_patientenfall(
+def speichere_diagnosen(
     sitzung: Session,
     patient_id: int,
-    eingabe: PatientenfallEingabe,
+    eingabe: DiagnosenEingabe,
 ) -> None:
-    """Versioniert Diagnosen und geänderte Therapietexte in einer Transaktion."""
+    """Versioniert Diagnosen und optionale Diagnosehinweise in einer Transaktion."""
     if sitzung.get(Patient, patient_id) is None:
         raise ValueError("Der bestätigte Patient ist nicht mehr vorhanden.")
     hauptdiagnose = eingabe.hauptdiagnose.strip()
@@ -80,30 +91,67 @@ def speichere_patientenfall(
             )
             for wert in nebendiagnosen
         )
-        for attributtyp, textwert in (
-            (THERAPIE_MEDIKAMENTOES, eingabe.therapie_medikamentoes),
-            (THERAPIE_CHIRURGISCH, eingabe.therapie_chirurgisch),
-        ):
-            bereinigt = (textwert or "").strip()
-            if bereinigt:
-                sitzung.add(
-                    PatientCEDAttribute(
-                        patient_id=patient_id,
-                        attribute_type=attributtyp,
-                        text_value=bereinigt,
-                        source_type="MANUELL",
-                        confirmed_by_user=True,
-                    )
+        hinweise = (eingabe.hinweise or "").strip()
+        if hinweise:
+            sitzung.add(
+                PatientCEDAttribute(
+                    patient_id=patient_id,
+                    attribute_type=DIAGNOSE_HINWEISE,
+                    text_value=hinweise,
+                    source_type="MANUELL",
+                    confirmed_by_user=True,
                 )
+            )
         sitzung.add(
             AuditLog(
-                action="PATIENTENFALL_MANUELL_BESTAETIGT",
+                action="DIAGNOSEN_MANUELL_BESTAETIGT",
                 entity_type="Patient",
                 entity_id=patient_id,
                 details=f"1 Hauptdiagnose und {len(nebendiagnosen)} Nebendiagnose(n) versioniert",
             )
         )
     sitzung.commit()
+
+
+def speichere_therapien(
+    sitzung: Session,
+    patient_id: int,
+    eingabe: TherapienEingabe,
+) -> int:
+    """Versioniert ausschließlich ausgefüllte Therapiefelder und gibt ihre Anzahl zurück."""
+    if sitzung.get(Patient, patient_id) is None:
+        raise ValueError("Der bestätigte Patient ist nicht mehr vorhanden.")
+    therapien = tuple(
+        (attributtyp, (textwert or "").strip())
+        for attributtyp, textwert in (
+            (THERAPIE_MEDIKAMENTOES, eingabe.therapie_medikamentoes),
+            (THERAPIE_CHIRURGISCH, eingabe.therapie_chirurgisch),
+        )
+        if (textwert or "").strip()
+    )
+    if not therapien:
+        raise ValueError("Bitte mindestens ein Therapiefeld ausfüllen.")
+    with sitzung.begin_nested():
+        for attributtyp, textwert in therapien:
+            sitzung.add(
+                PatientCEDAttribute(
+                    patient_id=patient_id,
+                    attribute_type=attributtyp,
+                    text_value=textwert,
+                    source_type="MANUELL",
+                    confirmed_by_user=True,
+                )
+            )
+        sitzung.add(
+            AuditLog(
+                action="THERAPIEN_MANUELL_BESTAETIGT",
+                entity_type="Patient",
+                entity_id=patient_id,
+                details=f"{len(therapien)} Therapiefeld(er) versioniert",
+            )
+        )
+    sitzung.commit()
+    return len(therapien)
 
 
 def speichere_manuelle_stammdaten(

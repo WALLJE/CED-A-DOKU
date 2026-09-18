@@ -232,10 +232,14 @@ nicht erneut versioniert. Die automatische Übernahme solcher Stammdaten aus
 Dokumenten bleibt einem späteren, ebenfalls bestätigungspflichtigen Schritt
 vorbehalten.
 
-Hauptdiagnose, Nebendiagnosen sowie medikamentöser und chirurgischer Therapieverlauf
-können über „Diagnosen und Therapien bearbeiten“ geändert werden. Frühere Diagnosen
-werden als ersetzt markiert, Therapietexte als neue Versionen gespeichert und die
-gesamte Änderung wird ohne medizinische Inhalte im Audit protokolliert.
+Hauptdiagnose und Nebendiagnosen besitzen einen eigenen Schalter „Diagnosen
+bearbeiten“. Das zusätzliche Feld „Hinweise zur Diagnose“ nimmt ergänzende,
+bestätigte Hinweise auf, ohne daraus automatisch weitere strukturierte Diagnosen zu
+erzeugen. Frühere Diagnosen werden bei einer Speicherung als ersetzt markiert.
+Medikamentöser und chirurgischer Therapieverlauf werden davon getrennt über
+„Therapien bearbeiten“ freigegeben. Nur geänderte ausgefüllte Therapiefelder werden
+als neue Version gespeichert. Beide Vorgänge erhalten getrennte Audit-Einträge ohne
+medizinische Inhalte; leere Felder löschen keine frühere Angabe.
 
 > **Debugging-Hinweis:** Bleibt die Übersicht trotz gespeicherter CED-Werte leer,
 > zunächst prüfen, ob `confirmed_by_user` gesetzt ist und `patient_id` mit dem oben

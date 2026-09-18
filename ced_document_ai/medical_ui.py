@@ -42,10 +42,12 @@ from ced_document_ai.services.ced.patient_overview import (
     lade_patientenuebersicht,
 )
 from ced_document_ai.services.ced.patient_profile import (
+    DiagnosenEingabe,
     ManuelleCEDStammdaten,
-    PatientenfallEingabe,
+    TherapienEingabe,
+    speichere_diagnosen,
     speichere_manuelle_stammdaten,
-    speichere_patientenfall,
+    speichere_therapien,
 )
 from ced_document_ai.services.ced.questionnaire_parser import (
     ExtrahierterBefund,
@@ -498,6 +500,22 @@ def zeige_hauptseite() -> None:
                                         "Nebendiagnosen",
                                         placeholder="eine Diagnose pro Zeile",
                                     ).props("outlined dense readonly").classes("w-full")
+                                    diagnose_hinweise_ausgabe = ui.textarea(
+                                        "Hinweise zur Diagnose",
+                                        placeholder="ergänzende bestätigte Hinweise",
+                                    ).props("outlined dense readonly").classes("w-full")
+                                    with ui.row().classes("w-full gap-2 flex-wrap"):
+                                        diagnosen_bearbeiten = ui.button(
+                                            "Diagnosen bearbeiten", icon="edit"
+                                        ).props("outline color=teal-8")
+                                        diagnosen_speichern = ui.button(
+                                            "Diagnosen speichern", icon="save"
+                                        ).props("color=teal-8")
+                                        diagnosen_abbrechen = ui.button(
+                                            "Abbrechen", icon="close"
+                                        ).props("flat color=grey-7")
+                                    diagnosen_speichern.set_visibility(False)
+                                    diagnosen_abbrechen.set_visibility(False)
                                 with ui.card().classes("arbeitskarte flex-1 p-5"):
                                     ui.label("CED-Stammdaten").classes("bereichstitel")
                                     # Erst der bewusste Bearbeitungsschalter gibt die
@@ -540,17 +558,17 @@ def zeige_hauptseite() -> None:
                                         placeholder="noch kein bestätigter Verlauf",
                                     ).props("outlined dense readonly").classes("w-full")
                                     with ui.row().classes("w-full gap-2 flex-wrap"):
-                                        patientenfall_bearbeiten = ui.button(
-                                            "Diagnosen und Therapien bearbeiten", icon="edit"
+                                        therapien_bearbeiten = ui.button(
+                                            "Therapien bearbeiten", icon="edit"
                                         ).props("outline color=teal-8")
-                                        patientenfall_speichern = ui.button(
-                                            "Änderungen speichern", icon="save"
+                                        therapien_speichern = ui.button(
+                                            "Therapien speichern", icon="save"
                                         ).props("color=teal-8")
-                                        patientenfall_abbrechen = ui.button(
+                                        therapien_abbrechen = ui.button(
                                             "Abbrechen", icon="close"
                                         ).props("flat color=grey-7")
-                                    patientenfall_speichern.set_visibility(False)
-                                    patientenfall_abbrechen.set_visibility(False)
+                                    therapien_speichern.set_visibility(False)
+                                    therapien_abbrechen.set_visibility(False)
 
                             with ui.card().classes("arbeitskarte w-full p-5"):
                                 letzte_befunde_titel = ui.label(
@@ -711,77 +729,135 @@ def zeige_hauptseite() -> None:
     # Nur der zuletzt geladene Formularstand wird gemerkt. So kann „Abbrechen“ ihn
     # wiederherstellen und unveränderte Felder werden nicht erneut versioniert.
     stammdaten_original = {"erstdiagnose": "", "befallsmuster": ""}
-    patientenfall_original = {
+    diagnosen_original = {
         "hauptdiagnose": "",
         "nebendiagnosen": "",
+        "hinweise": "",
+    }
+    therapien_original = {
         "therapie_medikamentoes": "",
         "therapie_chirurgisch": "",
     }
 
-    def setze_patientenfall_bearbeitung(aktiv: bool) -> None:
-        """Gibt Diagnose- und Therapiefelder nur nach bewusstem Klick frei."""
-        felder = (
-            hauptdiagnose_ausgabe,
-            nebendiagnosen_ausgabe,
-            therapie_medikamentoes_ausgabe,
-            therapie_chirurgisch_ausgabe,
-        )
-        for feld in felder:
+    def setze_diagnosen_bearbeitung(aktiv: bool) -> None:
+        """Gibt ausschließlich Diagnosen und deren Hinweisfeld zur Bearbeitung frei."""
+        for feld in (
+            hauptdiagnose_ausgabe, nebendiagnosen_ausgabe, diagnose_hinweise_ausgabe
+        ):
             feld.props(remove="readonly") if aktiv else feld.props(add="readonly")
-        patientenfall_bearbeiten.set_visibility(not aktiv)
-        patientenfall_speichern.set_visibility(aktiv)
-        patientenfall_abbrechen.set_visibility(aktiv)
+        diagnosen_bearbeiten.set_visibility(not aktiv)
+        diagnosen_speichern.set_visibility(aktiv)
+        diagnosen_abbrechen.set_visibility(aktiv)
 
-    def beginne_patientenfall_bearbeitung() -> None:
-        """Startet die manuelle, anschließend auditierte Fallbearbeitung."""
+    def beginne_diagnosen_bearbeitung() -> None:
+        """Startet nur die manuelle, anschließend auditierte Diagnosebearbeitung."""
         if zustand.patient_id is None:
             setze_status("Bitte zuerst einen Patienten auswählen.", fehler=True)
             return
-        setze_patientenfall_bearbeitung(True)
+        setze_diagnosen_bearbeitung(True)
 
-    def breche_patientenfall_bearbeitung_ab() -> None:
-        """Stellt den zuletzt aus der Datenbank geladenen Stand wieder her."""
-        hauptdiagnose_ausgabe.value = patientenfall_original["hauptdiagnose"]
-        nebendiagnosen_ausgabe.value = patientenfall_original["nebendiagnosen"]
-        therapie_medikamentoes_ausgabe.value = patientenfall_original[
-            "therapie_medikamentoes"
-        ]
-        therapie_chirurgisch_ausgabe.value = patientenfall_original[
-            "therapie_chirurgisch"
-        ]
-        setze_patientenfall_bearbeitung(False)
+    def breche_diagnosen_bearbeitung_ab() -> None:
+        """Verwirft ausschließlich ungespeicherte Diagnoseänderungen."""
+        hauptdiagnose_ausgabe.value = diagnosen_original["hauptdiagnose"]
+        nebendiagnosen_ausgabe.value = diagnosen_original["nebendiagnosen"]
+        diagnose_hinweise_ausgabe.value = diagnosen_original["hinweise"]
+        setze_diagnosen_bearbeitung(False)
 
-    def speichere_patientenfall_aenderungen() -> None:
-        """Versioniert die geprüften Diagnose- und Therapieangaben atomar."""
+    def speichere_diagnosen_aenderungen() -> None:
+        """Versioniert ausschließlich die bewusst freigegebenen Diagnosefelder."""
         if zustand.patient_id is None:
             setze_status("Bitte zuerst einen Patienten auswählen.", fehler=True)
             return
         try:
             with get_session() as sitzung:
-                speichere_patientenfall(
+                speichere_diagnosen(
                     sitzung,
                     zustand.patient_id,
-                    PatientenfallEingabe(
+                    DiagnosenEingabe(
                         hauptdiagnose=str(hauptdiagnose_ausgabe.value or ""),
                         nebendiagnosen=tuple(
                             zeile.strip()
                             for zeile in str(nebendiagnosen_ausgabe.value or "").splitlines()
                             if zeile.strip()
                         ),
-                        therapie_medikamentoes=str(
-                            therapie_medikamentoes_ausgabe.value or ""
-                        ),
-                        therapie_chirurgisch=str(
-                            therapie_chirurgisch_ausgabe.value or ""
-                        ),
+                        hinweise=str(diagnose_hinweise_ausgabe.value or ""),
                     ),
                 )
         except (SQLAlchemyError, ValueError) as fehler:
-            setze_status(f"Patientenfall konnte nicht gespeichert werden: {fehler}", fehler=True)
+            setze_status(f"Diagnosen konnten nicht gespeichert werden: {fehler}", fehler=True)
             return
-        setze_patientenfall_bearbeitung(False)
+        setze_diagnosen_bearbeitung(False)
         oeffne_patientenansicht()
-        setze_status("Diagnosen und Therapieverlauf wurden versioniert gespeichert")
+        setze_status("Diagnosen und Hinweise wurden versioniert gespeichert")
+
+    def setze_therapien_bearbeitung(aktiv: bool) -> None:
+        """Gibt ausschließlich medikamentöse und chirurgische Therapien frei."""
+        for feld in (therapie_medikamentoes_ausgabe, therapie_chirurgisch_ausgabe):
+            feld.props(remove="readonly") if aktiv else feld.props(add="readonly")
+        therapien_bearbeiten.set_visibility(not aktiv)
+        therapien_speichern.set_visibility(aktiv)
+        therapien_abbrechen.set_visibility(aktiv)
+
+    def beginne_therapien_bearbeitung() -> None:
+        """Startet nur die manuelle, anschließend auditierte Therapiebearbeitung."""
+        if zustand.patient_id is None:
+            setze_status("Bitte zuerst einen Patienten auswählen.", fehler=True)
+            return
+        setze_therapien_bearbeitung(True)
+
+    def breche_therapien_bearbeitung_ab() -> None:
+        """Verwirft ausschließlich ungespeicherte Therapieänderungen."""
+        therapie_medikamentoes_ausgabe.value = therapien_original[
+            "therapie_medikamentoes"
+        ]
+        therapie_chirurgisch_ausgabe.value = therapien_original[
+            "therapie_chirurgisch"
+        ]
+        setze_therapien_bearbeitung(False)
+
+    def speichere_therapien_aenderungen() -> None:
+        """Versioniert ausschließlich die bewusst freigegebenen Therapiefelder."""
+        if zustand.patient_id is None:
+            setze_status("Bitte zuerst einen Patienten auswählen.", fehler=True)
+            return
+        medikamentoes = str(therapie_medikamentoes_ausgabe.value or "").strip()
+        chirurgisch = str(therapie_chirurgisch_ausgabe.value or "").strip()
+        # Unveränderte Felder erzeugen keine zusätzliche Version. Leeren löscht
+        # weiterhin keine frühere medizinische Angabe; dafür wäre ein eigener,
+        # ausdrücklich auditierter Löschvorgang erforderlich.
+        geaendert_medikamentoes = (
+            medikamentoes
+            if medikamentoes
+            and medikamentoes != therapien_original["therapie_medikamentoes"]
+            else None
+        )
+        geaendert_chirurgisch = (
+            chirurgisch
+            if chirurgisch and chirurgisch != therapien_original["therapie_chirurgisch"]
+            else None
+        )
+        if geaendert_medikamentoes is None and geaendert_chirurgisch is None:
+            setze_status(
+                "Keine neue ausgefüllte Therapieangabe; leere Felder löschen keine Historie.",
+                fehler=True,
+            )
+            return
+        try:
+            with get_session() as sitzung:
+                anzahl = speichere_therapien(
+                    sitzung,
+                    zustand.patient_id,
+                    TherapienEingabe(
+                        therapie_medikamentoes=geaendert_medikamentoes,
+                        therapie_chirurgisch=geaendert_chirurgisch,
+                    ),
+                )
+        except (SQLAlchemyError, ValueError) as fehler:
+            setze_status(f"Therapien konnten nicht gespeichert werden: {fehler}", fehler=True)
+            return
+        setze_therapien_bearbeitung(False)
+        oeffne_patientenansicht()
+        setze_status(f"{anzahl} Therapiefeld(er) wurden versioniert gespeichert")
 
     def setze_stammdaten_bearbeitung(aktiv: bool) -> None:
         """Schaltet die manuelle Bearbeitung sichtbar und nachvollziehbar um."""
@@ -873,15 +949,16 @@ def zeige_hauptseite() -> None:
         setze_stammdaten_bearbeitung(False)
         hauptdiagnose_ausgabe.value = ""
         nebendiagnosen_ausgabe.value = ""
+        diagnose_hinweise_ausgabe.value = ""
         therapie_medikamentoes_ausgabe.value = ""
         therapie_chirurgisch_ausgabe.value = ""
-        patientenfall_original.update(
-            hauptdiagnose="",
-            nebendiagnosen="",
+        diagnosen_original.update(hauptdiagnose="", nebendiagnosen="", hinweise="")
+        therapien_original.update(
             therapie_medikamentoes="",
             therapie_chirurgisch="",
         )
-        setze_patientenfall_bearbeitung(False)
+        setze_diagnosen_bearbeitung(False)
+        setze_therapien_bearbeitung(False)
         letzte_befunde_tabelle.options["rowData"] = []
         letzte_befunde_tabelle.update()
         verlauf_tabelle.options["rowData"] = []
@@ -1099,15 +1176,20 @@ def zeige_hauptseite() -> None:
             for diagnose in uebersicht.diagnosen
             if diagnose is not hauptdiagnose and diagnose.status != "ERSETZT"
         )
+        diagnose_hinweise_ausgabe.value = uebersicht.diagnose_hinweise or ""
         therapie_medikamentoes_ausgabe.value = uebersicht.therapie_medikamentoes or ""
         therapie_chirurgisch_ausgabe.value = uebersicht.therapie_chirurgisch or ""
-        patientenfall_original.update(
+        diagnosen_original.update(
             hauptdiagnose=str(hauptdiagnose_ausgabe.value or ""),
             nebendiagnosen=str(nebendiagnosen_ausgabe.value or ""),
+            hinweise=str(diagnose_hinweise_ausgabe.value or ""),
+        )
+        therapien_original.update(
             therapie_medikamentoes=str(therapie_medikamentoes_ausgabe.value or ""),
             therapie_chirurgisch=str(therapie_chirurgisch_ausgabe.value or ""),
         )
-        setze_patientenfall_bearbeitung(False)
+        setze_diagnosen_bearbeitung(False)
+        setze_therapien_bearbeitung(False)
 
         erstdiagnose_ausgabe.value = (
             uebersicht.erstdiagnose.isoformat() if uebersicht.erstdiagnose else ""
@@ -1911,9 +1993,12 @@ def zeige_hauptseite() -> None:
     stammdaten_bearbeiten.on_click(beginne_stammdaten_bearbeitung)
     stammdaten_speichern.on_click(speichere_patientenstammdaten)
     stammdaten_abbrechen.on_click(breche_stammdaten_bearbeitung_ab)
-    patientenfall_bearbeiten.on_click(beginne_patientenfall_bearbeitung)
-    patientenfall_speichern.on_click(speichere_patientenfall_aenderungen)
-    patientenfall_abbrechen.on_click(breche_patientenfall_bearbeitung_ab)
+    diagnosen_bearbeiten.on_click(beginne_diagnosen_bearbeitung)
+    diagnosen_speichern.on_click(speichere_diagnosen_aenderungen)
+    diagnosen_abbrechen.on_click(breche_diagnosen_bearbeitung_ab)
+    therapien_bearbeiten.on_click(beginne_therapien_bearbeitung)
+    therapien_speichern.on_click(speichere_therapien_aenderungen)
+    therapien_abbrechen.on_click(breche_therapien_bearbeitung_ab)
     verlauf_navigation.on_click(oeffne_klinischen_verlauf)
     for fachschluessel, fachschalter in fachnavigation_schalter.items():
         fachschalter.on_click(
