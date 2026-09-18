@@ -186,8 +186,11 @@ der Seitenleiste angeboten. Die Dropdownauswahl aktiviert den Patienten ohne wei
 Klick, sodass die Patientenübersicht auch ohne Dokument geöffnet werden kann. „Daten
 zuordnen“ gehört ausschließlich zum getrennten Dokumentimport. Unter dem am unteren Rand
 angeordneten Schalter „Datenbankmodus beenden“ bleibt Name und Geburtsdatum des
-aktiven Patienten sichtbar. Beim Dokumentwechsel wird diese Zuordnung aus
-Sicherheitsgründen aufgehoben und muss erneut bestätigt werden.
+aktiven Patienten sichtbar. Beim Dokumentwechsel wird die bewusste Dropdownauswahl
+beibehalten. Name und Geburtsdatum des aktiven
+Patienten stehen auch im Kopf des Einlesebereichs. Nach der Dokumentanalyse werden
+erkannte Stammdaten erneut mit dem aktiven Patienten abgeglichen. Ein Widerspruch
+hebt die Auswahl nicht auf, sperrt aber weiterhin die Übernahme dieses Dokuments.
 
 Neue Patienten werden mit getrennten Feldern für Nachname und Vorname gespeichert
 und in allen neuen Ansichten einheitlich als „Nachname, Vorname“ angezeigt. Die alte
