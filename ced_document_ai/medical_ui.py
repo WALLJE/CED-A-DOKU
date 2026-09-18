@@ -252,6 +252,7 @@ def zeige_hauptseite() -> None:
                 fachnavigation_schalter[schluessel] = ui.button(
                     titel, icon=symbol
                 ).props("outline color=teal-8").classes("w-full")
+                fachnavigation_schalter[schluessel].disable()
         # Der Menüpunkt darf vor der Passwortfreigabe keine Rückschlüsse auf
         # Patientendaten oder vorbereitete Befunde ermöglichen.
         datenbank_navigation_titel.set_visibility(False)
@@ -397,7 +398,7 @@ def zeige_hauptseite() -> None:
                                         "Noch kein Patient bestätigt"
                                     ).classes("text-slate-600")
                             ced_pruefung_hinweis = ui.label(
-                                "Bitte zuerst einen Patienten bestätigen."
+                                "Bitte zuerst links einen Patienten auswählen."
                             ).classes("text-slate-600")
                             befunddatum = ui.input("Befunddatum").props(
                                 "outlined dense type=date"
@@ -789,7 +790,7 @@ def zeige_hauptseite() -> None:
     def beginne_stammdaten_bearbeitung() -> None:
         """Gibt Erstdiagnose und Befallsmuster erst nach bewusstem Klick frei."""
         if zustand.patient_id is None:
-            setze_status("Bitte zuerst einen Patienten ausdrücklich bestätigen.", fehler=True)
+            setze_status("Bitte zuerst links einen Patienten auswählen.", fehler=True)
             return
         setze_stammdaten_bearbeitung(True)
         setze_status("CED-Stammdaten können jetzt manuell ergänzt werden")
@@ -804,7 +805,7 @@ def zeige_hauptseite() -> None:
     def speichere_patientenstammdaten() -> None:
         """Versioniert ausschließlich tatsächlich geänderte, ausgefüllte Werte."""
         if zustand.patient_id is None:
-            setze_status("Bitte zuerst einen Patienten ausdrücklich bestätigen.", fehler=True)
+            setze_status("Bitte zuerst links einen Patienten auswählen.", fehler=True)
             return
         erstdiagnose_text = str(erstdiagnose_ausgabe.value or "").strip()
         befallsmuster_text = str(befallsmuster_ausgabe.value or "").strip()
@@ -880,7 +881,11 @@ def zeige_hauptseite() -> None:
         fachverlauf_tabelle.options["rowData"] = []
         fachverlauf_tabelle.update()
 
-    def setze_patientenkopf(patient: Patient | None) -> None:
+    def setze_patientenkopf(
+        patient: Patient | None,
+        *,
+        synchronisiere_auswahl: bool = True,
+    ) -> None:
         """Synchronisiert aktive Zuordnung in Seitenleiste und CED-Prüfkopf.
 
         Die Darstellung verwendet den gespeicherten Gesamtnamen, weil das aktuelle
@@ -890,8 +895,9 @@ def zeige_hauptseite() -> None:
         if patient is None:
             aktiver_patient_hinweis.text = "Aktiver Patient: keiner ausgewählt"
             ced_patientenkopf.text = "Noch kein Patient bestätigt"
-            aktiver_patient_auswahl.value = None
-            aktiver_patient_auswahl.update()
+            if synchronisiere_auswahl:
+                aktiver_patient_auswahl.value = None
+                aktiver_patient_auswahl.update()
             return
         geburtsdatum = (
             patient.birth_date.strftime("%d.%m.%Y")
@@ -904,13 +910,14 @@ def zeige_hauptseite() -> None:
         ced_patientenkopf.text = (
             f"Nachname, Vorname: {patient.display_name} · Geburtsdatum: {geburtsdatum}"
         )
-        aktiver_patient_auswahl.value = patient.id
-        aktiver_patient_auswahl.update()
+        if synchronisiere_auswahl:
+            aktiver_patient_auswahl.value = patient.id
+            aktiver_patient_auswahl.update()
 
     def oeffne_klinischen_verlauf() -> None:
         """Zeigt alle bestätigten Fragebogenparameter kumulativ über die Zeit."""
         if zustand.arbeitsmodus != DATENBANKMODUS or zustand.patient_id is None:
-            setze_status("Bitte zuerst einen Patienten ausdrücklich bestätigen.", fehler=True)
+            setze_status("Bitte zuerst links einen Patienten auswählen.", fehler=True)
             return
         try:
             with get_session() as sitzung:
@@ -1032,7 +1039,7 @@ def zeige_hauptseite() -> None:
     def oeffne_patientenansicht() -> None:
         """Lädt eine aktuelle lesende Übersicht des ausdrücklich bestätigten Patienten."""
         if zustand.arbeitsmodus != DATENBANKMODUS or zustand.patient_id is None:
-            setze_status("Bitte zuerst einen Patienten ausdrücklich bestätigen.", fehler=True)
+            setze_status("Bitte zuerst links einen Patienten auswählen.", fehler=True)
             return
         try:
             with get_session() as sitzung:
@@ -1123,14 +1130,20 @@ def zeige_hauptseite() -> None:
             ced_navigation.disable()
             patientenansicht_navigation.disable()
             verlauf_navigation.disable()
+            for fachschalter in fachnavigation_schalter.values():
+                fachschalter.disable()
             return
         ced_navigation.disable()
         if zustand.patient_id is None:
             patientenansicht_navigation.disable()
             verlauf_navigation.disable()
+            for fachschalter in fachnavigation_schalter.values():
+                fachschalter.disable()
             return
         patientenansicht_navigation.enable()
         verlauf_navigation.enable()
+        for fachschalter in fachnavigation_schalter.values():
+            fachschalter.enable()
         ist_ced_fragebogen = zustand.dokumenttyp == Dokumenttyp.CED_FRAGEBOGEN.value
         ced_navigation.set_enabled(
             bool(
@@ -1155,7 +1168,7 @@ def zeige_hauptseite() -> None:
     def oeffne_ced_pruefung() -> None:
         """Schlägt das Datum vor, extrahiert die Werte und öffnet den Prüfscreen."""
         if zustand.patient_id is None:
-            setze_status("Bitte zuerst einen Patienten ausdrücklich bestätigen.", fehler=True)
+            setze_status("Bitte zuerst links einen Patienten auswählen.", fehler=True)
             return
         if zustand.dokumenttyp != Dokumenttyp.CED_FRAGEBOGEN.value:
             setze_status("Die CED-Extraktion ist nur für CED-Patientenfragebögen verfügbar.", fehler=True)
@@ -1238,7 +1251,7 @@ def zeige_hauptseite() -> None:
         nur die Zeilenanzahl betrachtet werden; Tabellenwerte gehören nicht in Logs.
         """
         if zustand.patient_id is None:
-            fehlermeldung = "Bitte zuerst links einen Patienten auswählen und Daten zuordnen."
+            fehlermeldung = "Bitte zuerst links einen Patienten auswählen."
             setze_ced_hinweis(fehlermeldung, fehler=True)
             setze_status(fehlermeldung, fehler=True)
             return
@@ -1427,7 +1440,7 @@ def zeige_hauptseite() -> None:
 
         if not zustand.ausgelesener_inhalt:
             dokument_patienten_hinweis.text = (
-                "Patient auswählen und anschließend „Daten zuordnen“ verwenden."
+                "Patient auswählen; die Auswahl aktiviert dessen Fallansichten unmittelbar."
             )
         elif trefferliste:
             erster = trefferliste[0]
@@ -1478,17 +1491,22 @@ def zeige_hauptseite() -> None:
             return
         oeffne_ced_pruefung()
 
-    def aktiviere_patientenauswahl() -> None:
+    def aktiviere_patientenauswahl(
+        ereignis: events.ValueChangeEventArguments | None = None,
+    ) -> None:
         """Aktiviert die Dropdownwahl und prüft ihren Bezug zum offenen Dokument."""
         if zustand.arbeitsmodus != DATENBANKMODUS:
             return
-        if aktiver_patient_auswahl.value is None:
+        ausgewaehlter_wert = (
+            ereignis.value if ereignis is not None else aktiver_patient_auswahl.value
+        )
+        if ausgewaehlter_wert is None:
             zustand.patient_id = None
             zustand.patientenabgleich_erlaubt = False
-            setze_patientenkopf(None)
+            setze_patientenkopf(None, synchronisiere_auswahl=False)
             aktualisiere_ced_bereitschaft()
             return
-        ausgewaehlte_id = int(aktiver_patient_auswahl.value)
+        ausgewaehlte_id = int(ausgewaehlter_wert)
         with get_session() as sitzung:
             patient = sitzung.get(Patient, ausgewaehlte_id)
             if patient is None:
@@ -1498,7 +1516,7 @@ def zeige_hauptseite() -> None:
                 zustand.erkannte_patientendaten, [patient]
             )
         zustand.patient_id = ausgewaehlte_id
-        setze_patientenkopf(patient)
+        setze_patientenkopf(patient, synchronisiere_auswahl=False)
         erkannt = zustand.erkannte_patientendaten
         widerspruch = bool(
             erkannt.ausreichend_fuer_vorschlag
@@ -1835,7 +1853,7 @@ def zeige_hauptseite() -> None:
     anbieter_auswahl.on_value_change(lambda _: aktualisiere_anbieter())
     datenbank_schalter.text = "CED-Datenbank aktivieren"
     datenbank_schalter.on_click(aktualisiere_datenbankmodus)
-    aktiver_patient_auswahl.on_value_change(lambda _: aktiviere_patientenauswahl())
+    aktiver_patient_auswahl.on_value_change(aktiviere_patientenauswahl)
     neuer_patient_schalter.on_click(wechsle_neuer_patient_formular)
     patient_anlegen.on_click(lege_patient_an)
     ced_speichern.on_click(speichere_gepruefte_ced_daten)
@@ -1889,10 +1907,17 @@ def zeige_hauptseite() -> None:
             if (gelesen.length) emitEvent('abgelegte_dateien', {dateien: gelesen});
         });
         document.addEventListener('paste', async event => {
+            // Der Capture-Modus ist wichtig, weil fokussierte Eingabefelder und
+            // AG-Grid-Zellen das Ereignis sonst vor dem Dokument-Handler abfangen
+            // können. Zum Debugging MIME-Typen in den Browserwerkzeugen prüfen,
+            // niemals Bildinhalt oder Base64-Daten protokollieren.
             const bilder = [...(event.clipboardData?.items || [])]
-                .filter(eintrag => eintrag.type.startsWith('image/'));
+                .filter(eintrag => eintrag.kind === 'file' && eintrag.type.startsWith('image/'))
+                .map(eintrag => eintrag.getAsFile())
+                .filter(datei => datei !== null);
             if (!bilder.length) return;
             event.preventDefault();
+            event.stopPropagation();
             const gelesen = await Promise.all(bilder.map((bild, index) =>
                 new Promise((resolve, reject) => {
                     const leser = new FileReader();
@@ -1901,10 +1926,10 @@ def zeige_hauptseite() -> None:
                         base64: String(leser.result).split(',', 2)[1],
                     });
                     leser.onerror = reject;
-                    leser.readAsDataURL(bild.getAsFile());
+                    leser.readAsDataURL(bild);
                 })));
             emitEvent('abgelegte_dateien', {dateien: gelesen});
-        });
+        }, true);
     """)
 
 

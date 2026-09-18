@@ -89,6 +89,8 @@ speicherbare Daten für diesen Patienten enthält. Der Schalter ist nur dann akt
 Erkannte Patienten-ID, getrennt beschrifteter Vor- und Nachname sowie Geburtsdatum
 werden gegen den ausgewählten Datensatz geprüft. Bei einem Widerspruch bleibt der
 Patient für bestehende Ansichten aktiv, die Dokumentzuordnung wird jedoch gesperrt.
+Ohne aktive Patientenauswahl bleiben Patientenübersicht, klinischer Verlauf, Labor,
+Calprotectin, Endoskopie, Sonografie und MRT/CT einheitlich deaktiviert.
 
 Gibt es keinen passenden Bestandspatienten, kann „Neuer Patient“ in der Seitenleiste
 die selten benötigte Neuanlage einblenden. Eindeutig beschriftete Patienten-ID,
@@ -102,6 +104,12 @@ angelegt und anschließend durch Löschen der lokalen Entwicklungsdatenbank
 > zuerst prüfen, ob jede Angabe im Rohtext in einer eigenen, eindeutig beschrifteten
 > Zeile wie `Patienten-ID:`, `Name:` und `Geburtsdatum:` steht. Medizinische Inhalte
 > oder Stammdaten nicht zur Fehlersuche in Konsolen- oder Server-Logs ausgeben.
+
+Dokumentbilder können weiterhin per **Strg+V** beziehungsweise **Cmd+V** eingefügt
+werden. Der Paste-Handler arbeitet in der Capture-Phase, damit ein fokussiertes
+Formularfeld oder eine Tabellenzelle das Bildereignis nicht vorher abfängt. Falls ein
+Browser kein Bild übergibt, in dessen Entwicklerwerkzeugen ausschließlich `kind` und
+MIME-Typ des Clipboard-Eintrags prüfen; Base64- oder Bildinhalte nicht protokollieren.
 
 ## CED-Prüftabelle
 
