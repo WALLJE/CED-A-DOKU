@@ -32,6 +32,10 @@ class DokumentErgebnis:
     ausgelesener_inhalt: str
     strukturierte_darstellung: str
     kis_vorschlag: str
+    # Die unveränderte Antwort wird für eine spätere, ausdrücklich bestätigte
+    # Archivierung mitgeführt. Die sichtbaren vier Abschnitte und deren Parserlogik
+    # bleiben davon unberührt.
+    rohe_ki_antwort: str
 
 
 class DokumentAntwortFehler(ValueError):
@@ -172,6 +176,7 @@ def parse_dokumentantwort(antwort: str) -> DokumentErgebnis:
         ausgelesener_inhalt=inhalte["AUSGELESENER INHALT"],
         strukturierte_darstellung=inhalte["STRUKTURIERTE DARSTELLUNG"],
         kis_vorschlag=inhalte["KIS-VORSCHLAG"],
+        rohe_ki_antwort=antwort,
     )
 
 
