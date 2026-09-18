@@ -7,11 +7,13 @@ from sqlalchemy import func, select
 
 from ced_document_ai.config.settings import Settings
 from ced_document_ai.database.database import initialize_database
-from ced_document_ai.database.models import AuditLog, Patient, PatientCEDAttribute
+from ced_document_ai.database.models import AuditLog, Diagnosis, Patient, PatientCEDAttribute
 from ced_document_ai.services.ced.patient_overview import lade_patientenuebersicht
 from ced_document_ai.services.ced.patient_profile import (
     ManuelleCEDStammdaten,
+    PatientenfallEingabe,
     speichere_manuelle_stammdaten,
+    speichere_patientenfall,
 )
 
 
@@ -67,3 +69,28 @@ def test_leerer_auftrag_erzeugt_keine_daten(tmp_path) -> None:
             sitzung.scalar(select(func.count()).select_from(PatientCEDAttribute)) == 0
         )
         assert sitzung.scalar(select(func.count()).select_from(AuditLog)) == 0
+
+
+def test_diagnosen_und_therapien_werden_versioniert(tmp_path) -> None:
+    fabrik = initialize_database(Settings(database_path=tmp_path / "fall.sqlite3"))
+    with fabrik() as sitzung:
+        patient = Patient(external_id="TEST-03", name="Fall Beispiel")
+        sitzung.add(patient)
+        sitzung.commit()
+
+        eingabe = PatientenfallEingabe(
+            hauptdiagnose="Synthetische Hauptdiagnose",
+            nebendiagnosen=("Test-Nebendiagnose",),
+            therapie_medikamentoes="Synthetische Medikation",
+            therapie_chirurgisch="Keine Operation",
+        )
+        speichere_patientenfall(sitzung, patient.id, eingabe)
+        speichere_patientenfall(sitzung, patient.id, eingabe)
+
+        statuswerte = list(sitzung.scalars(select(Diagnosis.status)))
+        assert statuswerte.count("HAUPTDIAGNOSE") == 1
+        assert statuswerte.count("NEBENDIAGNOSE") == 1
+        assert statuswerte.count("ERSETZT") == 2
+        uebersicht = lade_patientenuebersicht(sitzung, patient.id)
+        assert uebersicht.therapie_medikamentoes == "Synthetische Medikation"
+        assert uebersicht.therapie_chirurgisch == "Keine Operation"

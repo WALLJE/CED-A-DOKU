@@ -82,13 +82,13 @@ eingeblendet. Das Werkzeug liest ausdrücklich beschriftete Patienten-ID-, Namen
 und Geburtsdatumszeilen aus dem bereits erzeugten Rohtext und sucht damit lokal im
 Patientenverzeichnis. Das Verzeichnis wird nicht an den KI-Anbieter übertragen.
 
-Ein gefundener Patient ist immer nur ein Vorschlag und muss ausdrücklich bestätigt
-werden. Die Zuordnung erfolgt vollständig in der geschützten Seitenleiste: Patient
-auswählen und anschließend „Daten zuordnen“ verwenden. Erkannte Patienten-ID, getrennt
-beschrifteter Vor- und Nachname sowie Geburtsdatum werden gegen den ausgewählten
-Datensatz geprüft. Bei einem Widerspruch wird nicht zugeordnet und eine Warnung
-angezeigt. Sind nicht genügend Stammdaten im Dokument enthalten, wird auf die nur
-manuell prüfbare Zuordnung hingewiesen.
+Ein gefundener Patient ist immer nur ein Vorschlag. Die Auswahl im geschützten
+Dropdown aktiviert den Patienten unmittelbar für Patientenübersicht und Verläufe.
+Davon getrennt prüft „Daten zuordnen“, ob das aktuell eingelesene Dokument neue,
+speicherbare Daten für diesen Patienten enthält. Der Schalter ist nur dann aktiv.
+Erkannte Patienten-ID, getrennt beschrifteter Vor- und Nachname sowie Geburtsdatum
+werden gegen den ausgewählten Datensatz geprüft. Bei einem Widerspruch bleibt der
+Patient für bestehende Ansichten aktiv, die Dokumentzuordnung wird jedoch gesperrt.
 
 Gibt es keinen passenden Bestandspatienten, kann „Neuer Patient“ in der Seitenleiste
 die selten benötigte Neuanlage einblenden. Eindeutig beschriftete Patienten-ID,
@@ -136,6 +136,9 @@ bestätigt oder einer vorhandenen Kategorie zugeordnet werden; unbekannte Felder
 werden weder automatisch dauerhaft angelegt noch verworfen. Das Befunddatum bleibt
 ebenfalls eine verpflichtende manuelle Angabe.
 
+Nicht lesbare, unsichere oder bewusst von der Übernahme ausgeschlossene Zeilen werden
+in roter Schrift dargestellt. Die übrige Tabellenformatierung bleibt identisch.
+
 Mit „Geprüfte CED-Daten speichern“ werden ausschließlich die in der Tabelle zur
 Übernahme markierten Zeilen zusammen mit Dokumentbezug, unveränderter KI-Rohantwort
 und KIS-Vorschlag in einer gemeinsamen SQLite-Transaktion gespeichert. Auch eine
@@ -146,6 +149,11 @@ dasselbe Dokument nicht versehentlich doppelt angelegt wird. Anschließend öffn
 Anwendung automatisch die aktualisierte Patientenübersicht. Fehlt beispielsweise das
 Befunddatum oder schlägt die Transaktion fehl, bleibt die CED-Prüfung dagegen offen
 und zeigt den Fehler sowohl im Prüfbereich als auch im Statusfeld an.
+Vor der Speicherung wird geprüft, ob für denselben Patienten am selben Datum bereits
+identische Kategorien und Werte bestätigt wurden. Dann wird die erste Speicherung
+angehalten und eine Doppelübernahme erfordert einen zweiten Bestätigungsklick. Nach
+erfolgreicher Speicherung werden Tabelle und Befunddatum geleert und „Daten zuordnen“
+bleibt für dieses Dokument deaktiviert.
 
 Solange ausschließlich Testdaten verwendet werden, kann der gesamte lokale
 Testbestand bei beendeter Anwendung durch Löschen von
@@ -166,10 +174,9 @@ nicht gespeichert; bei fehlendem oder zukünftigem Geburtsdatum wird ausdrückli
 „nicht berechenbar“ angezeigt.
 
 Direkt nach Aktivierung des Datenbankmodus wird das lokale Patientenverzeichnis in
-der Seitenleiste angeboten. Damit kann die Patientenübersicht auch ohne zuvor
-eingelesenes Dokument geöffnet werden: Patient im Dropdown wählen und mit „Daten
-zuordnen“ als aktiven Patienten bestätigen. Anschließend kann „Patientenübersicht“
-aufgerufen werden. Unter dem am unteren Rand
+der Seitenleiste angeboten. Die Dropdownauswahl aktiviert den Patienten ohne weiteren
+Klick, sodass die Patientenübersicht auch ohne Dokument geöffnet werden kann. „Daten
+zuordnen“ gehört ausschließlich zum getrennten Dokumentimport. Unter dem am unteren Rand
 angeordneten Schalter „Datenbankmodus beenden“ bleibt Name und Geburtsdatum des
 aktiven Patienten sichtbar. Beim Dokumentwechsel wird diese Zuordnung aus
 Sicherheitsgründen aufgehoben und muss erneut bestätigt werden.
@@ -214,6 +221,11 @@ nicht erneut versioniert. Die automatische Übernahme solcher Stammdaten aus
 Dokumenten bleibt einem späteren, ebenfalls bestätigungspflichtigen Schritt
 vorbehalten.
 
+Hauptdiagnose, Nebendiagnosen sowie medikamentöser und chirurgischer Therapieverlauf
+können über „Diagnosen und Therapien bearbeiten“ geändert werden. Frühere Diagnosen
+werden als ersetzt markiert, Therapietexte als neue Versionen gespeichert und die
+gesamte Änderung wird ohne medizinische Inhalte im Audit protokolliert.
+
 > **Debugging-Hinweis:** Bleibt die Übersicht trotz gespeicherter CED-Werte leer,
 > zunächst prüfen, ob `confirmed_by_user` gesetzt ist und `patient_id` mit dem oben
 > bestätigten Patienten übereinstimmt. In Debug-Ausgaben nur IDs und Trefferanzahlen,
@@ -239,14 +251,15 @@ keine realen Daten enthalten sind – die lokale Entwicklungsdatenbank gelöscht
 
 ## Verbleibende Entwicklungsschritte
 
-1. **Dokumentbasierte Fachparser:** Labor-, Endoskopie-, Sonografie- und
-   Schnittbilddokumente benötigen je Dokumenttyp eigene Extraktions- und
-   Bestätigungsregeln, bevor ihre Werte aus realen Dokumenten gespeichert werden.
+1. **Dokumentbasierte Fachparser:** Als nächster Importtyp ist der Laborbefund
+   umzusetzen. Neue eindeutig beschriftete Laborparameter sollen wie CED-Kategorien
+   prüfpflichtig vorgeschlagen werden können. Danach folgen Endoskopie-, Sonografie-
+   und Schnittbilddokumente mit eigenen Bestätigungsregeln.
 2. **Stammdatenmigration prüfen:** Altdaten mit ungetrenntem Gesamtnamen benötigen
    eine manuelle Prüfmaske; eine automatische Zerlegung ist absichtlich ausgeschlossen.
-3. **Diagnose- und Therapieeditor:** Haupt-/Nebendiagnosen und Therapieverläufe sind
-   in der Übersicht sichtbar, benötigen für den Produktivbetrieb aber noch eine
-   versionierte manuelle Bearbeitung mit Dokumentquelle und Auditspur.
+3. **Dokumentquellen für Falländerungen:** Der Diagnose- und Therapieeditor
+   versioniert und auditiert Änderungen; als nächstes fehlt die optionale Verknüpfung
+   jeder manuellen Änderung mit einem konkreten Quelldokument.
 4. **Calprotectin-Grafik:** Zusätzlich zur jetzt aktiven Tabelle ist die geplante
    skalierbare Zeitgrafik mit Datum auf der X- und Messwert auf der Y-Achse umzusetzen.
 5. **Berechtigungen und Betrieb:** Vor realen Patientendaten sind Benutzerkonten,

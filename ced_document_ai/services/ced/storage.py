@@ -52,6 +52,42 @@ class CEDSpeicherauftrag:
     befunde: tuple[FreigegebenerBefund, ...]
 
 
+def finde_befundduplikate(
+    sitzung: Session,
+    patient_id: int,
+    befunddatum: date,
+    befunde: tuple[FreigegebenerBefund, ...],
+) -> tuple[str, ...]:
+    """Nennt Kategorien mit gleichem Datum und identischem bestätigtem Wert.
+
+    Der Vergleich erfolgt nach getrimmtem Textwert und – sofern vorhanden – zusätzlich
+    nach numerischem Wert. Die Funktion speichert nichts; die Oberfläche muss vor
+    einer bewussten Doppelübernahme ausdrücklich nachfragen.
+    """
+    doppelte: list[str] = []
+    for befund in befunde:
+        kandidaten = sitzung.scalars(
+            select(Finding)
+            .join(FindingCategory, Finding.category_id == FindingCategory.id)
+            .where(
+                Finding.patient_id == patient_id,
+                Finding.finding_date == befunddatum,
+                Finding.confirmed_by_user.is_(True),
+                FindingCategory.name == befund.kategorie.strip(),
+            )
+        )
+        for vorhanden in kandidaten:
+            text_gleich = (vorhanden.text_value or "").strip() == befund.anzeigewert.strip()
+            numerisch_gleich = (
+                befund.numerischer_wert is None
+                or vorhanden.numeric_value == befund.numerischer_wert
+            )
+            if text_gleich and numerisch_gleich:
+                doppelte.append(befund.kategorie.strip())
+                break
+    return tuple(dict.fromkeys(doppelte))
+
+
 def _ermittle_oder_erstelle_dokumenttyp(sitzung: Session) -> DocumentType:
     """Legt den festen CED-Dokumenttyp idempotent, aber keinen Ersatztyp an."""
     name = "CED-Patientenfragebogen"

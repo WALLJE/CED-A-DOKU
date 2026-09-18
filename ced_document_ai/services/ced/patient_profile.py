@@ -7,7 +7,14 @@ from datetime import date
 
 from sqlalchemy.orm import Session
 
-from ced_document_ai.database.models import AuditLog, Patient, PatientCEDAttribute
+from sqlalchemy import select
+
+from ced_document_ai.database.models import (
+    AuditLog,
+    Diagnosis,
+    Patient,
+    PatientCEDAttribute,
+)
 
 
 ERSTDIAGNOSE = "ERSTDIAGNOSE"
@@ -22,6 +29,81 @@ class ManuelleCEDStammdaten:
 
     erstdiagnose: date | None
     befallsmuster: str | None
+
+
+@dataclass(frozen=True)
+class PatientenfallEingabe:
+    """Manuell geprüfte Diagnose- und Therapiefelder der Patientenübersicht."""
+
+    hauptdiagnose: str
+    nebendiagnosen: tuple[str, ...]
+    therapie_medikamentoes: str | None
+    therapie_chirurgisch: str | None
+
+
+def speichere_patientenfall(
+    sitzung: Session,
+    patient_id: int,
+    eingabe: PatientenfallEingabe,
+) -> None:
+    """Versioniert Diagnosen und geänderte Therapietexte in einer Transaktion."""
+    if sitzung.get(Patient, patient_id) is None:
+        raise ValueError("Der bestätigte Patient ist nicht mehr vorhanden.")
+    hauptdiagnose = eingabe.hauptdiagnose.strip()
+    if not hauptdiagnose:
+        raise ValueError("Eine Hauptdiagnose muss angegeben werden.")
+    nebendiagnosen = tuple(
+        dict.fromkeys(wert.strip() for wert in eingabe.nebendiagnosen if wert.strip())
+    )
+    with sitzung.begin_nested():
+        # Frühere Diagnoseversionen bleiben erhalten und werden klar als ersetzt
+        # markiert. So gibt es kein stilles Löschen medizinischer Angaben.
+        for diagnose in sitzung.scalars(
+            select(Diagnosis).where(
+                Diagnosis.patient_id == patient_id,
+                Diagnosis.status.in_(("HAUPTDIAGNOSE", "NEBENDIAGNOSE")),
+            )
+        ):
+            diagnose.status = "ERSETZT"
+        sitzung.add(
+            Diagnosis(
+                patient_id=patient_id,
+                diagnosis_name=hauptdiagnose,
+                status="HAUPTDIAGNOSE",
+            )
+        )
+        sitzung.add_all(
+            Diagnosis(
+                patient_id=patient_id,
+                diagnosis_name=wert,
+                status="NEBENDIAGNOSE",
+            )
+            for wert in nebendiagnosen
+        )
+        for attributtyp, textwert in (
+            (THERAPIE_MEDIKAMENTOES, eingabe.therapie_medikamentoes),
+            (THERAPIE_CHIRURGISCH, eingabe.therapie_chirurgisch),
+        ):
+            bereinigt = (textwert or "").strip()
+            if bereinigt:
+                sitzung.add(
+                    PatientCEDAttribute(
+                        patient_id=patient_id,
+                        attribute_type=attributtyp,
+                        text_value=bereinigt,
+                        source_type="MANUELL",
+                        confirmed_by_user=True,
+                    )
+                )
+        sitzung.add(
+            AuditLog(
+                action="PATIENTENFALL_MANUELL_BESTAETIGT",
+                entity_type="Patient",
+                entity_id=patient_id,
+                details=f"1 Hauptdiagnose und {len(nebendiagnosen)} Nebendiagnose(n) versioniert",
+            )
+        )
+    sitzung.commit()
 
 
 def speichere_manuelle_stammdaten(

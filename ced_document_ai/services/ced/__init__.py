@@ -15,6 +15,7 @@ from ced_document_ai.services.ced.questionnaire_parser import (
 from ced_document_ai.services.ced.storage import (
     CEDSpeicherauftrag,
     FreigegebenerBefund,
+    finde_befundduplikate,
     speichere_ced_pruefung,
 )
 from ced_document_ai.services.ced.patient_overview import (
@@ -34,6 +35,8 @@ from ced_document_ai.services.ced.patient_profile import (
     THERAPIE_CHIRURGISCH,
     THERAPIE_MEDIKAMENTOES,
     ManuelleCEDStammdaten,
+    PatientenfallEingabe,
+    speichere_patientenfall,
     speichere_manuelle_stammdaten,
 )
 
@@ -48,6 +51,7 @@ __all__ = [
     "parse_ced_fragebogen",
     "CEDSpeicherauftrag",
     "FreigegebenerBefund",
+    "finde_befundduplikate",
     "speichere_ced_pruefung",
     "BefundUebersicht",
     "DiagnoseUebersicht",
@@ -63,5 +67,7 @@ __all__ = [
     "THERAPIE_CHIRURGISCH",
     "THERAPIE_MEDIKAMENTOES",
     "ManuelleCEDStammdaten",
+    "PatientenfallEingabe",
+    "speichere_patientenfall",
     "speichere_manuelle_stammdaten",
 ]

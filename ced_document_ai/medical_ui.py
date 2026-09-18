@@ -43,7 +43,9 @@ from ced_document_ai.services.ced.patient_overview import (
 )
 from ced_document_ai.services.ced.patient_profile import (
     ManuelleCEDStammdaten,
+    PatientenfallEingabe,
     speichere_manuelle_stammdaten,
+    speichere_patientenfall,
 )
 from ced_document_ai.services.ced.questionnaire_parser import (
     ExtrahierterBefund,
@@ -53,6 +55,7 @@ from ced_document_ai.services.ced.questionnaire_parser import (
 from ced_document_ai.services.ced.storage import (
     CEDSpeicherauftrag,
     FreigegebenerBefund,
+    finde_befundduplikate,
     speichere_ced_pruefung,
 )
 from ced_document_ai.services.documents.converter import (
@@ -93,6 +96,8 @@ class Sitzungszustand:
     # temporär. Dieser Umsetzungsschritt schreibt noch keinen Befund in SQLite.
     ced_befunde: list[ExtrahierterBefund] = field(default_factory=list)
     gespeichertes_dokument_id: int | None = None
+    patientenabgleich_erlaubt: bool = False
+    duplikate_bestaetigt: bool = False
     # Der Anbieter des sichtbaren Ergebnisses wird separat festgehalten. So kann
     # eine neue Auswahl als "noch nicht neu verarbeitet" kenntlich gemacht werden,
     # ohne das bereits hochgeladene Dokument oder dessen bisheriges Ergebnis zu löschen.
@@ -177,6 +182,7 @@ def zeige_hauptseite() -> None:
           .ced-fehler { color: #991b1b !important; background: #fee2e2;
             border: 2px solid #dc2626; border-radius: 10px; padding: 12px 14px;
             font-weight: 700; width: 100%; }
+          .ced-ausgeschlossen { color: #b91c1c !important; }
         </style>
     """)
 
@@ -402,6 +408,9 @@ def zeige_hauptseite() -> None:
                                         "resizable": True,
                                         "sortable": True,
                                         "filter": True,
+                                        "cellClassRules": {
+                                            "ced-ausgeschlossen": "data.uebernehmen === false"
+                                        },
                                     },
                                     "columnDefs": [
                                         {"headerName": "Status", "field": "status", "width": 125},
@@ -473,13 +482,13 @@ def zeige_hauptseite() -> None:
                             ):
                                 with ui.card().classes("arbeitskarte flex-1 p-5"):
                                     ui.label("Diagnosen").classes("bereichstitel")
-                                    hauptdiagnose_ausgabe = ui.label(
-                                        "Hauptdiagnose: noch nicht klassifiziert"
-                                    )
-                                    ui.label("Weitere gespeicherte Diagnosen").classes(
-                                        "font-semibold text-slate-700 mt-2"
-                                    )
-                                    diagnosen_liste = ui.column().classes("gap-1")
+                                    hauptdiagnose_ausgabe = ui.input(
+                                        "Hauptdiagnose", placeholder="noch nicht klassifiziert"
+                                    ).props("outlined dense readonly").classes("w-full")
+                                    nebendiagnosen_ausgabe = ui.textarea(
+                                        "Nebendiagnosen",
+                                        placeholder="eine Diagnose pro Zeile",
+                                    ).props("outlined dense readonly").classes("w-full")
                                 with ui.card().classes("arbeitskarte flex-1 p-5"):
                                     ui.label("CED-Stammdaten").classes("bereichstitel")
                                     # Erst der bewusste Bearbeitungsschalter gibt die
@@ -513,12 +522,26 @@ def zeige_hauptseite() -> None:
                             ):
                                 with ui.card().classes("arbeitskarte w-full p-5"):
                                     ui.label("Therapieverlauf").classes("bereichstitel")
-                                    therapie_medikamentoes_ausgabe = ui.label(
-                                        "Medikamentös: noch kein bestätigter Verlauf"
-                                    )
-                                    therapie_chirurgisch_ausgabe = ui.label(
-                                        "Chirurgisch: noch kein bestätigter Verlauf"
-                                    )
+                                    therapie_medikamentoes_ausgabe = ui.textarea(
+                                        "Medikamentös",
+                                        placeholder="noch kein bestätigter Verlauf",
+                                    ).props("outlined dense readonly").classes("w-full")
+                                    therapie_chirurgisch_ausgabe = ui.textarea(
+                                        "Chirurgisch",
+                                        placeholder="noch kein bestätigter Verlauf",
+                                    ).props("outlined dense readonly").classes("w-full")
+                                    with ui.row().classes("w-full gap-2 flex-wrap"):
+                                        patientenfall_bearbeiten = ui.button(
+                                            "Diagnosen und Therapien bearbeiten", icon="edit"
+                                        ).props("outline color=teal-8")
+                                        patientenfall_speichern = ui.button(
+                                            "Änderungen speichern", icon="save"
+                                        ).props("color=teal-8")
+                                        patientenfall_abbrechen = ui.button(
+                                            "Abbrechen", icon="close"
+                                        ).props("flat color=grey-7")
+                                    patientenfall_speichern.set_visibility(False)
+                                    patientenfall_abbrechen.set_visibility(False)
 
                             with ui.card().classes("arbeitskarte w-full p-5"):
                                 letzte_befunde_titel = ui.label(
@@ -666,10 +689,12 @@ def zeige_hauptseite() -> None:
         """Entfernt temporäre CED-Werte, wenn Dokument oder Patient wechselt."""
         zustand.ced_befunde.clear()
         zustand.gespeichertes_dokument_id = None
+        zustand.duplikate_bestaetigt = False
         ced_tabelle.options["rowData"] = []
         ced_tabelle.update()
         befunddatum.value = ""
         ced_speichern.disable()
+        ced_speichern.text = "Geprüfte CED-Daten speichern"
         ced_navigation.disable()
         ced_patientenkopf.text = "Noch kein Patient bestätigt"
         ced_dialog.close()
@@ -677,6 +702,77 @@ def zeige_hauptseite() -> None:
     # Nur der zuletzt geladene Formularstand wird gemerkt. So kann „Abbrechen“ ihn
     # wiederherstellen und unveränderte Felder werden nicht erneut versioniert.
     stammdaten_original = {"erstdiagnose": "", "befallsmuster": ""}
+    patientenfall_original = {
+        "hauptdiagnose": "",
+        "nebendiagnosen": "",
+        "therapie_medikamentoes": "",
+        "therapie_chirurgisch": "",
+    }
+
+    def setze_patientenfall_bearbeitung(aktiv: bool) -> None:
+        """Gibt Diagnose- und Therapiefelder nur nach bewusstem Klick frei."""
+        felder = (
+            hauptdiagnose_ausgabe,
+            nebendiagnosen_ausgabe,
+            therapie_medikamentoes_ausgabe,
+            therapie_chirurgisch_ausgabe,
+        )
+        for feld in felder:
+            feld.props(remove="readonly") if aktiv else feld.props(add="readonly")
+        patientenfall_bearbeiten.set_visibility(not aktiv)
+        patientenfall_speichern.set_visibility(aktiv)
+        patientenfall_abbrechen.set_visibility(aktiv)
+
+    def beginne_patientenfall_bearbeitung() -> None:
+        """Startet die manuelle, anschließend auditierte Fallbearbeitung."""
+        if zustand.patient_id is None:
+            setze_status("Bitte zuerst einen Patienten auswählen.", fehler=True)
+            return
+        setze_patientenfall_bearbeitung(True)
+
+    def breche_patientenfall_bearbeitung_ab() -> None:
+        """Stellt den zuletzt aus der Datenbank geladenen Stand wieder her."""
+        hauptdiagnose_ausgabe.value = patientenfall_original["hauptdiagnose"]
+        nebendiagnosen_ausgabe.value = patientenfall_original["nebendiagnosen"]
+        therapie_medikamentoes_ausgabe.value = patientenfall_original[
+            "therapie_medikamentoes"
+        ]
+        therapie_chirurgisch_ausgabe.value = patientenfall_original[
+            "therapie_chirurgisch"
+        ]
+        setze_patientenfall_bearbeitung(False)
+
+    def speichere_patientenfall_aenderungen() -> None:
+        """Versioniert die geprüften Diagnose- und Therapieangaben atomar."""
+        if zustand.patient_id is None:
+            setze_status("Bitte zuerst einen Patienten auswählen.", fehler=True)
+            return
+        try:
+            with get_session() as sitzung:
+                speichere_patientenfall(
+                    sitzung,
+                    zustand.patient_id,
+                    PatientenfallEingabe(
+                        hauptdiagnose=str(hauptdiagnose_ausgabe.value or ""),
+                        nebendiagnosen=tuple(
+                            zeile.strip()
+                            for zeile in str(nebendiagnosen_ausgabe.value or "").splitlines()
+                            if zeile.strip()
+                        ),
+                        therapie_medikamentoes=str(
+                            therapie_medikamentoes_ausgabe.value or ""
+                        ),
+                        therapie_chirurgisch=str(
+                            therapie_chirurgisch_ausgabe.value or ""
+                        ),
+                    ),
+                )
+        except (SQLAlchemyError, ValueError) as fehler:
+            setze_status(f"Patientenfall konnte nicht gespeichert werden: {fehler}", fehler=True)
+            return
+        setze_patientenfall_bearbeitung(False)
+        oeffne_patientenansicht()
+        setze_status("Diagnosen und Therapieverlauf wurden versioniert gespeichert")
 
     def setze_stammdaten_bearbeitung(aktiv: bool) -> None:
         """Schaltet die manuelle Bearbeitung sichtbar und nachvollziehbar um."""
@@ -766,14 +862,17 @@ def zeige_hauptseite() -> None:
         befallsmuster_ausgabe.value = ""
         stammdaten_original.update(erstdiagnose="", befallsmuster="")
         setze_stammdaten_bearbeitung(False)
-        diagnosen_liste.clear()
-        hauptdiagnose_ausgabe.text = "Hauptdiagnose: noch nicht klassifiziert"
-        therapie_medikamentoes_ausgabe.text = (
-            "Medikamentös: noch kein bestätigter Verlauf"
+        hauptdiagnose_ausgabe.value = ""
+        nebendiagnosen_ausgabe.value = ""
+        therapie_medikamentoes_ausgabe.value = ""
+        therapie_chirurgisch_ausgabe.value = ""
+        patientenfall_original.update(
+            hauptdiagnose="",
+            nebendiagnosen="",
+            therapie_medikamentoes="",
+            therapie_chirurgisch="",
         )
-        therapie_chirurgisch_ausgabe.text = (
-            "Chirurgisch: noch kein bestätigter Verlauf"
-        )
+        setze_patientenfall_bearbeitung(False)
         letzte_befunde_tabelle.options["rowData"] = []
         letzte_befunde_tabelle.update()
         verlauf_tabelle.options["rowData"] = []
@@ -968,37 +1067,21 @@ def zeige_hauptseite() -> None:
             ),
             None,
         )
-        hauptdiagnose_ausgabe.text = (
-            f"Hauptdiagnose: {hauptdiagnose.bezeichnung}"
-            if hauptdiagnose
-            else "Hauptdiagnose: noch nicht klassifiziert"
+        hauptdiagnose_ausgabe.value = hauptdiagnose.bezeichnung if hauptdiagnose else ""
+        nebendiagnosen_ausgabe.value = "\n".join(
+            diagnose.bezeichnung
+            for diagnose in uebersicht.diagnosen
+            if diagnose is not hauptdiagnose and diagnose.status != "ERSETZT"
         )
-        diagnosen_liste.clear()
-        with diagnosen_liste:
-            if not uebersicht.diagnosen:
-                ui.label("Noch keine bestätigte Diagnose vorhanden").classes(
-                    "text-slate-500 italic"
-                )
-            for diagnose in uebersicht.diagnosen:
-                if diagnose is hauptdiagnose:
-                    continue
-                datum = (
-                    diagnose.erstdiagnose.strftime("%d.%m.%Y")
-                    if diagnose.erstdiagnose
-                    else "Datum offen"
-                )
-                ui.label(f"• {diagnose.bezeichnung} · {diagnose.status} · {datum}")
-
-        therapie_medikamentoes_ausgabe.text = (
-            f"Medikamentös: {uebersicht.therapie_medikamentoes}"
-            if uebersicht.therapie_medikamentoes
-            else "Medikamentös: noch kein bestätigter Verlauf"
+        therapie_medikamentoes_ausgabe.value = uebersicht.therapie_medikamentoes or ""
+        therapie_chirurgisch_ausgabe.value = uebersicht.therapie_chirurgisch or ""
+        patientenfall_original.update(
+            hauptdiagnose=str(hauptdiagnose_ausgabe.value or ""),
+            nebendiagnosen=str(nebendiagnosen_ausgabe.value or ""),
+            therapie_medikamentoes=str(therapie_medikamentoes_ausgabe.value or ""),
+            therapie_chirurgisch=str(therapie_chirurgisch_ausgabe.value or ""),
         )
-        therapie_chirurgisch_ausgabe.text = (
-            f"Chirurgisch: {uebersicht.therapie_chirurgisch}"
-            if uebersicht.therapie_chirurgisch
-            else "Chirurgisch: noch kein bestätigter Verlauf"
-        )
+        setze_patientenfall_bearbeitung(False)
 
         erstdiagnose_ausgabe.value = (
             uebersicht.erstdiagnose.isoformat() if uebersicht.erstdiagnose else ""
@@ -1041,9 +1124,7 @@ def zeige_hauptseite() -> None:
             patientenansicht_navigation.disable()
             verlauf_navigation.disable()
             return
-        # Die Übersicht bleibt im Datenbankmodus erreichbar. Fehlt die Zuordnung,
-        # verweist ihr Klick auf die Patientenauswahl in der Seitenleiste.
-        ced_navigation.enable()
+        ced_navigation.disable()
         if zustand.patient_id is None:
             patientenansicht_navigation.disable()
             verlauf_navigation.disable()
@@ -1051,6 +1132,14 @@ def zeige_hauptseite() -> None:
         patientenansicht_navigation.enable()
         verlauf_navigation.enable()
         ist_ced_fragebogen = zustand.dokumenttyp == Dokumenttyp.CED_FRAGEBOGEN.value
+        ced_navigation.set_enabled(
+            bool(
+                ist_ced_fragebogen
+                and zustand.strukturierte_darstellung.strip()
+                and zustand.patientenabgleich_erlaubt
+                and zustand.gespeichertes_dokument_id is None
+            )
+        )
         if ist_ced_fragebogen:
             ced_pruefung_hinweis.text = (
                 "Die Werte werden aus der vorhandenen strukturierten Darstellung gelesen. "
@@ -1210,6 +1299,25 @@ def zeige_hauptseite() -> None:
                     qualitaet=qualitaet,
                 )
             )
+        if not zustand.duplikate_bestaetigt:
+            with get_session() as sitzung:
+                duplikate = finde_befundduplikate(
+                    sitzung,
+                    zustand.patient_id,
+                    datum,
+                    tuple(freigegebene),
+                )
+            if duplikate:
+                zustand.duplikate_bestaetigt = True
+                ced_speichern.text = "Duplikate trotzdem speichern"
+                fehlermeldung = (
+                    f"Mögliches Duplikat am selben Datum in {len(duplikate)} "
+                    "Kategorie(n) erkannt. Bitte Werte prüfen und nur bei bewusster "
+                    "Doppelübernahme erneut speichern."
+                )
+                setze_ced_hinweis(fehlermeldung, fehler=True)
+                setze_status("Mögliche Befundduplikate erkannt", fehler=True)
+                return
         if zustand.ergebnis_anbieter not in {"uk", "openai"}:
             fehlermeldung = (
                 "Der Anbieter des sichtbaren Ergebnisses ist nicht eindeutig. "
@@ -1245,7 +1353,14 @@ def zeige_hauptseite() -> None:
             setze_status(fehlermeldung, fehler=True)
             return
         zustand.gespeichertes_dokument_id = dokument_id
+        zustand.ced_befunde.clear()
+        zustand.duplikate_bestaetigt = False
+        ced_tabelle.options["rowData"] = []
+        ced_tabelle.update()
+        befunddatum.value = ""
         ced_speichern.disable()
+        ced_speichern.text = "Geprüfte CED-Daten speichern"
+        ced_navigation.disable()
         ced_pruefung_hinweis.text = (
             f"Testdaten als bestätigtes Dokument {dokument_id} gespeichert. "
             "Für Änderungen bitte ein neues Dokument einlesen."
@@ -1269,6 +1384,7 @@ def zeige_hauptseite() -> None:
         if zustand.arbeitsmodus != DATENBANKMODUS:
             return
         zustand.patient_id = None
+        zustand.patientenabgleich_erlaubt = False
         setze_ced_pruefung_zurueck()
         setze_patientenansicht_zurueck()
         zustand.erkannte_patientendaten = erkenne_patientendaten(
@@ -1344,71 +1460,64 @@ def zeige_hauptseite() -> None:
         aktualisiere_ced_bereitschaft()
 
     def ordne_daten_patient_zu() -> None:
-        """Prüft Dokumentstammdaten und bestätigt dann die Sidebar-Auswahl."""
+        """Öffnet die Prüfung nur, wenn tatsächlich neue Daten zuordenbar sind."""
         if zustand.arbeitsmodus != DATENBANKMODUS:
             setze_status("Patientenzuordnung erfordert den geschützten Datenbankmodus.", fehler=True)
             return
-        if aktiver_patient_auswahl.value is None:
+        if zustand.patient_id is None:
             setze_status("Bitte links zuerst einen Patienten auswählen.", fehler=True)
             return
-        patient_id = int(aktiver_patient_auswahl.value)
+        if not zustand.patientenabgleich_erlaubt:
+            setze_status("Dokumentdaten passen nicht zum aktiven Patienten.", fehler=True)
+            return
+        if zustand.dokumenttyp != Dokumenttyp.CED_FRAGEBOGEN.value:
+            setze_status("Für diesen Dokumenttyp sind noch keine Daten zuordenbar.", fehler=True)
+            return
+        if zustand.gespeichertes_dokument_id is not None:
+            setze_status("Die Daten dieses Dokuments wurden bereits gespeichert.", fehler=True)
+            return
+        oeffne_ced_pruefung()
+
+    def aktiviere_patientenauswahl() -> None:
+        """Aktiviert die Dropdownwahl und prüft ihren Bezug zum offenen Dokument."""
+        if zustand.arbeitsmodus != DATENBANKMODUS:
+            return
+        if aktiver_patient_auswahl.value is None:
+            zustand.patient_id = None
+            zustand.patientenabgleich_erlaubt = False
+            setze_patientenkopf(None)
+            aktualisiere_ced_bereitschaft()
+            return
+        ausgewaehlte_id = int(aktiver_patient_auswahl.value)
         with get_session() as sitzung:
-            patient = sitzung.get(Patient, patient_id)
+            patient = sitzung.get(Patient, ausgewaehlte_id)
             if patient is None:
                 setze_status("Der ausgewählte Patient ist nicht mehr vorhanden.", fehler=True)
                 return
             treffer = ermittle_patiententreffer(
                 zustand.erkannte_patientendaten, [patient]
             )
-            bezeichnung = f"{patient.external_id} · {patient.display_name}"
-        erkannt = zustand.erkannte_patientendaten
-        if erkannt.ausreichend_fuer_vorschlag and not treffer:
-            dokument_patienten_hinweis.text = (
-                "WARNUNG: Die Stammdaten des Dokuments passen nicht zum ausgewählten Patienten. "
-                "Die Daten wurden nicht zugeordnet."
-            )
-            dokument_patienten_hinweis.classes(add="ced-fehler")
-            setze_status("Patientenabweichung erkannt · keine Zuordnung", fehler=True)
-            return
-        if treffer and treffer[0].widerspruch:
-            dokument_patienten_hinweis.text = (
-                "WARNUNG: Zur gleichen Patienten-ID wurden widersprüchliche Stammdaten erkannt."
-            )
-            dokument_patienten_hinweis.classes(add="ced-fehler")
-            setze_status("Widersprüchliche Patientenstammdaten · keine Zuordnung", fehler=True)
-            return
-        zustand.patient_id = patient_id
-        dokument_patienten_hinweis.classes(remove="ced-fehler")
-        dokument_patienten_hinweis.text = f"Zugeordnet: {bezeichnung}"
+        zustand.patient_id = ausgewaehlte_id
         setze_patientenkopf(patient)
-        aktualisiere_ced_bereitschaft()
-        if not erkannt.ausreichend_fuer_vorschlag and zustand.ausgelesener_inhalt:
+        erkannt = zustand.erkannte_patientendaten
+        widerspruch = bool(
+            erkannt.ausreichend_fuer_vorschlag
+            and (not treffer or treffer[0].widerspruch)
+        )
+        zustand.patientenabgleich_erlaubt = not widerspruch
+        if widerspruch:
+            dokument_patienten_hinweis.text = (
+                "WARNUNG: Der aktive Patient passt nicht zu den Stammdaten des Dokuments."
+            )
+            dokument_patienten_hinweis.classes(add="ced-fehler")
             setze_status(
-                "Daten zugeordnet · Dokument enthielt keine sicher prüfbaren Patientenstammdaten"
+                "Patient aktiv · Dokumentzuordnung wegen Abweichung gesperrt",
+                fehler=True,
             )
         else:
-            setze_status("Dokumentdaten wurden dem ausgewählten Patienten zugeordnet")
-        if zustand.dokumenttyp == Dokumenttyp.CED_FRAGEBOGEN.value:
-            oeffne_ced_pruefung()
-
-    def merke_patientenauswahl_vor() -> None:
-        """Markiert eine Dropdownwahl erst nach „Daten zuordnen“ als aktiv."""
-        if zustand.arbeitsmodus != DATENBANKMODUS:
-            return
-        if aktiver_patient_auswahl.value is None:
-            zustand.patient_id = None
-            setze_patientenkopf(None)
-            aktualisiere_ced_bereitschaft()
-            return
-        ausgewaehlte_id = int(aktiver_patient_auswahl.value)
-        if ausgewaehlte_id == zustand.patient_id:
-            return
-        zustand.patient_id = None
-        aktiver_patient_hinweis.text = "Aktiver Patient: noch nicht zugeordnet"
-        dokument_patienten_hinweis.text = (
-            "Auswahl vorgemerkt · mit „Daten zuordnen“ bestätigen und prüfen."
-        )
-        dokument_patienten_hinweis.classes(remove="ced-fehler")
+            dokument_patienten_hinweis.classes(remove="ced-fehler")
+            dokument_patienten_hinweis.text = f"Aktiver Patient: {patient.display_name}"
+            setze_status("Patient ausgewählt und aktiviert")
         aktualisiere_ced_bereitschaft()
 
     def wechsle_neuer_patient_formular() -> None:
@@ -1459,19 +1568,9 @@ def zeige_hauptseite() -> None:
         aktualisiere_patientenvorschlaege()
         aktiver_patient_auswahl.value = neue_id
         aktiver_patient_auswahl.update()
-        zustand.patient_id = neue_id
-        dokument_patienten_hinweis.text = (
-            f"Neuer Patient bestätigt: {externe_id} · {nachname}, {vorname}"
-        )
-        with get_session() as sitzung:
-            neuer_patient = sitzung.get(Patient, neue_id)
-            if neuer_patient is None:
-                setze_status("Der neu angelegte Patient konnte nicht geladen werden.", fehler=True)
-                return
-            setze_patientenkopf(neuer_patient)
+        aktiviere_patientenauswahl()
         neuer_patient_formular.set_visibility(False)
-        aktualisiere_ced_bereitschaft()
-        setze_status("Patient wurde angelegt und für dieses Dokument bestätigt")
+        setze_status(f"Patient {nachname}, {vorname} wurde angelegt und aktiviert")
 
     def aktualisiere_datenbankmodus() -> None:
         """Aktiviert oder beendet den geschützten Datenbankmodus."""
@@ -1483,6 +1582,7 @@ def zeige_hauptseite() -> None:
             datenbank_status.text = "Datenbank: nicht aktiviert · Lesemodus aktiv"
             hauptueberschrift.text = "Auslesen von Dokumenten"
             zustand.patient_id = None
+            zustand.patientenabgleich_erlaubt = False
             aktiver_patient_auswahl.options = {}
             aktiver_patient_auswahl.value = None
             aktiver_patient_auswahl.update()
@@ -1600,6 +1700,7 @@ def zeige_hauptseite() -> None:
         zustand.letzter_fehler = ""
         zustand.ergebnis_anbieter = ""
         zustand.patient_id = None
+        zustand.patientenabgleich_erlaubt = False
         dokumenttyp_ausgabe.value = ""
         ergebnis_ausgabe.value = ""
         ergebnis_auswahl.value = "rohtext"
@@ -1632,6 +1733,7 @@ def zeige_hauptseite() -> None:
         zustand.letzter_fehler = ""
         zustand.ergebnis_anbieter = ""
         zustand.patient_id = None
+        zustand.patientenabgleich_erlaubt = False
         dokumenttyp_ausgabe.value = ""
         ergebnis_ausgabe.value = ""
         ergebnis_auswahl.value = "rohtext"
@@ -1733,7 +1835,7 @@ def zeige_hauptseite() -> None:
     anbieter_auswahl.on_value_change(lambda _: aktualisiere_anbieter())
     datenbank_schalter.text = "CED-Datenbank aktivieren"
     datenbank_schalter.on_click(aktualisiere_datenbankmodus)
-    aktiver_patient_auswahl.on_value_change(lambda _: merke_patientenauswahl_vor())
+    aktiver_patient_auswahl.on_value_change(lambda _: aktiviere_patientenauswahl())
     neuer_patient_schalter.on_click(wechsle_neuer_patient_formular)
     patient_anlegen.on_click(lege_patient_an)
     ced_speichern.on_click(speichere_gepruefte_ced_daten)
@@ -1743,6 +1845,9 @@ def zeige_hauptseite() -> None:
     stammdaten_bearbeiten.on_click(beginne_stammdaten_bearbeitung)
     stammdaten_speichern.on_click(speichere_patientenstammdaten)
     stammdaten_abbrechen.on_click(breche_stammdaten_bearbeitung_ab)
+    patientenfall_bearbeiten.on_click(beginne_patientenfall_bearbeitung)
+    patientenfall_speichern.on_click(speichere_patientenfall_aenderungen)
+    patientenfall_abbrechen.on_click(breche_patientenfall_bearbeitung_ab)
     verlauf_navigation.on_click(oeffne_klinischen_verlauf)
     for fachschluessel, fachschalter in fachnavigation_schalter.items():
         fachschalter.on_click(

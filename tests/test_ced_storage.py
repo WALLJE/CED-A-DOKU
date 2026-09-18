@@ -19,6 +19,7 @@ from ced_document_ai.database.models import (
 from ced_document_ai.services.ced.storage import (
     CEDSpeicherauftrag,
     FreigegebenerBefund,
+    finde_befundduplikate,
     speichere_ced_pruefung,
 )
 
@@ -100,3 +101,20 @@ def test_leerer_auftrag_speichert_keine_teildaten(tmp_path) -> None:
 
         assert sitzung.scalar(select(func.count(Document.id))) == 0
         assert sitzung.scalar(select(func.count(FindingCategory.id))) == 0
+
+
+def test_identische_werte_am_selben_datum_werden_als_duplikat_erkannt(tmp_path) -> None:
+    fabrik = initialize_database(Settings(database_path=tmp_path / "duplikat.sqlite3"))
+    with fabrik() as sitzung:
+        patient = Patient(external_id="TEST-003", name="Doppel Test")
+        sitzung.add(patient)
+        sitzung.commit()
+        auftrag = _auftrag(patient.id)
+        speichere_ced_pruefung(sitzung, auftrag)
+
+        assert finde_befundduplikate(
+            sitzung, patient.id, auftrag.befunddatum, auftrag.befunde
+        ) == ("Gewicht", "Appetit")
+        assert finde_befundduplikate(
+            sitzung, patient.id, date(2026, 1, 2), auftrag.befunde
+        ) == ()
