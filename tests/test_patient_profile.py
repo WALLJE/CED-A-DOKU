@@ -33,6 +33,8 @@ def test_manuelle_stammdaten_werden_versioniert_und_angezeigt(tmp_path) -> None:
             ManuelleCEDStammdaten(
                 erstdiagnose=date(2020, 4, 3),
                 befallsmuster="synthetisches Testmuster",
+                eim_auswahl=("Uveitis", "Erythema nodosum"),
+                eim_weitere="Synthetische weitere EIM",
             ),
         )
         speichere_manuelle_stammdaten(
@@ -45,11 +47,13 @@ def test_manuelle_stammdaten_werden_versioniert_und_angezeigt(tmp_path) -> None:
         )
         uebersicht = lade_patientenuebersicht(sitzung, patient.id)
 
-        assert anzahl == 2
+        assert anzahl == 4
         assert uebersicht.erstdiagnose == date(2020, 4, 3)
         assert uebersicht.befallsmuster == "aktualisiertes Testmuster"
+        assert uebersicht.eim_auswahl == ("Uveitis", "Erythema nodosum")
+        assert uebersicht.eim_weitere == "Synthetische weitere EIM"
         assert (
-            sitzung.scalar(select(func.count()).select_from(PatientCEDAttribute)) == 3
+            sitzung.scalar(select(func.count()).select_from(PatientCEDAttribute)) == 5
         )
         assert sitzung.scalar(select(func.count()).select_from(AuditLog)) == 2
 

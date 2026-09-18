@@ -117,6 +117,14 @@ def test_befunddatum_hat_vorrang_vor_allgemeinem_datum() -> None:
     assert erkannt == date(2026, 9, 13)
 
 
+def test_labor_entnahmedatum_wird_als_dokumentdatum_erkannt() -> None:
+    erkannt = erkenne_befunddatum(
+        "Geburtsdatum: 12.03.1980\nEntnahmedatum: 17.09.2026"
+    )
+
+    assert erkannt == date(2026, 9, 17)
+
+
 def test_widerspruechliche_gleichrangige_daten_werden_nicht_geraten() -> None:
     erkannt = erkenne_befunddatum(
         "Fragebogendatum: 12.09.2026\nErhebungsdatum: 13.09.2026"

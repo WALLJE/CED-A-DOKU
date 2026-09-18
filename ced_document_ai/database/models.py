@@ -68,6 +68,7 @@ class Document(Base):
     document_type_id: Mapped[int | None] = mapped_column(ForeignKey("document_types.id"))
     original_name: Mapped[str] = mapped_column(String(500))
     imported_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    document_date: Mapped[date | None] = mapped_column(Date)
     confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
 
 

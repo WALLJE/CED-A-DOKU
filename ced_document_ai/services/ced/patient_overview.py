@@ -24,6 +24,8 @@ from ced_document_ai.database.models import (
 from ced_document_ai.services.ced.patient_profile import (
     BEFALLSMUSTER,
     DIAGNOSE_HINWEISE,
+    EIM_AUSWAHL,
+    EIM_WEITERE,
     ERSTDIAGNOSE,
     THERAPIE_CHIRURGISCH,
     THERAPIE_MEDIKAMENTOES,
@@ -62,6 +64,8 @@ class PatientenUebersicht:
     therapie_medikamentoes: str | None
     therapie_chirurgisch: str | None
     diagnose_hinweise: str | None
+    eim_auswahl: tuple[str, ...]
+    eim_weitere: str | None
     diagnosen: tuple[DiagnoseUebersicht, ...]
     letztes_befunddatum: date | None
     letzte_befunde: tuple[BefundUebersicht, ...]
@@ -172,6 +176,8 @@ def lade_patientenuebersicht(
             THERAPIE_MEDIKAMENTOES,
             THERAPIE_CHIRURGISCH,
             DIAGNOSE_HINWEISE,
+            EIM_AUSWAHL,
+            EIM_WEITERE,
         )
     }
     return PatientenUebersicht(
@@ -200,6 +206,18 @@ def lade_patientenuebersicht(
             attribute[DIAGNOSE_HINWEISE].text_value
             if attribute[DIAGNOSE_HINWEISE]
             else None
+        ),
+        eim_auswahl=(
+            tuple(
+                zeile
+                for zeile in (attribute[EIM_AUSWAHL].text_value or "").splitlines()
+                if zeile
+            )
+            if attribute[EIM_AUSWAHL]
+            else ()
+        ),
+        eim_weitere=(
+            attribute[EIM_WEITERE].text_value if attribute[EIM_WEITERE] else None
         ),
         diagnosen=diagnosen,
         letztes_befunddatum=letztes_datum,

@@ -43,6 +43,7 @@ from ced_document_ai.services.ced.patient_overview import (
 )
 from ced_document_ai.services.ced.patient_profile import (
     DiagnosenEingabe,
+    EIM_OPTIONEN,
     ManuelleCEDStammdaten,
     TherapienEingabe,
     speichere_diagnosen,
@@ -59,6 +60,10 @@ from ced_document_ai.services.ced.storage import (
     FreigegebenerBefund,
     finde_befundduplikate,
     speichere_ced_pruefung,
+)
+from ced_document_ai.services.ced.document_storage import (
+    DokumentSpeicherauftrag,
+    speichere_allgemeines_dokument,
 )
 from ced_document_ai.services.ced.validation import pruefe_technische_plausibilitaet
 from ced_document_ai.services.documents.converter import (
@@ -186,6 +191,12 @@ def zeige_hauptseite() -> None:
             border: 2px solid #dc2626; border-radius: 10px; padding: 12px 14px;
             font-weight: 700; width: 100%; }
           .ced-ausgeschlossen { color: #b91c1c !important; }
+          /* Gesetzte EIM bleiben auch im schreibgeschützten Zustand deutlich
+             erkennbar. Falls Quasar seine internen Klassennamen ändert, im Browser
+             ausschließlich den Checkbox-Zustand prüfen, keine Patientendaten loggen. */
+          .eim-option:has(.q-checkbox__inner--truthy) { background: #ccfbf1;
+            border: 1px solid #0f766e; border-radius: 8px; padding: 3px 7px;
+            font-weight: 700; color: #115e59; }
         </style>
     """)
 
@@ -469,6 +480,31 @@ def zeige_hauptseite() -> None:
                             ).props("color=teal-8 unelevated").classes("w-full")
                             ced_speichern.disable()
 
+                    # Andere Dokumenttypen erhalten vor der Archivierung ebenfalls
+                    # eine ausdrückliche Patienten- und Datumsprüfung. Strukturierte
+                    # Fachwerte werden hier noch nicht automatisch als Findings
+                    # angelegt; dafür bleibt ein eigener Fachparser erforderlich.
+                    with ui.dialog().props("maximized seamless").classes(
+                        "ced-pruefdialog"
+                    ) as dokument_pruefdialog:
+                        with ui.card().classes("ced-pruefseite p-6 md:p-8 gap-4"):
+                            ui.label("Dokumentzuordnung prüfen").classes(
+                                "text-2xl font-bold text-teal-900"
+                            )
+                            dokument_pruef_patient = ui.label("").classes("text-slate-600")
+                            dokument_pruef_typ = ui.input("Dokumenttyp").props(
+                                "outlined dense readonly"
+                            ).classes("w-full")
+                            dokument_pruef_datum = ui.input("Dokumentdatum").props(
+                                "outlined dense type=date"
+                            ).classes("w-full")
+                            dokument_pruef_text = ui.textarea(
+                                "Erkannte Informationen zur manuellen Prüfung"
+                            ).props("outlined readonly").classes("ergebnistext w-full")
+                            dokument_pruef_speichern = ui.button(
+                                "Dokument bestätigt zuordnen", icon="save"
+                            ).props("color=teal-8 unelevated").classes("w-full")
+
                     # Die erste Patientenansicht ist bewusst eine kompakte lesende
                     # Übersicht. Noch nicht strukturierte Bereiche bleiben sichtbar
                     # leer, damit keine medizinischen Inhalte aus Freitext geraten
@@ -530,6 +566,22 @@ def zeige_hauptseite() -> None:
                                         "Befallsmuster",
                                         value="",
                                         placeholder="noch nicht hinterlegt",
+                                    ).props("outlined dense readonly").classes("w-full")
+                                    ui.label("Extraintestinale Manifestationen (EIM)").classes(
+                                        "font-semibold text-slate-700 mt-2"
+                                    )
+                                    eim_checkboxen: dict[str, object] = {}
+                                    with ui.element("div").classes(
+                                        "grid grid-cols-1 md:grid-cols-2 gap-1 w-full"
+                                    ):
+                                        for eim_option in EIM_OPTIONEN:
+                                            checkbox = ui.checkbox(eim_option).props(
+                                                "color=teal-8 disable"
+                                            ).classes("eim-option font-medium")
+                                            eim_checkboxen[eim_option] = checkbox
+                                    eim_weitere_ausgabe = ui.textarea(
+                                        "Weitere EIM",
+                                        placeholder="weitere bestätigte Manifestationen",
                                     ).props("outlined dense readonly").classes("w-full")
                                     with ui.row().classes("w-full gap-2 flex-wrap"):
                                         stammdaten_bearbeiten = ui.button(
@@ -693,6 +745,7 @@ def zeige_hauptseite() -> None:
         patientenansicht_dialog.close()
         verlauf_dialog.close()
         fachverlauf_dialog.close()
+        dokument_pruefdialog.close()
         setze_status("Dokumenteinlesung geöffnet")
 
     def aktualisiere_anbieter() -> None:
@@ -725,10 +778,16 @@ def zeige_hauptseite() -> None:
         ced_navigation.disable()
         ced_patientenkopf.text = "Noch kein Patient bestätigt"
         ced_dialog.close()
+        dokument_pruefdialog.close()
 
     # Nur der zuletzt geladene Formularstand wird gemerkt. So kann „Abbrechen“ ihn
     # wiederherstellen und unveränderte Felder werden nicht erneut versioniert.
-    stammdaten_original = {"erstdiagnose": "", "befallsmuster": ""}
+    stammdaten_original = {
+        "erstdiagnose": "",
+        "befallsmuster": "",
+        "eim_auswahl": (),
+        "eim_weitere": "",
+    }
     diagnosen_original = {
         "hauptdiagnose": "",
         "nebendiagnosen": "",
@@ -864,9 +923,15 @@ def zeige_hauptseite() -> None:
         if aktiv:
             erstdiagnose_ausgabe.props(remove="readonly")
             befallsmuster_ausgabe.props(remove="readonly")
+            eim_weitere_ausgabe.props(remove="readonly")
+            for checkbox in eim_checkboxen.values():
+                checkbox.enable()
         else:
             erstdiagnose_ausgabe.props(add="readonly")
             befallsmuster_ausgabe.props(add="readonly")
+            eim_weitere_ausgabe.props(add="readonly")
+            for checkbox in eim_checkboxen.values():
+                checkbox.disable()
         stammdaten_bearbeiten.set_visibility(not aktiv)
         stammdaten_speichern.set_visibility(aktiv)
         stammdaten_abbrechen.set_visibility(aktiv)
@@ -883,6 +948,9 @@ def zeige_hauptseite() -> None:
         """Verwirft ausschließlich ungespeicherte Eingaben dieser Sitzung."""
         erstdiagnose_ausgabe.value = stammdaten_original["erstdiagnose"]
         befallsmuster_ausgabe.value = stammdaten_original["befallsmuster"]
+        eim_weitere_ausgabe.value = stammdaten_original["eim_weitere"]
+        for name, checkbox in eim_checkboxen.items():
+            checkbox.value = name in stammdaten_original["eim_auswahl"]
         setze_stammdaten_bearbeitung(False)
         setze_status("Ungespeicherte Stammdatenänderungen wurden verworfen")
 
@@ -893,6 +961,10 @@ def zeige_hauptseite() -> None:
             return
         erstdiagnose_text = str(erstdiagnose_ausgabe.value or "").strip()
         befallsmuster_text = str(befallsmuster_ausgabe.value or "").strip()
+        eim_auswahl = tuple(
+            name for name, checkbox in eim_checkboxen.items() if checkbox.value
+        )
+        eim_weitere_text = str(eim_weitere_ausgabe.value or "").strip()
         try:
             geaenderte_erstdiagnose = (
                 date.fromisoformat(erstdiagnose_text)
@@ -909,7 +981,22 @@ def zeige_hauptseite() -> None:
             and befallsmuster_text != stammdaten_original["befallsmuster"]
             else None
         )
-        if geaenderte_erstdiagnose is None and geaendertes_befallsmuster is None:
+        geaenderte_eim_auswahl = (
+            eim_auswahl
+            if eim_auswahl != stammdaten_original["eim_auswahl"]
+            else None
+        )
+        geaenderte_eim_weitere = (
+            eim_weitere_text
+            if eim_weitere_text != stammdaten_original["eim_weitere"]
+            else None
+        )
+        if (
+            geaenderte_erstdiagnose is None
+            and geaendertes_befallsmuster is None
+            and geaenderte_eim_auswahl is None
+            and geaenderte_eim_weitere is None
+        ):
             setze_status(
                 "Keine neue ausgefüllte Angabe; leere Felder löschen keine Historie.",
                 fehler=True,
@@ -923,6 +1010,8 @@ def zeige_hauptseite() -> None:
                     ManuelleCEDStammdaten(
                         erstdiagnose=geaenderte_erstdiagnose,
                         befallsmuster=geaendertes_befallsmuster,
+                        eim_auswahl=geaenderte_eim_auswahl,
+                        eim_weitere=geaenderte_eim_weitere,
                     ),
                 )
         except (SQLAlchemyError, ValueError) as fehler:
@@ -945,7 +1034,12 @@ def zeige_hauptseite() -> None:
         patientenansicht_stammdaten.text = ""
         erstdiagnose_ausgabe.value = ""
         befallsmuster_ausgabe.value = ""
-        stammdaten_original.update(erstdiagnose="", befallsmuster="")
+        eim_weitere_ausgabe.value = ""
+        for checkbox in eim_checkboxen.values():
+            checkbox.value = False
+        stammdaten_original.update(
+            erstdiagnose="", befallsmuster="", eim_auswahl=(), eim_weitere=""
+        )
         setze_stammdaten_bearbeitung(False)
         hauptdiagnose_ausgabe.value = ""
         nebendiagnosen_ausgabe.value = ""
@@ -1195,9 +1289,14 @@ def zeige_hauptseite() -> None:
             uebersicht.erstdiagnose.isoformat() if uebersicht.erstdiagnose else ""
         )
         befallsmuster_ausgabe.value = uebersicht.befallsmuster or ""
+        eim_weitere_ausgabe.value = uebersicht.eim_weitere or ""
+        for name, checkbox in eim_checkboxen.items():
+            checkbox.value = name in uebersicht.eim_auswahl
         stammdaten_original.update(
             erstdiagnose=str(erstdiagnose_ausgabe.value or ""),
             befallsmuster=str(befallsmuster_ausgabe.value or ""),
+            eim_auswahl=tuple(uebersicht.eim_auswahl),
+            eim_weitere=str(eim_weitere_ausgabe.value or ""),
         )
         setze_stammdaten_bearbeitung(False)
 
@@ -1245,15 +1344,15 @@ def zeige_hauptseite() -> None:
         verlauf_navigation.enable()
         for fachschalter in fachnavigation_schalter.values():
             fachschalter.enable()
-        ist_ced_fragebogen = zustand.dokumenttyp == Dokumenttyp.CED_FRAGEBOGEN.value
         ced_navigation.set_enabled(
             bool(
-                ist_ced_fragebogen
+                zustand.dokumenttyp
                 and zustand.strukturierte_darstellung.strip()
                 and zustand.patientenabgleich_erlaubt
                 and zustand.gespeichertes_dokument_id is None
             )
         )
+        ist_ced_fragebogen = zustand.dokumenttyp == Dokumenttyp.CED_FRAGEBOGEN.value
         if ist_ced_fragebogen:
             ced_pruefung_hinweis.text = (
                 "Die Werte werden aus der vorhandenen strukturierten Darstellung gelesen. "
@@ -1523,7 +1622,9 @@ def zeige_hauptseite() -> None:
         setze_ced_pruefung_zurueck()
         setze_patientenansicht_zurueck()
         zustand.erkannte_patientendaten = erkenne_patientendaten(
-            zustand.ausgelesener_inhalt
+            "\n".join(
+                (zustand.ausgelesener_inhalt, zustand.strukturierte_darstellung)
+            )
         )
         erkannt = zustand.erkannte_patientendaten
         neue_patienten_id.value = erkannt.externe_id or ""
@@ -1614,13 +1715,74 @@ def zeige_hauptseite() -> None:
         if not zustand.patientenabgleich_erlaubt:
             setze_status("Dokumentdaten passen nicht zum aktiven Patienten.", fehler=True)
             return
-        if zustand.dokumenttyp != Dokumenttyp.CED_FRAGEBOGEN.value:
-            setze_status("Für diesen Dokumenttyp sind noch keine Daten zuordenbar.", fehler=True)
-            return
         if zustand.gespeichertes_dokument_id is not None:
             setze_status("Die Daten dieses Dokuments wurden bereits gespeichert.", fehler=True)
             return
-        oeffne_ced_pruefung()
+        if zustand.dokumenttyp == Dokumenttyp.CED_FRAGEBOGEN.value:
+            oeffne_ced_pruefung()
+            return
+        with get_session() as sitzung:
+            patient = sitzung.get(Patient, zustand.patient_id)
+        if patient is None:
+            setze_status("Der ausgewählte Patient ist nicht mehr vorhanden.", fehler=True)
+            return
+        datumsvorschlag = erkenne_befunddatum(
+            zustand.ausgelesener_inhalt, zustand.strukturierte_darstellung
+        )
+        dokument_pruef_patient.text = (
+            f"Patient: {patient.display_name} · Geburtsdatum: "
+            f"{patient.birth_date.strftime('%d.%m.%Y') if patient.birth_date else 'nicht hinterlegt'}"
+        )
+        dokument_pruef_typ.value = zustand.dokumenttyp
+        dokument_pruef_datum.value = datumsvorschlag.isoformat() if datumsvorschlag else ""
+        dokument_pruef_text.value = zustand.strukturierte_darstellung
+        ced_dialog.close()
+        patientenansicht_dialog.close()
+        verlauf_dialog.close()
+        fachverlauf_dialog.close()
+        dokument_pruefdialog.open()
+        setze_status(
+            "Patient, Dokumentdatum und erkannte Informationen bitte vor der Zuordnung prüfen"
+        )
+
+    def speichere_allgemeine_dokumentzuordnung() -> None:
+        """Archiviert einen Nicht-CED-Befund erst nach Patient- und Datumsbestätigung."""
+        if zustand.patient_id is None:
+            setze_status("Bitte zuerst einen Patienten auswählen.", fehler=True)
+            return
+        try:
+            dokumentdatum = date.fromisoformat(dokument_pruef_datum.value or "")
+        except ValueError:
+            setze_status("Bitte ein vollständiges Dokumentdatum bestätigen.", fehler=True)
+            return
+        provider_name = "UK-API" if zustand.ergebnis_anbieter == "uk" else "OpenAI"
+        modell = (
+            einstellungen.uk_model
+            if zustand.ergebnis_anbieter == "uk"
+            else einstellungen.openai_model
+        )
+        try:
+            with get_session() as sitzung:
+                dokument_id = speichere_allgemeines_dokument(
+                    sitzung,
+                    DokumentSpeicherauftrag(
+                        patient_id=zustand.patient_id,
+                        dokumenttyp=zustand.dokumenttyp,
+                        dokumentdatum=dokumentdatum,
+                        original_name=" + ".join(zustand.dokumentnamen) or "Dokument",
+                        rohe_ki_antwort=zustand.rohe_ki_antwort,
+                        kis_vorschlag=zustand.kis_vorschlag,
+                        provider=provider_name,
+                        modell=modell,
+                    ),
+                )
+        except (SQLAlchemyError, ValueError) as fehler:
+            setze_status(f"Dokument konnte nicht zugeordnet werden: {fehler}", fehler=True)
+            return
+        zustand.gespeichertes_dokument_id = dokument_id
+        dokument_pruefdialog.close()
+        ced_navigation.disable()
+        setze_status("Dokument wurde dem bestätigten Patienten zugeordnet")
 
     def aktiviere_patientenauswahl(
         ereignis: events.ValueChangeEventArguments | None = None,
@@ -1987,6 +2149,7 @@ def zeige_hauptseite() -> None:
     neuer_patient_schalter.on_click(wechsle_neuer_patient_formular)
     patient_anlegen.on_click(lege_patient_an)
     ced_speichern.on_click(speichere_gepruefte_ced_daten)
+    dokument_pruef_speichern.on_click(speichere_allgemeine_dokumentzuordnung)
     ced_navigation.on_click(ordne_daten_patient_zu)
     einlesen_navigation.on_click(zeige_einlesebereich)
     patientenansicht_navigation.on_click(oeffne_patientenansicht)

@@ -22,6 +22,22 @@ BEFALLSMUSTER = "BEFALLSMUSTER"
 THERAPIE_MEDIKAMENTOES = "THERAPIE_MEDIKAMENTOES"
 THERAPIE_CHIRURGISCH = "THERAPIE_CHIRURGISCH"
 DIAGNOSE_HINWEISE = "DIAGNOSE_HINWEISE"
+EIM_AUSWAHL = "EIM_AUSWAHL"
+EIM_WEITERE = "EIM_WEITERE"
+
+# Fester initialer Katalog für die sichtbare Mehrfachauswahl. Die Einträge werden
+# nicht aus Dokumenttext geraten; weitere Manifestationen bleiben als bewusstes
+# Freitextfeld möglich.
+EIM_OPTIONEN: tuple[str, ...] = (
+    "Arthritis / Arthralgie",
+    "Sakroiliitis / ankylosierende Spondylitis",
+    "Uveitis",
+    "Episkleritis",
+    "Erythema nodosum",
+    "Pyoderma gangraenosum",
+    "Primär sklerosierende Cholangitis (PSC)",
+    "Aphthöse Stomatitis",
+)
 
 
 @dataclass(frozen=True)
@@ -30,6 +46,8 @@ class ManuelleCEDStammdaten:
 
     erstdiagnose: date | None
     befallsmuster: str | None
+    eim_auswahl: tuple[str, ...] | None = None
+    eim_weitere: str | None = None
 
 
 @dataclass(frozen=True)
@@ -169,7 +187,13 @@ def speichere_manuelle_stammdaten(
     if sitzung.get(Patient, patient_id) is None:
         raise ValueError("Der bestätigte Patient ist nicht mehr vorhanden.")
     befallsmuster = (stammdaten.befallsmuster or "").strip()
-    if stammdaten.erstdiagnose is None and not befallsmuster:
+    eim_weitere = (stammdaten.eim_weitere or "").strip()
+    if (
+        stammdaten.erstdiagnose is None
+        and not befallsmuster
+        and stammdaten.eim_auswahl is None
+        and stammdaten.eim_weitere is None
+    ):
         raise ValueError("Bitte mindestens ein CED-Stammdatenfeld ausfüllen.")
 
     neue_eintraege: list[PatientCEDAttribute] = []
@@ -191,6 +215,31 @@ def speichere_manuelle_stammdaten(
                 attribute_type=BEFALLSMUSTER,
                 text_value=befallsmuster,
                 date_value=None,
+                source_type="MANUELL",
+                confirmed_by_user=True,
+            )
+        )
+    if stammdaten.eim_auswahl is not None:
+        unbekannte_eim = set(stammdaten.eim_auswahl) - set(EIM_OPTIONEN)
+        if unbekannte_eim:
+            raise ValueError("Die EIM-Auswahl enthält einen unbekannten Katalogeintrag.")
+        # Auch eine leere Auswahl wird als neue Version gespeichert. So kann ein
+        # zuvor gesetztes Kreuz bewusst und nachvollziehbar entfernt werden.
+        neue_eintraege.append(
+            PatientCEDAttribute(
+                patient_id=patient_id,
+                attribute_type=EIM_AUSWAHL,
+                text_value="\n".join(stammdaten.eim_auswahl),
+                source_type="MANUELL",
+                confirmed_by_user=True,
+            )
+        )
+    if stammdaten.eim_weitere is not None:
+        neue_eintraege.append(
+            PatientCEDAttribute(
+                patient_id=patient_id,
+                attribute_type=EIM_WEITERE,
+                text_value=eim_weitere,
                 source_type="MANUELL",
                 confirmed_by_user=True,
             )

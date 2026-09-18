@@ -109,6 +109,10 @@ _METADATENFELDER = {
         "Datum des Fragebogens",
         "Erhebungsdatum",
         "Untersuchungsdatum",
+        "Entnahmedatum",
+        "Auftragsdatum",
+        "Berichtsdatum",
+        "Probeneingang",
         "Datum",
         "Patient",
         "Patientin",
@@ -125,7 +129,8 @@ _ZAHL = re.compile(r"(?<!\d)(-?\d+(?:[.,]\d+)?)(?!\d)")
 _QUALITAET = re.compile(r"\s*(?:✓\s*sicher|\?\s*unsicher|!\s*prüfen)\s*$", re.I)
 _DATUMSZEILE = re.compile(
     r"(?im)^\s*(Befunddatum|Fragebogendatum|Datum\s+des\s+Fragebogens|"
-    r"Erhebungsdatum|Untersuchungsdatum|Datum)\s*:\s*([^\n\r]+?)\s*$"
+    r"Erhebungsdatum|Untersuchungsdatum|Entnahmedatum|Auftragsdatum|Berichtsdatum|"
+    r"Probeneingang|Datum)\s*:\s*([^\n\r]+?)\s*$"
 )
 _DATUMSWERT = re.compile(r"(?<!\d)(\d{1,2}[./]\d{1,2}[./]\d{4}|\d{4}-\d{2}-\d{2})(?!\d)")
 
@@ -157,6 +162,10 @@ def erkenne_befunddatum(*texte: str) -> date | None:
         "datum des fragebogens": 1,
         "erhebungsdatum": 1,
         "untersuchungsdatum": 2,
+        "entnahmedatum": 1,
+        "auftragsdatum": 2,
+        "berichtsdatum": 2,
+        "probeneingang": 2,
         "datum": 3,
     }
     kandidaten: dict[int, set[date]] = {}

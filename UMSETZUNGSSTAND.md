@@ -75,9 +75,11 @@ zugehörigen Dienste und Oberflächen fehlen. Offen sind:
 Diese Anforderungen gehörten nicht zum schmalen ersten CED-Grundpfad und sind noch
 nicht oder nur als Datenmodell vorbereitet:
 
-- Fachparser und bestätigungspflichtiger Import für Labor, Calprotectin,
-  Endoskopie, Sonografie sowie MRT/CT; die vorhandenen Fachansichten lesen bislang
-  nur bereits gespeicherte beziehungsweise synthetische Werte.
+- Allgemeine Dokumente einschließlich Laborbefunden können inzwischen nach Prüfung
+  von Patient, Dokumenttyp und Datum archiviert werden. Fachparser für Labor,
+  Calprotectin, Endoskopie, Sonografie sowie MRT/CT fehlen weiterhin; die vorhandenen
+  Fachansichten lesen bislang nur bereits gespeicherte beziehungsweise synthetische
+  strukturierte Werte.
 - Dokumentvergleich für Arztbriefe, Medikamentenpläne und Befunde.
 - Dokumentgestützte, kumulative Diagnose- und Medikationsübernahme. Die aktuelle
   manuelle Pflege ist versioniert, ersetzt aber diesen Importworkflow nicht.

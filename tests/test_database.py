@@ -41,3 +41,18 @@ def test_initialize_database_ergaenzt_getrennte_namensspalten(tmp_path: Path) ->
         spalte["name"] for spalte in inspect(fabrik.kw["bind"]).get_columns("patients")
     }
     assert {"first_name", "last_name"}.issubset(spalten)
+
+
+def test_initialize_database_ergaenzt_dokumentdatum_ohne_ersatzwert(tmp_path: Path) -> None:
+    datenbankpfad = tmp_path / "alte_dokumente.sqlite3"
+    with sqlite3.connect(datenbankpfad) as verbindung:
+        verbindung.execute(
+            "CREATE TABLE documents (id INTEGER PRIMARY KEY, original_name VARCHAR(500) "
+            "NOT NULL, imported_at DATETIME, confirmed BOOLEAN)"
+        )
+    fabrik = initialize_database(Settings(database_path=datenbankpfad))
+    spalten = {
+        spalte["name"] for spalte in inspect(fabrik.kw["bind"]).get_columns("documents")
+    }
+
+    assert "document_date" in spalten

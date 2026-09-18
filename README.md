@@ -232,6 +232,13 @@ nicht erneut versioniert. Die automatische Übernahme solcher Stammdaten aus
 Dokumenten bleibt einem späteren, ebenfalls bestätigungspflichtigen Schritt
 vorbehalten.
 
+Unter dem Befallsmuster stehen acht häufige extraintestinale Manifestationen als
+deutlich sichtbare Mehrfachauswahl zur Verfügung: Arthritis/Arthralgie,
+Sakroiliitis/ankylosierende Spondylitis, Uveitis, Episkleritis, Erythema nodosum,
+Pyoderma gangraenosum, primär sklerosierende Cholangitis und aphthöse Stomatitis.
+Gesetzte Kreuze und zusätzliche manuelle EIM werden versioniert gespeichert. Die
+Liste ist ein Eingabekatalog und keine automatische Diagnose oder Interpretation.
+
 Hauptdiagnose und Nebendiagnosen besitzen einen eigenen Schalter „Diagnosen
 bearbeiten“. Das zusätzliche Feld „Hinweise zur Diagnose“ nimmt ergänzende,
 bestätigte Hinweise auf, ohne daraus automatisch weitere strukturierte Diagnosen zu
@@ -245,6 +252,23 @@ medizinische Inhalte; leere Felder löschen keine frühere Angabe.
 > zunächst prüfen, ob `confirmed_by_user` gesetzt ist und `patient_id` mit dem oben
 > bestätigten Patienten übereinstimmt. In Debug-Ausgaben nur IDs und Trefferanzahlen,
 > niemals Namen, Diagnosen oder Befundwerte verwenden.
+
+## Zuordnung weiterer Dokumenttypen
+
+Auch Laborbefunde, Arztbriefe, Medikamentenpläne, bildgebende Befunde und sonstige
+medizinische Dokumente können nach dem Einlesen einem Patienten zugeordnet werden.
+Die strukturierte Darstellung führt vorhandene Patientenmerkmale und passend
+beschriftete Dokumentdaten gesondert auf. Lokal werden Patienten-ID, Name und
+Geburtsdatum gegen den Bestand geprüft. Bereits ein einzelnes passendes Merkmal darf
+einen klar als unsicher gekennzeichneten Vorschlag erzeugen; die Zuordnung erfolgt
+aber niemals automatisch.
+
+Vor der Speicherung zeigt eine Prüfansicht den aktiven Patienten, Dokumenttyp,
+erkanntes Datum und die strukturierten Informationen. Das Datum muss bestätigt oder
+manuell ergänzt werden. Widersprüchliche Stammdaten sperren die Zuordnung. Allgemeine
+Dokumente werden mit Rohantwort und KIS-Text archiviert; Fachwerte wie einzelne
+Laborparameter werden ohne eigenen Fachparser nicht als strukturierte Befunde
+geraten oder gespeichert.
 
 ## Synthetische Demo-Daten
 
