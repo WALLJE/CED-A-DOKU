@@ -23,6 +23,16 @@ from ced_document_ai.database.models import (
 )
 from ced_document_ai.services.ced.patient_profile import (
     BEFALLSMUSTER,
+    CED_ERKRANKUNGSTYP,
+    CU_AUSDEHNUNG,
+    DIAGNOSE_DETAILS,
+    EIM_AUSWAHL,
+    EIM_WEITERE,
+    MC_LOKALISATION,
+    MC_OBERER_GI,
+    MC_PERIANAL,
+    MC_VERHALTEN,
+    SYMPTOME_SEIT,
     ERSTDIAGNOSE,
     THERAPIE_CHIRURGISCH,
     THERAPIE_MEDIKAMENTOES,
@@ -60,6 +70,16 @@ class PatientenUebersicht:
     befallsmuster: str | None
     therapie_medikamentoes: str | None
     therapie_chirurgisch: str | None
+    diagnose_details: str | None
+    symptome_seit: date | None
+    erkrankungstyp: str | None
+    mc_lokalisation: str | None
+    mc_oberer_gi: bool
+    mc_verhalten: str | None
+    mc_perianal: bool
+    cu_ausdehnung: str | None
+    eim_auswahl: tuple[str, ...]
+    eim_weitere: str | None
     diagnosen: tuple[DiagnoseUebersicht, ...]
     letztes_befunddatum: date | None
     letzte_befunde: tuple[BefundUebersicht, ...]
@@ -169,6 +189,16 @@ def lade_patientenuebersicht(
             BEFALLSMUSTER,
             THERAPIE_MEDIKAMENTOES,
             THERAPIE_CHIRURGISCH,
+            DIAGNOSE_DETAILS,
+            SYMPTOME_SEIT,
+            CED_ERKRANKUNGSTYP,
+            MC_LOKALISATION,
+            MC_OBERER_GI,
+            MC_VERHALTEN,
+            MC_PERIANAL,
+            CU_AUSDEHNUNG,
+            EIM_AUSWAHL,
+            EIM_WEITERE,
         )
     }
     return PatientenUebersicht(
@@ -192,6 +222,46 @@ def lade_patientenuebersicht(
             attribute[THERAPIE_CHIRURGISCH].text_value
             if attribute[THERAPIE_CHIRURGISCH]
             else None
+        ),
+        diagnose_details=(
+            attribute[DIAGNOSE_DETAILS].text_value
+            if attribute[DIAGNOSE_DETAILS]
+            else None
+        ),
+        symptome_seit=(
+            attribute[SYMPTOME_SEIT].date_value if attribute[SYMPTOME_SEIT] else None
+        ),
+        erkrankungstyp=(
+            attribute[CED_ERKRANKUNGSTYP].text_value
+            if attribute[CED_ERKRANKUNGSTYP]
+            else None
+        ),
+        mc_lokalisation=(
+            attribute[MC_LOKALISATION].text_value if attribute[MC_LOKALISATION] else None
+        ),
+        mc_oberer_gi=bool(
+            attribute[MC_OBERER_GI] and attribute[MC_OBERER_GI].text_value == "JA"
+        ),
+        mc_verhalten=(
+            attribute[MC_VERHALTEN].text_value if attribute[MC_VERHALTEN] else None
+        ),
+        mc_perianal=bool(
+            attribute[MC_PERIANAL] and attribute[MC_PERIANAL].text_value == "JA"
+        ),
+        cu_ausdehnung=(
+            attribute[CU_AUSDEHNUNG].text_value if attribute[CU_AUSDEHNUNG] else None
+        ),
+        eim_auswahl=(
+            tuple(
+                zeile
+                for zeile in (attribute[EIM_AUSWAHL].text_value or "").splitlines()
+                if zeile
+            )
+            if attribute[EIM_AUSWAHL]
+            else ()
+        ),
+        eim_weitere=(
+            attribute[EIM_WEITERE].text_value if attribute[EIM_WEITERE] else None
         ),
         diagnosen=diagnosen,
         letztes_befunddatum=letztes_datum,
