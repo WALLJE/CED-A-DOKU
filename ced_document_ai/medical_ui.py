@@ -536,10 +536,6 @@ def zeige_hauptseite() -> None:
                                         "Nebendiagnosen",
                                         placeholder="eine Diagnose pro Zeile",
                                     ).props("outlined dense readonly").classes("w-full")
-                                    diagnose_hinweise_ausgabe = ui.textarea(
-                                        "Hinweise zur Diagnose",
-                                        placeholder="ergänzende bestätigte Hinweise",
-                                    ).props("outlined dense readonly").classes("w-full")
                                     with ui.row().classes("w-full gap-2 flex-wrap"):
                                         diagnosen_bearbeiten = ui.button(
                                             "Diagnosen bearbeiten", icon="edit"
@@ -562,10 +558,68 @@ def zeige_hauptseite() -> None:
                                         value="",
                                         placeholder="noch nicht hinterlegt",
                                     ).props("outlined dense readonly type=date").classes("w-full")
-                                    befallsmuster_ausgabe = ui.input(
-                                        "Befallsmuster",
+                                    symptome_seit_ausgabe = ui.input(
+                                        "Symptome seit",
                                         value="",
-                                        placeholder="noch nicht hinterlegt",
+                                    ).props("outlined dense readonly type=date").classes("w-full")
+                                    diagnose_details_ausgabe = ui.textarea(
+                                        "Details zur Diagnose",
+                                        placeholder="ergänzende bestätigte Details",
+                                    ).props("outlined dense readonly").classes("w-full")
+                                    erkrankungstyp_ausgabe = ui.select(
+                                        ("Morbus Crohn", "Colitis ulcerosa"),
+                                        label="CED-Erkrankungstyp",
+                                    ).props("outlined dense disable").classes("w-full")
+                                    mc_lokalisation_ausgabe = ui.select(
+                                        {
+                                            "L1": "L1 · Ileum",
+                                            "L2": "L2 · Kolon",
+                                            "L3": "L3 · Ileokolon",
+                                        },
+                                        label="Morbus Crohn: Lokalisation",
+                                    ).props("outlined dense disable").classes("w-full")
+                                    mc_oberer_gi_ausgabe = ui.checkbox(
+                                        "L4 · oberer Gastrointestinaltrakt zusätzlich betroffen"
+                                    ).props("color=teal-8 disable").classes("font-medium")
+                                    mc_verhalten_ausgabe = ui.select(
+                                        {
+                                            "B1": "B1 · nicht stenosierend, nicht penetrierend",
+                                            "B2": "B2 · stenosierend",
+                                            "B3": "B3 · penetrierend / fistulierend",
+                                        },
+                                        label="Morbus Crohn: Verhalten",
+                                    ).props("outlined dense disable").classes("w-full")
+                                    mc_perianal_ausgabe = ui.checkbox(
+                                        "p · perianales Fistelleiden zusätzlich"
+                                    ).props("color=teal-8 disable").classes("font-medium")
+                                    cu_ausdehnung_ausgabe = ui.select(
+                                        {
+                                            "E1": "E1 · Proktitis",
+                                            "E2": "E2 · linksseitige Colitis",
+                                            "E3": "E3 · ausgedehnte Colitis",
+                                        },
+                                        label="Colitis ulcerosa: Ausdehnung",
+                                    ).props("outlined dense disable").classes("w-full")
+                                    befallsmuster_ausgabe = ui.input(
+                                        "Codiertes Befallsmuster",
+                                        value="",
+                                        placeholder="wird aus den bestätigten Parametern gebildet",
+                                    ).props("outlined dense readonly").classes("w-full")
+                                    ui.label("Extraintestinale Manifestationen (EIM)").classes(
+                                        "font-semibold text-slate-700 mt-2"
+                                    )
+                                    eim_checkboxen: dict[str, object] = {}
+                                    with ui.element("div").classes(
+                                        "grid grid-cols-1 md:grid-cols-2 gap-1 w-full"
+                                    ):
+                                        for eim_option in EIM_OPTIONEN:
+                                            checkbox = ui.checkbox(eim_option).props(
+                                                "color=teal-8 disable"
+                                            ).classes("eim-option font-medium")
+                                            eim_checkboxen[eim_option] = checkbox
+                                    eim_weitere_ausgabe = ui.textarea(
+                                        "Weitere EIM",
+                                        placeholder="weitere bestätigte Manifestationen",
                                     ).props("outlined dense readonly").classes("w-full")
                                     ui.label("Extraintestinale Manifestationen (EIM)").classes(
                                         "font-semibold text-slate-700 mt-2"
@@ -784,14 +838,21 @@ def zeige_hauptseite() -> None:
     # wiederherstellen und unveränderte Felder werden nicht erneut versioniert.
     stammdaten_original = {
         "erstdiagnose": "",
+        "symptome_seit": "",
+        "diagnose_details": "",
         "befallsmuster": "",
+        "erkrankungstyp": None,
+        "mc_lokalisation": None,
+        "mc_oberer_gi": False,
+        "mc_verhalten": None,
+        "mc_perianal": False,
+        "cu_ausdehnung": None,
         "eim_auswahl": (),
         "eim_weitere": "",
     }
     diagnosen_original = {
         "hauptdiagnose": "",
         "nebendiagnosen": "",
-        "hinweise": "",
     }
     therapien_original = {
         "therapie_medikamentoes": "",
@@ -800,9 +861,7 @@ def zeige_hauptseite() -> None:
 
     def setze_diagnosen_bearbeitung(aktiv: bool) -> None:
         """Gibt ausschließlich Diagnosen und deren Hinweisfeld zur Bearbeitung frei."""
-        for feld in (
-            hauptdiagnose_ausgabe, nebendiagnosen_ausgabe, diagnose_hinweise_ausgabe
-        ):
+        for feld in (hauptdiagnose_ausgabe, nebendiagnosen_ausgabe):
             feld.props(remove="readonly") if aktiv else feld.props(add="readonly")
         diagnosen_bearbeiten.set_visibility(not aktiv)
         diagnosen_speichern.set_visibility(aktiv)
@@ -819,7 +878,6 @@ def zeige_hauptseite() -> None:
         """Verwirft ausschließlich ungespeicherte Diagnoseänderungen."""
         hauptdiagnose_ausgabe.value = diagnosen_original["hauptdiagnose"]
         nebendiagnosen_ausgabe.value = diagnosen_original["nebendiagnosen"]
-        diagnose_hinweise_ausgabe.value = diagnosen_original["hinweise"]
         setze_diagnosen_bearbeitung(False)
 
     def speichere_diagnosen_aenderungen() -> None:
@@ -839,7 +897,6 @@ def zeige_hauptseite() -> None:
                             for zeile in str(nebendiagnosen_ausgabe.value or "").splitlines()
                             if zeile.strip()
                         ),
-                        hinweise=str(diagnose_hinweise_ausgabe.value or ""),
                     ),
                 )
         except (SQLAlchemyError, ValueError) as fehler:
@@ -847,7 +904,7 @@ def zeige_hauptseite() -> None:
             return
         setze_diagnosen_bearbeitung(False)
         oeffne_patientenansicht()
-        setze_status("Diagnosen und Hinweise wurden versioniert gespeichert")
+        setze_status("Diagnosen wurden versioniert gespeichert")
 
     def setze_therapien_bearbeitung(aktiv: bool) -> None:
         """Gibt ausschließlich medikamentöse und chirurgische Therapien frei."""
@@ -922,14 +979,34 @@ def zeige_hauptseite() -> None:
         """Schaltet die manuelle Bearbeitung sichtbar und nachvollziehbar um."""
         if aktiv:
             erstdiagnose_ausgabe.props(remove="readonly")
-            befallsmuster_ausgabe.props(remove="readonly")
+            symptome_seit_ausgabe.props(remove="readonly")
+            diagnose_details_ausgabe.props(remove="readonly")
             eim_weitere_ausgabe.props(remove="readonly")
+            for auswahl in (
+                erkrankungstyp_ausgabe,
+                mc_lokalisation_ausgabe,
+                mc_oberer_gi_ausgabe,
+                mc_verhalten_ausgabe,
+                mc_perianal_ausgabe,
+                cu_ausdehnung_ausgabe,
+            ):
+                auswahl.enable()
             for checkbox in eim_checkboxen.values():
                 checkbox.enable()
         else:
             erstdiagnose_ausgabe.props(add="readonly")
-            befallsmuster_ausgabe.props(add="readonly")
+            symptome_seit_ausgabe.props(add="readonly")
+            diagnose_details_ausgabe.props(add="readonly")
             eim_weitere_ausgabe.props(add="readonly")
+            for auswahl in (
+                erkrankungstyp_ausgabe,
+                mc_lokalisation_ausgabe,
+                mc_oberer_gi_ausgabe,
+                mc_verhalten_ausgabe,
+                mc_perianal_ausgabe,
+                cu_ausdehnung_ausgabe,
+            ):
+                auswahl.disable()
             for checkbox in eim_checkboxen.values():
                 checkbox.disable()
         stammdaten_bearbeiten.set_visibility(not aktiv)
@@ -947,7 +1024,15 @@ def zeige_hauptseite() -> None:
     def breche_stammdaten_bearbeitung_ab() -> None:
         """Verwirft ausschließlich ungespeicherte Eingaben dieser Sitzung."""
         erstdiagnose_ausgabe.value = stammdaten_original["erstdiagnose"]
+        symptome_seit_ausgabe.value = stammdaten_original["symptome_seit"]
+        diagnose_details_ausgabe.value = stammdaten_original["diagnose_details"]
         befallsmuster_ausgabe.value = stammdaten_original["befallsmuster"]
+        erkrankungstyp_ausgabe.value = stammdaten_original["erkrankungstyp"]
+        mc_lokalisation_ausgabe.value = stammdaten_original["mc_lokalisation"]
+        mc_oberer_gi_ausgabe.value = stammdaten_original["mc_oberer_gi"]
+        mc_verhalten_ausgabe.value = stammdaten_original["mc_verhalten"]
+        mc_perianal_ausgabe.value = stammdaten_original["mc_perianal"]
+        cu_ausdehnung_ausgabe.value = stammdaten_original["cu_ausdehnung"]
         eim_weitere_ausgabe.value = stammdaten_original["eim_weitere"]
         for name, checkbox in eim_checkboxen.items():
             checkbox.value = name in stammdaten_original["eim_auswahl"]
@@ -960,7 +1045,8 @@ def zeige_hauptseite() -> None:
             setze_status("Bitte zuerst links einen Patienten auswählen.", fehler=True)
             return
         erstdiagnose_text = str(erstdiagnose_ausgabe.value or "").strip()
-        befallsmuster_text = str(befallsmuster_ausgabe.value or "").strip()
+        symptome_seit_text = str(symptome_seit_ausgabe.value or "").strip()
+        diagnose_details_text = str(diagnose_details_ausgabe.value or "").strip()
         eim_auswahl = tuple(
             name for name, checkbox in eim_checkboxen.items() if checkbox.value
         )
@@ -975,11 +1061,32 @@ def zeige_hauptseite() -> None:
         except ValueError:
             setze_status("Bitte die Erstdiagnose vollständig eingeben.", fehler=True)
             return
-        geaendertes_befallsmuster = (
-            befallsmuster_text
-            if befallsmuster_text
-            and befallsmuster_text != stammdaten_original["befallsmuster"]
+        try:
+            geaenderte_symptome_seit = (
+                date.fromisoformat(symptome_seit_text)
+                if symptome_seit_text
+                and symptome_seit_text != stammdaten_original["symptome_seit"]
+                else None
+            )
+        except ValueError:
+            setze_status("Bitte 'Symptome seit' vollständig eingeben.", fehler=True)
+            return
+        geaenderte_details = (
+            diagnose_details_text
+            if diagnose_details_text != stammdaten_original["diagnose_details"]
             else None
+        )
+        aktuelle_phaenotypwerte = {
+            "erkrankungstyp": erkrankungstyp_ausgabe.value,
+            "mc_lokalisation": mc_lokalisation_ausgabe.value,
+            "mc_oberer_gi": bool(mc_oberer_gi_ausgabe.value),
+            "mc_verhalten": mc_verhalten_ausgabe.value,
+            "mc_perianal": bool(mc_perianal_ausgabe.value),
+            "cu_ausdehnung": cu_ausdehnung_ausgabe.value,
+        }
+        phaenotyp_geaendert = any(
+            aktuelle_phaenotypwerte[name] != stammdaten_original[name]
+            for name in aktuelle_phaenotypwerte
         )
         geaenderte_eim_auswahl = (
             eim_auswahl
@@ -993,7 +1100,9 @@ def zeige_hauptseite() -> None:
         )
         if (
             geaenderte_erstdiagnose is None
-            and geaendertes_befallsmuster is None
+            and geaenderte_symptome_seit is None
+            and geaenderte_details is None
+            and not phaenotyp_geaendert
             and geaenderte_eim_auswahl is None
             and geaenderte_eim_weitere is None
         ):
@@ -1009,9 +1118,16 @@ def zeige_hauptseite() -> None:
                     zustand.patient_id,
                     ManuelleCEDStammdaten(
                         erstdiagnose=geaenderte_erstdiagnose,
-                        befallsmuster=geaendertes_befallsmuster,
+                        befallsmuster=None,
                         eim_auswahl=geaenderte_eim_auswahl,
                         eim_weitere=geaenderte_eim_weitere,
+                        diagnose_details=geaenderte_details,
+                        symptome_seit=geaenderte_symptome_seit,
+                        **(
+                            aktuelle_phaenotypwerte
+                            if phaenotyp_geaendert
+                            else {}
+                        ),
                     ),
                 )
         except (SQLAlchemyError, ValueError) as fehler:
@@ -1033,12 +1149,31 @@ def zeige_hauptseite() -> None:
         patientenansicht_name.text = "Patientenübersicht"
         patientenansicht_stammdaten.text = ""
         erstdiagnose_ausgabe.value = ""
+        symptome_seit_ausgabe.value = ""
+        diagnose_details_ausgabe.value = ""
         befallsmuster_ausgabe.value = ""
+        erkrankungstyp_ausgabe.value = None
+        mc_lokalisation_ausgabe.value = None
+        mc_oberer_gi_ausgabe.value = False
+        mc_verhalten_ausgabe.value = None
+        mc_perianal_ausgabe.value = False
+        cu_ausdehnung_ausgabe.value = None
         eim_weitere_ausgabe.value = ""
         for checkbox in eim_checkboxen.values():
             checkbox.value = False
         stammdaten_original.update(
-            erstdiagnose="", befallsmuster="", eim_auswahl=(), eim_weitere=""
+            erstdiagnose="",
+            symptome_seit="",
+            diagnose_details="",
+            befallsmuster="",
+            erkrankungstyp=None,
+            mc_lokalisation=None,
+            mc_oberer_gi=False,
+            mc_verhalten=None,
+            mc_perianal=False,
+            cu_ausdehnung=None,
+            eim_auswahl=(),
+            eim_weitere="",
         )
         setze_stammdaten_bearbeitung(False)
         hauptdiagnose_ausgabe.value = ""
@@ -1046,7 +1181,7 @@ def zeige_hauptseite() -> None:
         diagnose_hinweise_ausgabe.value = ""
         therapie_medikamentoes_ausgabe.value = ""
         therapie_chirurgisch_ausgabe.value = ""
-        diagnosen_original.update(hauptdiagnose="", nebendiagnosen="", hinweise="")
+        diagnosen_original.update(hauptdiagnose="", nebendiagnosen="")
         therapien_original.update(
             therapie_medikamentoes="",
             therapie_chirurgisch="",
@@ -1276,7 +1411,6 @@ def zeige_hauptseite() -> None:
         diagnosen_original.update(
             hauptdiagnose=str(hauptdiagnose_ausgabe.value or ""),
             nebendiagnosen=str(nebendiagnosen_ausgabe.value or ""),
-            hinweise=str(diagnose_hinweise_ausgabe.value or ""),
         )
         therapien_original.update(
             therapie_medikamentoes=str(therapie_medikamentoes_ausgabe.value or ""),
@@ -1288,13 +1422,35 @@ def zeige_hauptseite() -> None:
         erstdiagnose_ausgabe.value = (
             uebersicht.erstdiagnose.isoformat() if uebersicht.erstdiagnose else ""
         )
+        symptome_seit_ausgabe.value = (
+            uebersicht.symptome_seit.isoformat() if uebersicht.symptome_seit else ""
+        )
+        diagnose_details_ausgabe.value = uebersicht.diagnose_details or ""
         befallsmuster_ausgabe.value = uebersicht.befallsmuster or ""
+        erkrankungstyp_ausgabe.value = uebersicht.erkrankungstyp
+        mc_lokalisation_ausgabe.value = uebersicht.mc_lokalisation
+        mc_oberer_gi_ausgabe.value = uebersicht.mc_oberer_gi
+        mc_verhalten_ausgabe.value = uebersicht.mc_verhalten
+        mc_perianal_ausgabe.value = uebersicht.mc_perianal
+        cu_ausdehnung_ausgabe.value = uebersicht.cu_ausdehnung
         eim_weitere_ausgabe.value = uebersicht.eim_weitere or ""
         for name, checkbox in eim_checkboxen.items():
             checkbox.value = name in uebersicht.eim_auswahl
+            # NiceGUI hält den Wert clientseitig; das explizite Update macht bereits
+            # gespeicherte Kreuze unmittelbar sichtbar, auch wenn die Checkbox beim
+            # Laden schreibgeschützt ist.
+            checkbox.update()
         stammdaten_original.update(
             erstdiagnose=str(erstdiagnose_ausgabe.value or ""),
+            symptome_seit=str(symptome_seit_ausgabe.value or ""),
+            diagnose_details=str(diagnose_details_ausgabe.value or ""),
             befallsmuster=str(befallsmuster_ausgabe.value or ""),
+            erkrankungstyp=uebersicht.erkrankungstyp,
+            mc_lokalisation=uebersicht.mc_lokalisation,
+            mc_oberer_gi=uebersicht.mc_oberer_gi,
+            mc_verhalten=uebersicht.mc_verhalten,
+            mc_perianal=uebersicht.mc_perianal,
+            cu_ausdehnung=uebersicht.cu_ausdehnung,
             eim_auswahl=tuple(uebersicht.eim_auswahl),
             eim_weitere=str(eim_weitere_ausgabe.value or ""),
         )

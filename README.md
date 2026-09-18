@@ -223,7 +223,8 @@ Laboransicht dargestellt.
 
 Auch die kompakte Tabelle des letzten CED-Befunds besitzt nun einen begrenzten
 Scrollbereich und kann den Patientenbildschirm nicht mehr unbegrenzt verbreitern oder
-verlängern. Erstdiagnose und Befallsmuster starten als schreibgeschützte Formfelder.
+verlängern. Erstdiagnose, „Symptome seit“, Details zur Diagnose und Befallsmuster
+starten als schreibgeschützte Formfelder.
 Über „Stammdaten bearbeiten“ können fehlende oder zu korrigierende Angaben bewusst
 freigegeben und gespeichert werden. Jede Speicherung legt eine neue bestätigte
 Version mit der Quelle „MANUELL“ und einem Audit-Eintrag an; ältere Versionen bleiben
@@ -238,11 +239,21 @@ Sakroiliitis/ankylosierende Spondylitis, Uveitis, Episkleritis, Erythema nodosum
 Pyoderma gangraenosum, primär sklerosierende Cholangitis und aphthöse Stomatitis.
 Gesetzte Kreuze und zusätzliche manuelle EIM werden versioniert gespeichert. Die
 Liste ist ein Eingabekatalog und keine automatische Diagnose oder Interpretation.
+Gesetzte EIM werden auch in der schreibgeschützten Patientenübersicht farblich
+hervorgehoben.
+
+Das Befallsmuster wird nicht mehr als freier Code eingegeben. Für Morbus Crohn werden
+Lokalisation (L1–L3), ein zusätzlicher oberer GI-Befall (L4), Verhalten (B1–B3) und
+ein perianaler Zusatz (`p`) ausdrücklich abgefragt; B2 ist als stenosierend und B3
+als penetrierend/fistulierend beschriftet. Für Colitis ulcerosa wird die Ausdehnung
+E1–E3 ausgewählt. Erst aus der vollständigen, manuell bestätigten Auswahl wird der
+sichtbare Code gebildet. Unvollständige Angaben werden nicht geraten.
 
 Hauptdiagnose und Nebendiagnosen besitzen einen eigenen Schalter „Diagnosen
-bearbeiten“. Das zusätzliche Feld „Hinweise zur Diagnose“ nimmt ergänzende,
-bestätigte Hinweise auf, ohne daraus automatisch weitere strukturierte Diagnosen zu
-erzeugen. Frühere Diagnosen werden bei einer Speicherung als ersetzt markiert.
+bearbeiten“. Das Feld „Details zur Diagnose“ steht davon getrennt bei Erstdiagnose
+und „Symptome seit“ in den CED-Stammdaten. Es nimmt ergänzende bestätigte Angaben
+auf, ohne daraus automatisch weitere strukturierte Diagnosen zu erzeugen. Frühere
+Diagnosen werden bei einer Speicherung als ersetzt markiert.
 Medikamentöser und chirurgischer Therapieverlauf werden davon getrennt über
 „Therapien bearbeiten“ freigegeben. Nur geänderte ausgefüllte Therapiefelder werden
 als neue Version gespeichert. Beide Vorgänge erhalten getrennte Audit-Einträge ohne

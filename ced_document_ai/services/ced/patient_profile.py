@@ -21,7 +21,16 @@ ERSTDIAGNOSE = "ERSTDIAGNOSE"
 BEFALLSMUSTER = "BEFALLSMUSTER"
 THERAPIE_MEDIKAMENTOES = "THERAPIE_MEDIKAMENTOES"
 THERAPIE_CHIRURGISCH = "THERAPIE_CHIRURGISCH"
-DIAGNOSE_HINWEISE = "DIAGNOSE_HINWEISE"
+# Der gespeicherte Schlüssel bleibt aus Kompatibilitätsgründen unverändert. In der
+# Oberfläche heißt das Feld jetzt fachlich eindeutiger „Details zur Diagnose“.
+DIAGNOSE_DETAILS = "DIAGNOSE_HINWEISE"
+SYMPTOME_SEIT = "SYMPTOME_SEIT"
+CED_ERKRANKUNGSTYP = "CED_ERKRANKUNGSTYP"
+MC_LOKALISATION = "MC_LOKALISATION"
+MC_OBERER_GI = "MC_OBERER_GI"
+MC_VERHALTEN = "MC_VERHALTEN"
+MC_PERIANAL = "MC_PERIANAL"
+CU_AUSDEHNUNG = "CU_AUSDEHNUNG"
 EIM_AUSWAHL = "EIM_AUSWAHL"
 EIM_WEITERE = "EIM_WEITERE"
 
@@ -40,6 +49,28 @@ EIM_OPTIONEN: tuple[str, ...] = (
 )
 
 
+def bilde_befallsmuster_code(stammdaten: ManuelleCEDStammdaten) -> str | None:
+    """Bildet ausschließlich aus ausdrücklich gewählten Klassifikationsfeldern einen Code.
+
+    Es gibt keinen Fallback aus Diagnosefreitext. Unvollständige Pflichtangaben
+    liefern ``None`` und müssen in der Oberfläche vervollständigt werden.
+    """
+    if stammdaten.erkrankungstyp == "Morbus Crohn":
+        if not stammdaten.mc_lokalisation or not stammdaten.mc_verhalten:
+            return None
+        teile = [stammdaten.mc_lokalisation]
+        if stammdaten.mc_oberer_gi:
+            teile.append("L4")
+        verhalten = stammdaten.mc_verhalten
+        if stammdaten.mc_perianal:
+            verhalten = f"{verhalten}p"
+        teile.append(verhalten)
+        return ", ".join(teile)
+    if stammdaten.erkrankungstyp == "Colitis ulcerosa":
+        return stammdaten.cu_ausdehnung or None
+    return None
+
+
 @dataclass(frozen=True)
 class ManuelleCEDStammdaten:
     """Vom Benutzer ausdrücklich bestätigte, optional ausgefüllte Stammdaten."""
@@ -48,19 +79,22 @@ class ManuelleCEDStammdaten:
     befallsmuster: str | None
     eim_auswahl: tuple[str, ...] | None = None
     eim_weitere: str | None = None
+    diagnose_details: str | None = None
+    symptome_seit: date | None = None
+    erkrankungstyp: str | None = None
+    mc_lokalisation: str | None = None
+    mc_oberer_gi: bool | None = None
+    mc_verhalten: str | None = None
+    mc_perianal: bool | None = None
+    cu_ausdehnung: str | None = None
 
 
 @dataclass(frozen=True)
 class DiagnosenEingabe:
-    """Manuell geprüfte Diagnosen mit einem getrennten ergänzenden Hinweisfeld."""
+    """Manuell geprüfte strukturierte Haupt- und Nebendiagnosen."""
 
     hauptdiagnose: str
     nebendiagnosen: tuple[str, ...]
-
-    # Hinweise sind bewusst kein weiterer Diagnoseeintrag. Sie können ergänzende
-    # Zusammenhänge dokumentieren, ohne die strukturierte Diagnosenliste zu verändern.
-    hinweise: str | None
-
 
 @dataclass(frozen=True)
 class TherapienEingabe:
@@ -75,7 +109,7 @@ def speichere_diagnosen(
     patient_id: int,
     eingabe: DiagnosenEingabe,
 ) -> None:
-    """Versioniert Diagnosen und optionale Diagnosehinweise in einer Transaktion."""
+    """Versioniert die strukturierte Haupt- und Nebendiagnosenliste."""
     if sitzung.get(Patient, patient_id) is None:
         raise ValueError("Der bestätigte Patient ist nicht mehr vorhanden.")
     hauptdiagnose = eingabe.hauptdiagnose.strip()
@@ -109,17 +143,6 @@ def speichere_diagnosen(
             )
             for wert in nebendiagnosen
         )
-        hinweise = (eingabe.hinweise or "").strip()
-        if hinweise:
-            sitzung.add(
-                PatientCEDAttribute(
-                    patient_id=patient_id,
-                    attribute_type=DIAGNOSE_HINWEISE,
-                    text_value=hinweise,
-                    source_type="MANUELL",
-                    confirmed_by_user=True,
-                )
-            )
         sitzung.add(
             AuditLog(
                 action="DIAGNOSEN_MANUELL_BESTAETIGT",
@@ -187,12 +210,28 @@ def speichere_manuelle_stammdaten(
     if sitzung.get(Patient, patient_id) is None:
         raise ValueError("Der bestätigte Patient ist nicht mehr vorhanden.")
     befallsmuster = (stammdaten.befallsmuster or "").strip()
+    if stammdaten.erkrankungstyp in {"Morbus Crohn", "Colitis ulcerosa"}:
+        berechneter_code = bilde_befallsmuster_code(stammdaten)
+        if berechneter_code is None:
+            raise ValueError(
+                "Für die Befallsmustercodierung fehlen ausgewählte Pflichtparameter."
+            )
+        befallsmuster = berechneter_code
     eim_weitere = (stammdaten.eim_weitere or "").strip()
+    diagnose_details = (stammdaten.diagnose_details or "").strip()
     if (
         stammdaten.erstdiagnose is None
         and not befallsmuster
         and stammdaten.eim_auswahl is None
         and stammdaten.eim_weitere is None
+        and stammdaten.diagnose_details is None
+        and stammdaten.symptome_seit is None
+        and stammdaten.erkrankungstyp is None
+        and stammdaten.mc_lokalisation is None
+        and stammdaten.mc_oberer_gi is None
+        and stammdaten.mc_verhalten is None
+        and stammdaten.mc_perianal is None
+        and stammdaten.cu_ausdehnung is None
     ):
         raise ValueError("Bitte mindestens ein CED-Stammdatenfeld ausfüllen.")
 
@@ -244,6 +283,47 @@ def speichere_manuelle_stammdaten(
                 confirmed_by_user=True,
             )
         )
+    for attributtyp, textwert in (
+        (DIAGNOSE_DETAILS, diagnose_details if stammdaten.diagnose_details is not None else None),
+        (CED_ERKRANKUNGSTYP, stammdaten.erkrankungstyp),
+        (MC_LOKALISATION, stammdaten.mc_lokalisation),
+        (MC_VERHALTEN, stammdaten.mc_verhalten),
+        (CU_AUSDEHNUNG, stammdaten.cu_ausdehnung),
+    ):
+        if textwert is not None:
+            neue_eintraege.append(
+                PatientCEDAttribute(
+                    patient_id=patient_id,
+                    attribute_type=attributtyp,
+                    text_value=textwert.strip(),
+                    source_type="MANUELL",
+                    confirmed_by_user=True,
+                )
+            )
+    if stammdaten.symptome_seit is not None:
+        neue_eintraege.append(
+            PatientCEDAttribute(
+                patient_id=patient_id,
+                attribute_type=SYMPTOME_SEIT,
+                date_value=stammdaten.symptome_seit,
+                source_type="MANUELL",
+                confirmed_by_user=True,
+            )
+        )
+    for attributtyp, boolwert in (
+        (MC_OBERER_GI, stammdaten.mc_oberer_gi),
+        (MC_PERIANAL, stammdaten.mc_perianal),
+    ):
+        if boolwert is not None:
+            neue_eintraege.append(
+                PatientCEDAttribute(
+                    patient_id=patient_id,
+                    attribute_type=attributtyp,
+                    text_value="JA" if boolwert else "NEIN",
+                    source_type="MANUELL",
+                    confirmed_by_user=True,
+                )
+            )
 
     with sitzung.begin_nested():
         sitzung.add_all(neue_eintraege)
