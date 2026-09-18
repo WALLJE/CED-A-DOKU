@@ -28,7 +28,7 @@ oder weitere Dokumentarten hinzukommen.
 | --- | --- | --- | --- |
 | 1. Zugriffsschranke | weitgehend umgesetzt | `CED_DATA_PASS`, zeitkonstanter Vergleich, geschützte Navigation, Leeren der Patientenauswahl beim Sperren | Benutzerkonten, Rollen, automatischer Sitzungsablauf und systematischer UI-Zugriffstest |
 | 2. Patientenverwaltung | umgesetzt | Eindeutige externe ID, Suche/Auswahl, Neuanlage, getrennte Namen, lokaler Stammdatenabgleich, sichtbarer aktiver Patient | Manuelle Prüfmaske für Altdaten mit ungetrenntem Namen; optional eine zusätzliche finale Patientenbestätigung direkt vor dem Speichern |
-| 3. CED-Reintextparser | weitgehend umgesetzt | Fester Katalog, Synonyme, Quellzeile, Zahlen/Einheiten, `UNREADABLE`, `UNCERTAIN`, `CONFLICT`, sichtbare `MISSING`-Zeilen und neue Kategorien als ungeprüfte Vorschläge | Technische Wertebereichs- und Einheitenregeln fehlen außerhalb der Skala 0–6 |
+| 3. CED-Reintextparser | weitgehend umgesetzt | Fester Katalog, Synonyme, Quellzeile, Zahlen/Einheiten, `UNREADABLE`, `UNCERTAIN`, `CONFLICT`, sichtbare `MISSING`-Zeilen, technische Wertebereichs- und Einheitenprüfung sowie neue Kategorien als ungeprüfte Vorschläge | Fachlich freizugebende Erweiterungen der bewusst kleinen Regelliste |
 | 4. Temporäre Prüftabelle | teilweise umgesetzt | Editierbare Werte/Kategorien/Einheiten, Quelle, Qualitätsstatus, problematische Werte zuerst, Übernahme-Checkbox, neue und widersprüchliche Kategorien zunächst abgewählt | Bekannte sichere Felder sind standardmäßig zur Übernahme markiert statt einzeln bestätigt; „Auf KI-Wert zurücksetzen“ fehlt; Original und Extraktion stehen nicht nebeneinander; die Qualität ist nicht eigenständig editierbar |
 | 5. Atomare Speicherung | umgesetzt | Pflichtdatum, bewusste Patientenzuordnung, Dokument, Rohantwort, KIS-Text und Befunde in einer Transaktion, Audit-Metadaten, Duplikatwarnung | Revisionshistorie für nachträgliche Befundkorrekturen und optionaler Originaldatei-/Seitenbezug fehlen; Migrationen sind noch nicht allgemein gelöst |
 | 6. Patientenverlauf | teilweise umgesetzt | Dynamische CED-Pivot-Tabelle und getrennte Fach-Pivots, ausschließlich bestätigte Befunde, chronologische Werte | Die geplante Längstabelle sowie Datums-, Kategorie-, Dokumenttyp- und Bestätigungsfilter fehlen |
@@ -53,8 +53,7 @@ sind vorhanden. Noch nicht umgesetzt sind:
 
 1. Originalvorschau und Extraktion nebeneinander mit Feldbezug,
 2. separat editierbare KIS-Varianten „kompakt“ und „ausführlich“,
-3. technische Plausibilitätsregeln für Wertebereiche, Einheiten und auffällige
-   Änderungen,
+3. technische Prüfung auffälliger Änderungen gegenüber bestätigten Vorwerten,
 4. eine kontrollierte Katalogzuordnung neuer Kategorien mit Synonym- und
    Dublettenprüfung.
 
@@ -97,22 +96,19 @@ nicht oder nur als Datenmodell vorbereitet:
 
 ### Priorität 1 – ersten CED-Workflow fachlich abschließen
 
-1. Regelbasierte technische Plausibilitätsprüfung mit klaren, nicht korrigierenden
-   Hinweisen implementieren.
-2. Längstabelle samt Datums-, Kategorie- und Dokumenttypfiltern ergänzen.
-3. KIS kompakt/ausführlich getrennt anzeigen, bearbeiten und speichern.
-4. Die noch fehlenden Unit-, Transaktions- und Zugriffstests ergänzen und mit
+1. Längstabelle samt Datums-, Kategorie- und Dokumenttypfiltern ergänzen.
+2. KIS kompakt/ausführlich getrennt anzeigen, bearbeiten und speichern.
+3. Die noch fehlenden Unit-, Transaktions- und Zugriffstests ergänzen und mit
    anonymisierten realistischen Fragebogenfällen fachlich abnehmen.
 
 ### Unmittelbar nächstes Arbeitspaket
 
-Die sichtbaren `MISSING`-Zeilen sind umgesetzt: Für nicht erkannte Standardfelder
-bleiben Wert und Quelle leer, der Status lautet `MISSING` und die Übernahme ist
-deaktiviert. Als Nächstes folgt ausschließlich die regelbasierte technische
-Plausibilitätsprüfung. Ein eigener, vom Parser getrennter Dienst soll vorhandene
-Werte anhand ausdrücklich definierter Wertebereiche und Einheiten prüfen. Er darf
-Werte weder verändern noch ergänzen, sondern nur einen Prüfhinweis und einen
-Qualitätsstatus liefern. Danach folgt die Längstabelle mit Filtern.
+Die regelbasierte technische Plausibilitätsprüfung ist umgesetzt. Sie prüft
+vorhandene numerische Werte und Einheiten in einem eigenen Dienst, verändert keine
+Angabe und zeigt Auffälligkeiten lediglich als Prüfhinweis mit Qualitätsstatus an.
+`MISSING`- und `UNREADABLE`-Zeilen werden dabei nicht interpretiert. Als Nächstes
+folgt die patientenbezogene Längstabelle mit Datums-, Kategorie- und
+Dokumenttypfiltern.
 
 ### Priorität 2 – longitudinaler klinischer Nutzen
 

@@ -52,6 +52,9 @@ class ExtrahierterBefund:
     qualitaet: ConfidenceStatus
     neue_kategorie: bool = False
     uebernehmen: bool = True
+    # Technische Prüfungen ergänzen ausschließlich diesen Hinweis. Parserwert und
+    # Quelltext bleiben unverändert, damit jede Markierung nachvollziehbar bleibt.
+    pruefhinweis: str = ""
 
 
 def _normalisiere(wert: str) -> str:

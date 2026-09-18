@@ -58,6 +58,7 @@ from ced_document_ai.services.ced.storage import (
     finde_befundduplikate,
     speichere_ced_pruefung,
 )
+from ced_document_ai.services.ced.validation import pruefe_technische_plausibilitaet
 from ced_document_ai.services.documents.converter import (
     DocumentConversionError,
     DocumentConverter,
@@ -440,6 +441,11 @@ def zeige_hauptseite() -> None:
                                             "cellEditor": "agCheckboxCellEditor",
                                             "cellRenderer": "agCheckboxCellRenderer",
                                             "width": 135,
+                                        },
+                                        {
+                                            "headerName": "Prüfhinweis",
+                                            "field": "pruefhinweis",
+                                            "minWidth": 280,
                                         },
                                         {
                                             "headerName": "Quelle",
@@ -1182,7 +1188,12 @@ def zeige_hauptseite() -> None:
         # überschrieben. Ohne eindeutigen Vorschlag bleibt das Pflichtfeld leer.
         if datumsvorschlag is not None and not befunddatum.value:
             befunddatum.value = datumsvorschlag.isoformat()
-        zustand.ced_befunde = parse_ced_fragebogen(zustand.strukturierte_darstellung)
+        # Die technische Prüfung ist bewusst ein eigener Schritt nach dem Parser.
+        # Sie verändert erkannte Werte nicht, sondern ergänzt ausschließlich
+        # nachvollziehbare Hinweise für die manuelle Freigabe.
+        zustand.ced_befunde = pruefe_technische_plausibilitaet(
+            parse_ced_fragebogen(zustand.strukturierte_darstellung)
+        )
         prioritaet = {
             "CONFLICT": 0,
             "UNREADABLE": 1,
@@ -1205,6 +1216,7 @@ def zeige_hauptseite() -> None:
                 "wert": befund.anzeigewert,
                 "einheit": befund.einheit or "",
                 "uebernehmen": befund.uebernehmen,
+                "pruefhinweis": befund.pruefhinweis,
                 "quelle": befund.quelltext,
             }
             for befund in sortierte_befunde
