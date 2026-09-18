@@ -186,8 +186,11 @@ der Seitenleiste angeboten. Die Dropdownauswahl aktiviert den Patienten ohne wei
 Klick, sodass die Patientenübersicht auch ohne Dokument geöffnet werden kann. „Daten
 zuordnen“ gehört ausschließlich zum getrennten Dokumentimport. Unter dem am unteren Rand
 angeordneten Schalter „Datenbankmodus beenden“ bleibt Name und Geburtsdatum des
-aktiven Patienten sichtbar. Beim Dokumentwechsel wird diese Zuordnung aus
-Sicherheitsgründen aufgehoben und muss erneut bestätigt werden.
+aktiven Patienten sichtbar. Beim Dokumentwechsel wird die bewusste Dropdownauswahl
+beibehalten. Name und Geburtsdatum des aktiven
+Patienten stehen auch im Kopf des Einlesebereichs. Nach der Dokumentanalyse werden
+erkannte Stammdaten erneut mit dem aktiven Patienten abgeglichen. Ein Widerspruch
+hebt die Auswahl nicht auf, sperrt aber weiterhin die Übernahme dieses Dokuments.
 
 Neue Patienten werden mit getrennten Feldern für Nachname und Vorname gespeichert
 und in allen neuen Ansichten einheitlich als „Nachname, Vorname“ angezeigt. Die alte
@@ -229,15 +232,43 @@ nicht erneut versioniert. Die automatische Übernahme solcher Stammdaten aus
 Dokumenten bleibt einem späteren, ebenfalls bestätigungspflichtigen Schritt
 vorbehalten.
 
-Hauptdiagnose, Nebendiagnosen sowie medikamentöser und chirurgischer Therapieverlauf
-können über „Diagnosen und Therapien bearbeiten“ geändert werden. Frühere Diagnosen
-werden als ersetzt markiert, Therapietexte als neue Versionen gespeichert und die
-gesamte Änderung wird ohne medizinische Inhalte im Audit protokolliert.
+Unter dem Befallsmuster stehen acht häufige extraintestinale Manifestationen als
+deutlich sichtbare Mehrfachauswahl zur Verfügung: Arthritis/Arthralgie,
+Sakroiliitis/ankylosierende Spondylitis, Uveitis, Episkleritis, Erythema nodosum,
+Pyoderma gangraenosum, primär sklerosierende Cholangitis und aphthöse Stomatitis.
+Gesetzte Kreuze und zusätzliche manuelle EIM werden versioniert gespeichert. Die
+Liste ist ein Eingabekatalog und keine automatische Diagnose oder Interpretation.
+
+Hauptdiagnose und Nebendiagnosen besitzen einen eigenen Schalter „Diagnosen
+bearbeiten“. Das zusätzliche Feld „Hinweise zur Diagnose“ nimmt ergänzende,
+bestätigte Hinweise auf, ohne daraus automatisch weitere strukturierte Diagnosen zu
+erzeugen. Frühere Diagnosen werden bei einer Speicherung als ersetzt markiert.
+Medikamentöser und chirurgischer Therapieverlauf werden davon getrennt über
+„Therapien bearbeiten“ freigegeben. Nur geänderte ausgefüllte Therapiefelder werden
+als neue Version gespeichert. Beide Vorgänge erhalten getrennte Audit-Einträge ohne
+medizinische Inhalte; leere Felder löschen keine frühere Angabe.
 
 > **Debugging-Hinweis:** Bleibt die Übersicht trotz gespeicherter CED-Werte leer,
 > zunächst prüfen, ob `confirmed_by_user` gesetzt ist und `patient_id` mit dem oben
 > bestätigten Patienten übereinstimmt. In Debug-Ausgaben nur IDs und Trefferanzahlen,
 > niemals Namen, Diagnosen oder Befundwerte verwenden.
+
+## Zuordnung weiterer Dokumenttypen
+
+Auch Laborbefunde, Arztbriefe, Medikamentenpläne, bildgebende Befunde und sonstige
+medizinische Dokumente können nach dem Einlesen einem Patienten zugeordnet werden.
+Die strukturierte Darstellung führt vorhandene Patientenmerkmale und passend
+beschriftete Dokumentdaten gesondert auf. Lokal werden Patienten-ID, Name und
+Geburtsdatum gegen den Bestand geprüft. Bereits ein einzelnes passendes Merkmal darf
+einen klar als unsicher gekennzeichneten Vorschlag erzeugen; die Zuordnung erfolgt
+aber niemals automatisch.
+
+Vor der Speicherung zeigt eine Prüfansicht den aktiven Patienten, Dokumenttyp,
+erkanntes Datum und die strukturierten Informationen. Das Datum muss bestätigt oder
+manuell ergänzt werden. Widersprüchliche Stammdaten sperren die Zuordnung. Allgemeine
+Dokumente werden mit Rohantwort und KIS-Text archiviert; Fachwerte wie einzelne
+Laborparameter werden ohne eigenen Fachparser nicht als strukturierte Befunde
+geraten oder gespeichert.
 
 ## Synthetische Demo-Daten
 
@@ -259,17 +290,15 @@ keine realen Daten enthalten sind – die lokale Entwicklungsdatenbank gelöscht
 
 ## Verbleibende Entwicklungsschritte
 
-1. **Dokumentbasierte Fachparser:** Als nächster Importtyp ist der Laborbefund
-   umzusetzen. Neue eindeutig beschriftete Laborparameter sollen wie CED-Kategorien
-   prüfpflichtig vorgeschlagen werden können. Danach folgen Endoskopie-, Sonografie-
-   und Schnittbilddokumente mit eigenen Bestätigungsregeln.
-2. **Stammdatenmigration prüfen:** Altdaten mit ungetrenntem Gesamtnamen benötigen
-   eine manuelle Prüfmaske; eine automatische Zerlegung ist absichtlich ausgeschlossen.
-3. **Dokumentquellen für Falländerungen:** Der Diagnose- und Therapieeditor
-   versioniert und auditiert Änderungen; als nächstes fehlt die optionale Verknüpfung
-   jeder manuellen Änderung mit einem konkreten Quelldokument.
-4. **Calprotectin-Grafik:** Zusätzlich zur jetzt aktiven Tabelle ist die geplante
-   skalierbare Zeitgrafik mit Datum auf der X- und Messwert auf der Y-Achse umzusetzen.
-5. **Berechtigungen und Betrieb:** Vor realen Patientendaten sind Benutzerkonten,
-   Rollen, Sitzungsablauf, verschlüsselte Datensicherung und ein Lösch-/Exportkonzept
-   festzulegen und technisch abzusichern.
+Der frühere Arbeitsplan wurde am 18. September 2026 erneut gegen Quellcode und Tests
+geprüft. Der geschützte CED-Grundpfad ist weitgehend vorhanden. Fehlende
+Standardfelder werden inzwischen als nicht ausgewählte `MISSING`-Zeilen sichtbar
+gemacht. Vorhandene numerische Werte und Einheiten werden zusätzlich durch einen
+getrennten regelbasierten Dienst geprüft, der ausschließlich Hinweise ergänzt und
+keine Werte korrigiert. Als nächstes folgen die gefilterte Längstabelle und danach
+die getrennten KIS-Varianten.
+
+Der vollständige Soll-Ist-Abgleich, die noch offenen Punkte der bisherigen drei
+Iterationen und die neu priorisierte Roadmap stehen in
+[`UMSETZUNGSSTAND.md`](UMSETZUNGSSTAND.md). Der umfassende fachliche Zielkatalog
+bleibt unverändert in [`projektplan.md`](projektplan.md) erhalten.
