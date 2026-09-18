@@ -18,6 +18,7 @@ from ced_document_ai.services.ced.storage import (
     finde_befundduplikate,
     speichere_ced_pruefung,
 )
+from ced_document_ai.services.ced.validation import pruefe_technische_plausibilitaet
 from ced_document_ai.services.ced.patient_overview import (
     BefundUebersicht,
     DiagnoseUebersicht,
@@ -31,12 +32,15 @@ from ced_document_ai.services.ced.patient_overview import (
 )
 from ced_document_ai.services.ced.patient_profile import (
     BEFALLSMUSTER,
+    DIAGNOSE_HINWEISE,
     ERSTDIAGNOSE,
     THERAPIE_CHIRURGISCH,
     THERAPIE_MEDIKAMENTOES,
     ManuelleCEDStammdaten,
-    PatientenfallEingabe,
-    speichere_patientenfall,
+    DiagnosenEingabe,
+    TherapienEingabe,
+    speichere_diagnosen,
+    speichere_therapien,
     speichere_manuelle_stammdaten,
 )
 
@@ -53,6 +57,7 @@ __all__ = [
     "FreigegebenerBefund",
     "finde_befundduplikate",
     "speichere_ced_pruefung",
+    "pruefe_technische_plausibilitaet",
     "BefundUebersicht",
     "DiagnoseUebersicht",
     "KlinischerVerlauf",
@@ -63,11 +68,14 @@ __all__ = [
     "lade_fachverlauf",
     "lade_patientenuebersicht",
     "BEFALLSMUSTER",
+    "DIAGNOSE_HINWEISE",
     "ERSTDIAGNOSE",
     "THERAPIE_CHIRURGISCH",
     "THERAPIE_MEDIKAMENTOES",
     "ManuelleCEDStammdaten",
-    "PatientenfallEingabe",
-    "speichere_patientenfall",
+    "DiagnosenEingabe",
+    "TherapienEingabe",
+    "speichere_diagnosen",
+    "speichere_therapien",
     "speichere_manuelle_stammdaten",
 ]

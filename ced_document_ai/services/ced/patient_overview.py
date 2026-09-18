@@ -23,6 +23,7 @@ from ced_document_ai.database.models import (
 )
 from ced_document_ai.services.ced.patient_profile import (
     BEFALLSMUSTER,
+    DIAGNOSE_HINWEISE,
     ERSTDIAGNOSE,
     THERAPIE_CHIRURGISCH,
     THERAPIE_MEDIKAMENTOES,
@@ -60,6 +61,7 @@ class PatientenUebersicht:
     befallsmuster: str | None
     therapie_medikamentoes: str | None
     therapie_chirurgisch: str | None
+    diagnose_hinweise: str | None
     diagnosen: tuple[DiagnoseUebersicht, ...]
     letztes_befunddatum: date | None
     letzte_befunde: tuple[BefundUebersicht, ...]
@@ -169,6 +171,7 @@ def lade_patientenuebersicht(
             BEFALLSMUSTER,
             THERAPIE_MEDIKAMENTOES,
             THERAPIE_CHIRURGISCH,
+            DIAGNOSE_HINWEISE,
         )
     }
     return PatientenUebersicht(
@@ -191,6 +194,11 @@ def lade_patientenuebersicht(
         therapie_chirurgisch=(
             attribute[THERAPIE_CHIRURGISCH].text_value
             if attribute[THERAPIE_CHIRURGISCH]
+            else None
+        ),
+        diagnose_hinweise=(
+            attribute[DIAGNOSE_HINWEISE].text_value
+            if attribute[DIAGNOSE_HINWEISE]
             else None
         ),
         diagnosen=diagnosen,

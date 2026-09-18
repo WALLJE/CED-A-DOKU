@@ -52,6 +52,9 @@ class ExtrahierterBefund:
     qualitaet: ConfidenceStatus
     neue_kategorie: bool = False
     uebernehmen: bool = True
+    # Technische Prüfungen ergänzen ausschließlich diesen Hinweis. Parserwert und
+    # Quelltext bleiben unverändert, damit jede Markierung nachvollziehbar bleibt.
+    pruefhinweis: str = ""
 
 
 def _normalisiere(wert: str) -> str:
@@ -235,8 +238,40 @@ def _skalenwert_ableiten(
     )
 
 
+def _ergaenze_fehlende_standardkategorien(
+    befunde: list[ExtrahierterBefund],
+) -> list[ExtrahierterBefund]:
+    """Ergänzt jedes nicht erkannte Standardfeld als sichtbaren Prüfhinweis.
+
+    Ein fehlendes Feld erhält absichtlich weder einen Ersatzwert noch eine erfundene
+    Quellzeile. Es ist standardmäßig von der Übernahme ausgeschlossen. Dadurch kann
+    die Oberfläche vollständig zeigen, welche erwarteten Angaben im strukturierten
+    Text nicht vorhanden waren, ohne aus dem Fehlen eine medizinische Aussage wie
+    „nein“ abzuleiten.
+
+    Debugging-Hinweis: Falls unerwartet viele ``MISSING``-Zeilen entstehen, nur die
+    normalisierten Feldnamen und die Anzahl erkannter Kategorien untersuchen. Der
+    medizinische Text darf nicht in dauerhafte Logs geschrieben werden.
+    """
+    vorhandene_kategorien = {befund.kategorie for befund in befunde}
+    fehlende_befunde = [
+        ExtrahierterBefund(
+            kategorie=kategorie,
+            anzeigewert="",
+            numerischer_wert=None,
+            einheit=None,
+            quelltext="",
+            qualitaet=ConfidenceStatus.MISSING,
+            uebernehmen=False,
+        )
+        for kategorie in STANDARDKATEGORIEN
+        if kategorie not in vorhandene_kategorien
+    ]
+    return [*befunde, *fehlende_befunde]
+
+
 def parse_ced_fragebogen(text: str) -> list[ExtrahierterBefund]:
-    """Parst bekannte Felder und behält neue Kategorien als Vorschläge bei.
+    """Parst bekannte Felder, neue Vorschläge und fehlende Standardfelder.
 
     Debugging-Hinweis: Bei einer nicht erkannten Zeile dürfen lokal Feldname und
     Parserstatus geprüft werden. Den vollständigen Wert oder Patiententext nicht in
@@ -282,9 +317,10 @@ def parse_ced_fragebogen(text: str) -> list[ExtrahierterBefund]:
         kategorie: sum(befund.kategorie == kategorie for befund in gefundene)
         for kategorie in {befund.kategorie for befund in gefundene}
     }
-    return [
+    gepruefte_befunde = [
         replace(befund, qualitaet=ConfidenceStatus.CONFLICT, uebernehmen=False)
         if anzahl[befund.kategorie] > 1
         else befund
         for befund in gefundene
     ]
+    return _ergaenze_fehlende_standardkategorien(gepruefte_befunde)

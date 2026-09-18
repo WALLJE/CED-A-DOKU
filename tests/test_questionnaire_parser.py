@@ -4,13 +4,23 @@ from ced_document_ai.database.models import ConfidenceStatus
 from datetime import date
 
 from ced_document_ai.services.ced.questionnaire_parser import (
+    STANDARDKATEGORIEN,
     erkenne_befunddatum,
     parse_ced_fragebogen,
 )
 
 
+def _vorhandene_befunde(text: str):
+    """Blendet MISSING-Zeilen aus, wenn ein Test nur erkannte Werte untersucht."""
+    return [
+        befund
+        for befund in parse_ced_fragebogen(text)
+        if befund.qualitaet is not ConfidenceStatus.MISSING
+    ]
+
+
 def test_bekannte_felder_werden_getrennt_und_originalquelle_bleibt_erhalten() -> None:
-    befunde = parse_ced_fragebogen(
+    befunde = _vorhandene_befunde(
         "Stuhlfrequenz: 4 pro Tag\nGewicht: 74,5 kg\nBlut im Stuhl: nein"
     )
 
@@ -27,7 +37,7 @@ def test_bekannte_felder_werden_getrennt_und_originalquelle_bleibt_erhalten() ->
 
 
 def test_skalenwert_wird_aus_beschreibung_zusaetzlich_abgeleitet() -> None:
-    befunde = parse_ced_fragebogen(
+    befunde = _vorhandene_befunde(
         "Bauchschmerzen: moderat (VAS 3 von 6)\nAllgemeinbefinden: 2 / 6"
     )
 
@@ -42,7 +52,7 @@ def test_skalenwert_wird_aus_beschreibung_zusaetzlich_abgeleitet() -> None:
 
 
 def test_unleserlicher_wert_wird_nicht_ersetzt() -> None:
-    [befund] = parse_ced_fragebogen("Auffälligkeiten Analregion: unleserlich")
+    [befund] = _vorhandene_befunde("Auffälligkeiten Analregion: unleserlich")
 
     assert befund.anzeigewert == "unleserlich"
     assert befund.qualitaet is ConfidenceStatus.UNREADABLE
@@ -50,7 +60,7 @@ def test_unleserlicher_wert_wird_nicht_ersetzt() -> None:
 
 
 def test_neue_kategorie_bleibt_als_unbestaetigter_vorschlag_erhalten() -> None:
-    [befund] = parse_ced_fragebogen("Appetit: vermindert")
+    [befund] = _vorhandene_befunde("Appetit: vermindert")
 
     assert befund.kategorie == "Appetit"
     assert befund.neue_kategorie
@@ -59,7 +69,7 @@ def test_neue_kategorie_bleibt_als_unbestaetigter_vorschlag_erhalten() -> None:
 
 
 def test_doppelte_kategorie_wird_als_konflikt_markiert() -> None:
-    befunde = parse_ced_fragebogen("Gewicht: 74 kg\nGewicht: 75 kg")
+    befunde = _vorhandene_befunde("Gewicht: 74 kg\nGewicht: 75 kg")
 
     assert len(befunde) == 2
     assert all(befund.qualitaet is ConfidenceStatus.CONFLICT for befund in befunde)
@@ -67,7 +77,28 @@ def test_doppelte_kategorie_wird_als_konflikt_markiert() -> None:
 
 
 def test_unbeschrifteter_freitext_wird_nicht_geraten() -> None:
-    assert parse_ced_fragebogen("Heute deutlich besser als gestern.") == []
+    befunde = parse_ced_fragebogen("Heute deutlich besser als gestern.")
+
+    assert [befund.kategorie for befund in befunde] == list(STANDARDKATEGORIEN)
+    assert all(befund.qualitaet is ConfidenceStatus.MISSING for befund in befunde)
+    assert all(not befund.uebernehmen for befund in befunde)
+    assert all(not befund.anzeigewert and not befund.quelltext for befund in befunde)
+
+
+def test_nicht_genannte_standardfelder_werden_als_missing_ergaenzt() -> None:
+    befunde = parse_ced_fragebogen("Gewicht: 74 kg")
+
+    gewicht = next(befund for befund in befunde if befund.kategorie == "Gewicht")
+    fehlende = [
+        befund
+        for befund in befunde
+        if befund.qualitaet is ConfidenceStatus.MISSING
+    ]
+
+    assert gewicht.qualitaet is ConfidenceStatus.HIGH_CONFIDENCE
+    assert gewicht.uebernehmen
+    assert len(fehlende) == len(STANDARDKATEGORIEN) - 1
+    assert all(not befund.uebernehmen for befund in fehlende)
 
 
 def test_eindeutig_beschriftetes_befunddatum_wird_vorgeschlagen() -> None:
@@ -99,7 +130,7 @@ def test_geburtsdatum_allein_ist_kein_befunddatum() -> None:
 
 
 def test_metadaten_werden_nicht_als_neue_befundkategorien_angeboten() -> None:
-    befunde = parse_ced_fragebogen(
+    befunde = _vorhandene_befunde(
         "Patient: Erika Beispiel\nBefunddatum: 13.09.2026\nGewicht: 74 kg"
     )
 
