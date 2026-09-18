@@ -259,17 +259,14 @@ keine realen Daten enthalten sind – die lokale Entwicklungsdatenbank gelöscht
 
 ## Verbleibende Entwicklungsschritte
 
-1. **Dokumentbasierte Fachparser:** Als nächster Importtyp ist der Laborbefund
-   umzusetzen. Neue eindeutig beschriftete Laborparameter sollen wie CED-Kategorien
-   prüfpflichtig vorgeschlagen werden können. Danach folgen Endoskopie-, Sonografie-
-   und Schnittbilddokumente mit eigenen Bestätigungsregeln.
-2. **Stammdatenmigration prüfen:** Altdaten mit ungetrenntem Gesamtnamen benötigen
-   eine manuelle Prüfmaske; eine automatische Zerlegung ist absichtlich ausgeschlossen.
-3. **Dokumentquellen für Falländerungen:** Der Diagnose- und Therapieeditor
-   versioniert und auditiert Änderungen; als nächstes fehlt die optionale Verknüpfung
-   jeder manuellen Änderung mit einem konkreten Quelldokument.
-4. **Calprotectin-Grafik:** Zusätzlich zur jetzt aktiven Tabelle ist die geplante
-   skalierbare Zeitgrafik mit Datum auf der X- und Messwert auf der Y-Achse umzusetzen.
-5. **Berechtigungen und Betrieb:** Vor realen Patientendaten sind Benutzerkonten,
-   Rollen, Sitzungsablauf, verschlüsselte Datensicherung und ein Lösch-/Exportkonzept
-   festzulegen und technisch abzusichern.
+Der frühere Arbeitsplan wurde am 18. September 2026 erneut gegen Quellcode und Tests
+geprüft. Der geschützte CED-Grundpfad ist weitgehend vorhanden. Fehlende
+Standardfelder werden inzwischen als nicht ausgewählte `MISSING`-Zeilen sichtbar
+gemacht. Als nächstes werden vorhandene Werte durch regelbasierte, nicht
+korrigierende Plausibilitätsprüfungen ergänzt. Danach folgen die gefilterte
+Längstabelle und die getrennten KIS-Varianten.
+
+Der vollständige Soll-Ist-Abgleich, die noch offenen Punkte der bisherigen drei
+Iterationen und die neu priorisierte Roadmap stehen in
+[`UMSETZUNGSSTAND.md`](UMSETZUNGSSTAND.md). Der umfassende fachliche Zielkatalog
+bleibt unverändert in [`projektplan.md`](projektplan.md) erhalten.
