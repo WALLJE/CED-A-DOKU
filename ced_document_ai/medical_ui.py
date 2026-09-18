@@ -58,6 +58,7 @@ from ced_document_ai.services.ced.storage import (
     finde_befundduplikate,
     speichere_ced_pruefung,
 )
+from ced_document_ai.services.ced.validation import pruefe_technische_plausibilitaet
 from ced_document_ai.services.documents.converter import (
     DocumentConversionError,
     DocumentConverter,
@@ -440,6 +441,11 @@ def zeige_hauptseite() -> None:
                                             "cellEditor": "agCheckboxCellEditor",
                                             "cellRenderer": "agCheckboxCellRenderer",
                                             "width": 135,
+                                        },
+                                        {
+                                            "headerName": "Prüfhinweis",
+                                            "field": "pruefhinweis",
+                                            "minWidth": 280,
                                         },
                                         {
                                             "headerName": "Quelle",
@@ -1182,7 +1188,12 @@ def zeige_hauptseite() -> None:
         # überschrieben. Ohne eindeutigen Vorschlag bleibt das Pflichtfeld leer.
         if datumsvorschlag is not None and not befunddatum.value:
             befunddatum.value = datumsvorschlag.isoformat()
-        zustand.ced_befunde = parse_ced_fragebogen(zustand.strukturierte_darstellung)
+        # Die technische Prüfung ist bewusst ein eigener Schritt nach dem Parser.
+        # Sie verändert erkannte Werte nicht, sondern ergänzt ausschließlich
+        # nachvollziehbare Hinweise für die manuelle Freigabe.
+        zustand.ced_befunde = pruefe_technische_plausibilitaet(
+            parse_ced_fragebogen(zustand.strukturierte_darstellung)
+        )
         prioritaet = {
             "CONFLICT": 0,
             "UNREADABLE": 1,
@@ -1205,17 +1216,30 @@ def zeige_hauptseite() -> None:
                 "wert": befund.anzeigewert,
                 "einheit": befund.einheit or "",
                 "uebernehmen": befund.uebernehmen,
+                "pruefhinweis": befund.pruefhinweis,
                 "quelle": befund.quelltext,
             }
             for befund in sortierte_befunde
         ]
         ced_tabelle.update()
-        ced_speichern.set_enabled(bool(zustand.ced_befunde))
+        # Reine MISSING-Zeilen dürfen den Speicherschalter nicht aktivieren. Sie
+        # dokumentieren nur sichtbar, dass der Parser keine Angabe gefunden hat.
+        # Zum Debugging kann lokal die Anzahl übernehmbarer Zeilen geprüft werden;
+        # medizinische Werte gehören nicht in die Protokollausgabe.
+        ced_speichern.set_enabled(
+            any(befund.uebernehmen for befund in zustand.ced_befunde)
+        )
         neue_anzahl = sum(befund.neue_kategorie for befund in zustand.ced_befunde)
-        if not zustand.ced_befunde:
+        fehlende_anzahl = sum(
+            befund.qualitaet is ConfidenceStatus.MISSING
+            for befund in zustand.ced_befunde
+        )
+        erkannte_anzahl = len(zustand.ced_befunde) - fehlende_anzahl
+        if erkannte_anzahl == 0:
             ced_pruefung_hinweis.text = (
-                "Keine beschrifteten CED-Felder erkannt. Bitte die strukturierte Darstellung prüfen; "
-                "es werden keine Werte geraten oder automatisch ersetzt."
+                "Keine beschrifteten CED-Felder erkannt. Fehlende Standardfelder "
+                "werden als MISSING angezeigt und nicht zur Übernahme ausgewählt. "
+                "Bitte die strukturierte Darstellung prüfen."
             )
             setze_status("Keine CED-Felder für die Prüftabelle erkannt", fehler=True)
             patientenansicht_dialog.close()
@@ -1229,7 +1253,7 @@ def zeige_hauptseite() -> None:
             else "kein eindeutiges Befunddatum erkannt · manuelle Eingabe erforderlich"
         )
         ced_pruefung_hinweis.text = (
-            f"{len(zustand.ced_befunde)} Feld(er) erkannt"
+            f"{erkannte_anzahl} Feld(er) erkannt · {fehlende_anzahl} Standardfeld(er) fehlen"
             + (
                 f" · {neue_anzahl} neue Kategorie(n) sind zunächst von der Übernahme ausgeschlossen"
                 if neue_anzahl
