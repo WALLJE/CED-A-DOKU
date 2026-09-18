@@ -58,6 +58,7 @@ from ced_document_ai.services.ced.storage import (
     finde_befundduplikate,
     speichere_ced_pruefung,
 )
+from ced_document_ai.services.ced.validation import pruefe_technische_plausibilitaet
 from ced_document_ai.services.documents.converter import (
     DocumentConversionError,
     DocumentConverter,
@@ -310,7 +311,9 @@ def zeige_hauptseite() -> None:
             hauptueberschrift = ui.label("Auslesen von Dokumenten").classes(
                 "text-3xl font-bold"
             )
-            ui.label("Assistierte Auslesung medizinischer Dokumente").classes(
+            hauptuntertitel = ui.label(
+                "Assistierte Auslesung medizinischer Dokumente"
+            ).classes(
                 "text-teal-50"
             )
 
@@ -440,6 +443,11 @@ def zeige_hauptseite() -> None:
                                             "cellEditor": "agCheckboxCellEditor",
                                             "cellRenderer": "agCheckboxCellRenderer",
                                             "width": 135,
+                                        },
+                                        {
+                                            "headerName": "Prüfhinweis",
+                                            "field": "pruefhinweis",
+                                            "minWidth": 280,
                                         },
                                         {
                                             "headerName": "Quelle",
@@ -886,15 +894,21 @@ def zeige_hauptseite() -> None:
         *,
         synchronisiere_auswahl: bool = True,
     ) -> None:
-        """Synchronisiert aktive Zuordnung in Seitenleiste und CED-Prüfkopf.
+        """Synchronisiert die aktive Zuordnung in Navigation und Arbeitskopf.
 
-        Die Darstellung verwendet den gespeicherten Gesamtnamen, weil das aktuelle
-        Datenmodell Vor- und Nachname noch nicht getrennt führt. Eine automatische
-        Aufteilung würde bei zusammengesetzten Namen unzuverlässige Werte erzeugen.
+        Neue Patienten besitzen getrennte Vor- und Nachnamen und werden über
+        ``display_name`` einheitlich als „Nachname, Vorname“ dargestellt. Bei alten
+        Datensätzen bleibt der gespeicherte Gesamtname erhalten; er wird ausdrücklich
+        nicht automatisch zerlegt.
         """
         if patient is None:
             aktiver_patient_hinweis.text = "Aktiver Patient: keiner ausgewählt"
             ced_patientenkopf.text = "Noch kein Patient bestätigt"
+            if zustand.arbeitsmodus == DATENBANKMODUS:
+                hauptueberschrift.text = "CED-A-DOKU"
+            else:
+                hauptueberschrift.text = "Auslesen von Dokumenten"
+            hauptuntertitel.text = "Assistierte Auslesung medizinischer Dokumente"
             if synchronisiere_auswahl:
                 aktiver_patient_auswahl.value = None
                 aktiver_patient_auswahl.update()
@@ -910,6 +924,11 @@ def zeige_hauptseite() -> None:
         ced_patientenkopf.text = (
             f"Nachname, Vorname: {patient.display_name} · Geburtsdatum: {geburtsdatum}"
         )
+        # Der aktive Patient bleibt so auch im Einlesebereich sichtbar. Der Kopf
+        # entspricht dem Aufbau der Fachansichten, ohne weitere Patientendaten oder
+        # aus dem Dokument geratene Angaben einzublenden.
+        hauptueberschrift.text = patient.display_name
+        hauptuntertitel.text = f"Geburtsdatum: {geburtsdatum} · Dokument einlesen"
         if synchronisiere_auswahl:
             aktiver_patient_auswahl.value = patient.id
             aktiver_patient_auswahl.update()
@@ -1182,7 +1201,12 @@ def zeige_hauptseite() -> None:
         # überschrieben. Ohne eindeutigen Vorschlag bleibt das Pflichtfeld leer.
         if datumsvorschlag is not None and not befunddatum.value:
             befunddatum.value = datumsvorschlag.isoformat()
-        zustand.ced_befunde = parse_ced_fragebogen(zustand.strukturierte_darstellung)
+        # Die technische Prüfung ist bewusst ein eigener Schritt nach dem Parser.
+        # Sie verändert erkannte Werte nicht, sondern ergänzt ausschließlich
+        # nachvollziehbare Hinweise für die manuelle Freigabe.
+        zustand.ced_befunde = pruefe_technische_plausibilitaet(
+            parse_ced_fragebogen(zustand.strukturierte_darstellung)
+        )
         prioritaet = {
             "CONFLICT": 0,
             "UNREADABLE": 1,
@@ -1205,17 +1229,30 @@ def zeige_hauptseite() -> None:
                 "wert": befund.anzeigewert,
                 "einheit": befund.einheit or "",
                 "uebernehmen": befund.uebernehmen,
+                "pruefhinweis": befund.pruefhinweis,
                 "quelle": befund.quelltext,
             }
             for befund in sortierte_befunde
         ]
         ced_tabelle.update()
-        ced_speichern.set_enabled(bool(zustand.ced_befunde))
+        # Reine MISSING-Zeilen dürfen den Speicherschalter nicht aktivieren. Sie
+        # dokumentieren nur sichtbar, dass der Parser keine Angabe gefunden hat.
+        # Zum Debugging kann lokal die Anzahl übernehmbarer Zeilen geprüft werden;
+        # medizinische Werte gehören nicht in die Protokollausgabe.
+        ced_speichern.set_enabled(
+            any(befund.uebernehmen for befund in zustand.ced_befunde)
+        )
         neue_anzahl = sum(befund.neue_kategorie for befund in zustand.ced_befunde)
-        if not zustand.ced_befunde:
+        fehlende_anzahl = sum(
+            befund.qualitaet is ConfidenceStatus.MISSING
+            for befund in zustand.ced_befunde
+        )
+        erkannte_anzahl = len(zustand.ced_befunde) - fehlende_anzahl
+        if erkannte_anzahl == 0:
             ced_pruefung_hinweis.text = (
-                "Keine beschrifteten CED-Felder erkannt. Bitte die strukturierte Darstellung prüfen; "
-                "es werden keine Werte geraten oder automatisch ersetzt."
+                "Keine beschrifteten CED-Felder erkannt. Fehlende Standardfelder "
+                "werden als MISSING angezeigt und nicht zur Übernahme ausgewählt. "
+                "Bitte die strukturierte Darstellung prüfen."
             )
             setze_status("Keine CED-Felder für die Prüftabelle erkannt", fehler=True)
             patientenansicht_dialog.close()
@@ -1229,7 +1266,7 @@ def zeige_hauptseite() -> None:
             else "kein eindeutiges Befunddatum erkannt · manuelle Eingabe erforderlich"
         )
         ced_pruefung_hinweis.text = (
-            f"{len(zustand.ced_befunde)} Feld(er) erkannt"
+            f"{erkannte_anzahl} Feld(er) erkannt · {fehlende_anzahl} Standardfeld(er) fehlen"
             + (
                 f" · {neue_anzahl} neue Kategorie(n) sind zunächst von der Übernahme ausgeschlossen"
                 if neue_anzahl
@@ -1396,7 +1433,10 @@ def zeige_hauptseite() -> None:
         """
         if zustand.arbeitsmodus != DATENBANKMODUS:
             return
-        zustand.patient_id = None
+        # Die bewusst gewählte Patienten-ID bleibt beim Einfügen und Analysieren
+        # eines neuen Dokuments erhalten. Nur wenn der Datensatz nicht mehr in der
+        # Datenbank existiert, wird die Auswahl weiter unten sichtbar aufgehoben.
+        aktive_patienten_id = zustand.patient_id
         zustand.patientenabgleich_erlaubt = False
         setze_ced_pruefung_zurueck()
         setze_patientenansicht_zurueck()
@@ -1434,9 +1474,10 @@ def zeige_hauptseite() -> None:
                     f"{patient.birth_date.strftime('%d.%m.%Y') if patient.birth_date else 'ohne Geburtsdatum'}"
                 )
         aktiver_patient_auswahl.options = optionen
-        aktiver_patient_auswahl.value = None
+        aktiver_patient_auswahl.value = (
+            aktive_patienten_id if aktive_patienten_id in optionen else None
+        )
         aktiver_patient_auswahl.update()
-        setze_patientenkopf(None)
 
         if not zustand.ausgelesener_inhalt:
             dokument_patienten_hinweis.text = (
@@ -1470,7 +1511,15 @@ def zeige_hauptseite() -> None:
                 f"Geburtsdatum: {erkannt.geburtsdatum.strftime('%d.%m.%Y') if erkannt.geburtsdatum else 'nicht erkannt'}. "
                 "Kein passender Bestandspatient; Auswahl prüfen oder neuen Patienten anlegen."
             )
-        aktualisiere_ced_bereitschaft()
+        if aktive_patienten_id in optionen:
+            # Die vorhandene Auswahl wird erneut gegen die nun erkannten
+            # Dokumentstammdaten geprüft. Ein Widerspruch löscht den Patienten nicht,
+            # sperrt aber weiterhin zuverlässig die Dokumentzuordnung.
+            aktiviere_patientenauswahl()
+        else:
+            zustand.patient_id = None
+            setze_patientenkopf(None, synchronisiere_auswahl=False)
+            aktualisiere_ced_bereitschaft()
 
     def ordne_daten_patient_zu() -> None:
         """Öffnet die Prüfung nur, wenn tatsächlich neue Daten zuordenbar sind."""
@@ -1635,6 +1684,7 @@ def zeige_hauptseite() -> None:
         datenbank_schalter.text = "Datenbankmodus beenden"
         datenbank_status.text = "Datenbank: aktiviert · geschützter Modus"
         hauptueberschrift.text = "CED-A-DOKU"
+        hauptuntertitel.text = "Assistierte Auslesung medizinischer Dokumente"
         datenbank_navigation_titel.set_visibility(True)
         aktiver_patient_auswahl.set_visibility(True)
         dokument_patienten_hinweis.set_visibility(True)
@@ -1717,7 +1767,6 @@ def zeige_hauptseite() -> None:
         zustand.rohe_ki_antwort = ""
         zustand.letzter_fehler = ""
         zustand.ergebnis_anbieter = ""
-        zustand.patient_id = None
         zustand.patientenabgleich_erlaubt = False
         dokumenttyp_ausgabe.value = ""
         ergebnis_ausgabe.value = ""
@@ -1750,7 +1799,6 @@ def zeige_hauptseite() -> None:
         zustand.rohe_ki_antwort = ""
         zustand.letzter_fehler = ""
         zustand.ergebnis_anbieter = ""
-        zustand.patient_id = None
         zustand.patientenabgleich_erlaubt = False
         dokumenttyp_ausgabe.value = ""
         ergebnis_ausgabe.value = ""

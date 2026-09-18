@@ -18,6 +18,7 @@ from ced_document_ai.services.ced.storage import (
     finde_befundduplikate,
     speichere_ced_pruefung,
 )
+from ced_document_ai.services.ced.validation import pruefe_technische_plausibilitaet
 from ced_document_ai.services.ced.patient_overview import (
     BefundUebersicht,
     DiagnoseUebersicht,
@@ -53,6 +54,7 @@ __all__ = [
     "FreigegebenerBefund",
     "finde_befundduplikate",
     "speichere_ced_pruefung",
+    "pruefe_technische_plausibilitaet",
     "BefundUebersicht",
     "DiagnoseUebersicht",
     "KlinischerVerlauf",
