@@ -1210,12 +1210,24 @@ def zeige_hauptseite() -> None:
             for befund in sortierte_befunde
         ]
         ced_tabelle.update()
-        ced_speichern.set_enabled(bool(zustand.ced_befunde))
+        # Reine MISSING-Zeilen dürfen den Speicherschalter nicht aktivieren. Sie
+        # dokumentieren nur sichtbar, dass der Parser keine Angabe gefunden hat.
+        # Zum Debugging kann lokal die Anzahl übernehmbarer Zeilen geprüft werden;
+        # medizinische Werte gehören nicht in die Protokollausgabe.
+        ced_speichern.set_enabled(
+            any(befund.uebernehmen for befund in zustand.ced_befunde)
+        )
         neue_anzahl = sum(befund.neue_kategorie for befund in zustand.ced_befunde)
-        if not zustand.ced_befunde:
+        fehlende_anzahl = sum(
+            befund.qualitaet is ConfidenceStatus.MISSING
+            for befund in zustand.ced_befunde
+        )
+        erkannte_anzahl = len(zustand.ced_befunde) - fehlende_anzahl
+        if erkannte_anzahl == 0:
             ced_pruefung_hinweis.text = (
-                "Keine beschrifteten CED-Felder erkannt. Bitte die strukturierte Darstellung prüfen; "
-                "es werden keine Werte geraten oder automatisch ersetzt."
+                "Keine beschrifteten CED-Felder erkannt. Fehlende Standardfelder "
+                "werden als MISSING angezeigt und nicht zur Übernahme ausgewählt. "
+                "Bitte die strukturierte Darstellung prüfen."
             )
             setze_status("Keine CED-Felder für die Prüftabelle erkannt", fehler=True)
             patientenansicht_dialog.close()
@@ -1229,7 +1241,7 @@ def zeige_hauptseite() -> None:
             else "kein eindeutiges Befunddatum erkannt · manuelle Eingabe erforderlich"
         )
         ced_pruefung_hinweis.text = (
-            f"{len(zustand.ced_befunde)} Feld(er) erkannt"
+            f"{erkannte_anzahl} Feld(er) erkannt · {fehlende_anzahl} Standardfeld(er) fehlen"
             + (
                 f" · {neue_anzahl} neue Kategorie(n) sind zunächst von der Übernahme ausgeschlossen"
                 if neue_anzahl

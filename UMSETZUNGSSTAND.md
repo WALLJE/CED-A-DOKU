@@ -28,7 +28,7 @@ oder weitere Dokumentarten hinzukommen.
 | --- | --- | --- | --- |
 | 1. Zugriffsschranke | weitgehend umgesetzt | `CED_DATA_PASS`, zeitkonstanter Vergleich, geschützte Navigation, Leeren der Patientenauswahl beim Sperren | Benutzerkonten, Rollen, automatischer Sitzungsablauf und systematischer UI-Zugriffstest |
 | 2. Patientenverwaltung | umgesetzt | Eindeutige externe ID, Suche/Auswahl, Neuanlage, getrennte Namen, lokaler Stammdatenabgleich, sichtbarer aktiver Patient | Manuelle Prüfmaske für Altdaten mit ungetrenntem Namen; optional eine zusätzliche finale Patientenbestätigung direkt vor dem Speichern |
-| 3. CED-Reintextparser | weitgehend umgesetzt | Fester Katalog, Synonyme, Quellzeile, Zahlen/Einheiten, `UNREADABLE`, `UNCERTAIN`, `CONFLICT`, neue Kategorien als ungeprüfte Vorschläge | Nicht vorhandene Standardfelder werden derzeit nicht als `MISSING`-Zeilen ausgegeben; technische Wertebereichs- und Einheitenregeln fehlen außerhalb der Skala 0–6 |
+| 3. CED-Reintextparser | weitgehend umgesetzt | Fester Katalog, Synonyme, Quellzeile, Zahlen/Einheiten, `UNREADABLE`, `UNCERTAIN`, `CONFLICT`, sichtbare `MISSING`-Zeilen und neue Kategorien als ungeprüfte Vorschläge | Technische Wertebereichs- und Einheitenregeln fehlen außerhalb der Skala 0–6 |
 | 4. Temporäre Prüftabelle | teilweise umgesetzt | Editierbare Werte/Kategorien/Einheiten, Quelle, Qualitätsstatus, problematische Werte zuerst, Übernahme-Checkbox, neue und widersprüchliche Kategorien zunächst abgewählt | Bekannte sichere Felder sind standardmäßig zur Übernahme markiert statt einzeln bestätigt; „Auf KI-Wert zurücksetzen“ fehlt; Original und Extraktion stehen nicht nebeneinander; die Qualität ist nicht eigenständig editierbar |
 | 5. Atomare Speicherung | umgesetzt | Pflichtdatum, bewusste Patientenzuordnung, Dokument, Rohantwort, KIS-Text und Befunde in einer Transaktion, Audit-Metadaten, Duplikatwarnung | Revisionshistorie für nachträgliche Befundkorrekturen und optionaler Originaldatei-/Seitenbezug fehlen; Migrationen sind noch nicht allgemein gelöst |
 | 6. Patientenverlauf | teilweise umgesetzt | Dynamische CED-Pivot-Tabelle und getrennte Fach-Pivots, ausschließlich bestätigte Befunde, chronologische Werte | Die geplante Längstabelle sowie Datums-, Kategorie-, Dokumenttyp- und Bestätigungsfilter fehlen |
@@ -42,10 +42,9 @@ Der funktionale Weg bis zur gespeicherten patientenbezogenen Ansicht ist vorhand
 Für den fachlich formulierten Abschluss fehlen vor allem:
 
 1. eine echte Längstabelle mit den vorgesehenen Filtern,
-2. `MISSING`-Zeilen für nicht erkannte erwartete Felder,
-3. eine ausdrückliche Einzelbestätigung auch der zunächst sicheren Zeilen,
-4. „Auf KI-Wert zurücksetzen“ in der Prüftabelle,
-5. automatisierte Tests der Zugriffsschranke und des Sperrens der Oberfläche.
+2. eine ausdrückliche Einzelbestätigung auch der zunächst sicheren Zeilen,
+3. „Auf KI-Wert zurücksetzen“ in der Prüftabelle,
+4. automatisierte Tests der Zugriffsschranke und des Sperrens der Oberfläche.
 
 ### Iteration 2 – klinische Bedienung: teilweise abgeschlossen
 
@@ -98,29 +97,22 @@ nicht oder nur als Datenmodell vorbereitet:
 
 ### Priorität 1 – ersten CED-Workflow fachlich abschließen
 
-1. Fehlende erwartete Felder als sichtbare `MISSING`-Zeilen ergänzen.
-2. Regelbasierte technische Plausibilitätsprüfung mit klaren, nicht korrigierenden
+1. Regelbasierte technische Plausibilitätsprüfung mit klaren, nicht korrigierenden
    Hinweisen implementieren.
-3. Längstabelle samt Datums-, Kategorie- und Dokumenttypfiltern ergänzen.
-4. KIS kompakt/ausführlich getrennt anzeigen, bearbeiten und speichern.
-5. Die noch fehlenden Unit-, Transaktions- und Zugriffstests ergänzen und mit
+2. Längstabelle samt Datums-, Kategorie- und Dokumenttypfiltern ergänzen.
+3. KIS kompakt/ausführlich getrennt anzeigen, bearbeiten und speichern.
+4. Die noch fehlenden Unit-, Transaktions- und Zugriffstests ergänzen und mit
    anonymisierten realistischen Fragebogenfällen fachlich abnehmen.
 
 ### Unmittelbar nächstes Arbeitspaket
 
-Als Nächstes sollten die Punkte 1 und 2 gemeinsam umgesetzt werden: Der Parser gibt
-für jede erwartete Standardkategorie genau eine sichtbare Prüfzeile aus. Fehlt eine
-Angabe, bleibt ihr Wert leer, ihr Status lautet `MISSING` und sie ist nicht zur
-Übernahme ausgewählt. Anschließend prüft ein eigener, vom Parser getrennter Dienst
-nur vorhandene Werte anhand ausdrücklich definierter Wertebereiche und Einheiten.
-Er darf Werte weder verändern noch ergänzen, sondern ausschließlich einen
-Prüfhinweis und einen Qualitätsstatus liefern.
-
-Dieses Paket ist der sinnvollste nächste Schritt, weil es die bereits vorhandene
-Prüftabelle vervollständigt, keine neue KI-Anfrage benötigt und direkt mit
-deterministischen Unit-Tests abgesichert werden kann. Danach folgt die Längstabelle
-mit Filtern; KIS-Varianten und longitudinale Vergleiche bauen anschließend auf den
-vollständiger geprüften Daten auf.
+Die sichtbaren `MISSING`-Zeilen sind umgesetzt: Für nicht erkannte Standardfelder
+bleiben Wert und Quelle leer, der Status lautet `MISSING` und die Übernahme ist
+deaktiviert. Als Nächstes folgt ausschließlich die regelbasierte technische
+Plausibilitätsprüfung. Ein eigener, vom Parser getrennter Dienst soll vorhandene
+Werte anhand ausdrücklich definierter Wertebereiche und Einheiten prüfen. Er darf
+Werte weder verändern noch ergänzen, sondern nur einen Prüfhinweis und einen
+Qualitätsstatus liefern. Danach folgt die Längstabelle mit Filtern.
 
 ### Priorität 2 – longitudinaler klinischer Nutzen
 

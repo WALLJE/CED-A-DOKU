@@ -260,10 +260,11 @@ keine realen Daten enthalten sind – die lokale Entwicklungsdatenbank gelöscht
 ## Verbleibende Entwicklungsschritte
 
 Der frühere Arbeitsplan wurde am 18. September 2026 erneut gegen Quellcode und Tests
-geprüft. Der geschützte CED-Grundpfad ist weitgehend vorhanden. Als nächstes werden
-fehlende Standardfelder als `MISSING` sichtbar gemacht und vorhandene Werte durch
-regelbasierte, nicht korrigierende Plausibilitätsprüfungen ergänzt. Danach folgen
-die gefilterte Längstabelle und die getrennten KIS-Varianten.
+geprüft. Der geschützte CED-Grundpfad ist weitgehend vorhanden. Fehlende
+Standardfelder werden inzwischen als nicht ausgewählte `MISSING`-Zeilen sichtbar
+gemacht. Als nächstes werden vorhandene Werte durch regelbasierte, nicht
+korrigierende Plausibilitätsprüfungen ergänzt. Danach folgen die gefilterte
+Längstabelle und die getrennten KIS-Varianten.
 
 Der vollständige Soll-Ist-Abgleich, die noch offenen Punkte der bisherigen drei
 Iterationen und die neu priorisierte Roadmap stehen in
