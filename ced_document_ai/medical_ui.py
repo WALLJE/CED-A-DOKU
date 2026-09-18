@@ -621,6 +621,22 @@ def zeige_hauptseite() -> None:
                                         "Weitere EIM",
                                         placeholder="weitere bestätigte Manifestationen",
                                     ).props("outlined dense readonly").classes("w-full")
+                                    ui.label("Extraintestinale Manifestationen (EIM)").classes(
+                                        "font-semibold text-slate-700 mt-2"
+                                    )
+                                    eim_checkboxen: dict[str, object] = {}
+                                    with ui.element("div").classes(
+                                        "grid grid-cols-1 md:grid-cols-2 gap-1 w-full"
+                                    ):
+                                        for eim_option in EIM_OPTIONEN:
+                                            checkbox = ui.checkbox(eim_option).props(
+                                                "color=teal-8 disable"
+                                            ).classes("eim-option font-medium")
+                                            eim_checkboxen[eim_option] = checkbox
+                                    eim_weitere_ausgabe = ui.textarea(
+                                        "Weitere EIM",
+                                        placeholder="weitere bestätigte Manifestationen",
+                                    ).props("outlined dense readonly").classes("w-full")
                                     with ui.row().classes("w-full gap-2 flex-wrap"):
                                         stammdaten_bearbeiten = ui.button(
                                             "Stammdaten bearbeiten", icon="edit"
@@ -1162,6 +1178,7 @@ def zeige_hauptseite() -> None:
         setze_stammdaten_bearbeitung(False)
         hauptdiagnose_ausgabe.value = ""
         nebendiagnosen_ausgabe.value = ""
+        diagnose_hinweise_ausgabe.value = ""
         therapie_medikamentoes_ausgabe.value = ""
         therapie_chirurgisch_ausgabe.value = ""
         diagnosen_original.update(hauptdiagnose="", nebendiagnosen="")
@@ -1388,6 +1405,7 @@ def zeige_hauptseite() -> None:
             for diagnose in uebersicht.diagnosen
             if diagnose is not hauptdiagnose and diagnose.status != "ERSETZT"
         )
+        diagnose_hinweise_ausgabe.value = uebersicht.diagnose_hinweise or ""
         therapie_medikamentoes_ausgabe.value = uebersicht.therapie_medikamentoes or ""
         therapie_chirurgisch_ausgabe.value = uebersicht.therapie_chirurgisch or ""
         diagnosen_original.update(
