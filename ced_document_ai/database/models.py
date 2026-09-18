@@ -31,9 +31,27 @@ class Patient(Base):
     __tablename__ = "patients"
     id: Mapped[int] = mapped_column(primary_key=True)
     external_id: Mapped[str | None] = mapped_column(String(100), unique=True)
+    # Vor- und Nachname werden fachlich getrennt gespeichert. ``name`` bleibt
+    # vorübergehend als lesbare Altspalte bestehen, damit vorhandene lokale
+    # Testdatenbanken ohne verlustbehaftete automatische Namensaufteilung migrieren.
+    first_name: Mapped[str | None] = mapped_column(String(150))
+    last_name: Mapped[str | None] = mapped_column(String(150))
     name: Mapped[str] = mapped_column(String(250))
     birth_date: Mapped[date | None] = mapped_column(Date)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    @property
+    def display_name(self) -> str:
+        """Gibt neue Datensätze einheitlich als „Nachname, Vorname“ aus."""
+        if self.last_name and self.first_name:
+            return f"{self.last_name}, {self.first_name}"
+        if self.last_name:
+            return self.last_name
+        if self.first_name:
+            return self.first_name
+        # Bestehende Datensätze werden nicht automatisch zerlegt, weil mehrteilige
+        # Namen dabei fachlich falsch zugeordnet werden könnten.
+        return self.name
 
 
 class DocumentType(Base):
@@ -87,6 +105,26 @@ class Diagnosis(Base):
     first_diagnosis_date: Mapped[date | None] = mapped_column(Date)
     source_document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id"))
     status: Mapped[str] = mapped_column(String(30), default="UNSICHER")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class PatientCEDAttribute(Base):
+    """Versionierter CED-Stammdatenwert mit optionalem Dokumentbezug.
+
+    Änderungen überschreiben bewusst keinen früheren Wert. Die jeweils jüngste
+    bestätigte Version wird in der Patientenübersicht angezeigt; ältere Versionen
+    bleiben für eine spätere Historien- und Quellenansicht erhalten.
+    """
+
+    __tablename__ = "patient_ced_attributes"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    patient_id: Mapped[int] = mapped_column(ForeignKey("patients.id"))
+    attribute_type: Mapped[str] = mapped_column(String(100))
+    text_value: Mapped[str | None] = mapped_column(Text)
+    date_value: Mapped[date | None] = mapped_column(Date)
+    source_document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id"))
+    source_type: Mapped[str] = mapped_column(String(30), default="MANUELL")
+    confirmed_by_user: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -146,4 +184,3 @@ class AuditLog(Base):
     # API-Antworten gehören nicht in Debug- beziehungsweise Audit-Nachrichten.
     details: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
