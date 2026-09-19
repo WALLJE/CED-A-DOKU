@@ -37,6 +37,7 @@ from ced_document_ai.services.ced.patient_matching import (
     ermittle_patiententreffer,
 )
 from ced_document_ai.services.ced.patient_overview import (
+    lade_dokumentenarchiv,
     lade_fachverlauf,
     lade_klinischen_verlauf,
     lade_patientenuebersicht,
@@ -281,6 +282,7 @@ def zeige_hauptseite() -> None:
                 ("endoskopie", "Endoskopie", "video_camera_front"),
                 ("sonografie", "Sonografie", "ultrasound"),
                 ("schnittbild", "MRT / CT", "radiology"),
+                ("weitere", "Weitere Befunde", "folder_special"),
             ):
                 fachnavigation_schalter[schluessel] = ui.button(
                     titel, icon=symbol
@@ -784,6 +786,30 @@ def zeige_hauptseite() -> None:
                                     "rowData": [],
                                 }
                             ).classes("verlaufs-tabelle w-full")
+                            ui.label("Zugeordnete Dokumente").classes("bereichstitel mt-3")
+                            ui.label(
+                                "Bestätigte Dokumente bleiben hier auch dann sichtbar, "
+                                "wenn noch kein Fachparser einzelne Werte erzeugt hat."
+                            ).classes("text-slate-600")
+                            fachverlauf_dokumente = ui.aggrid(
+                                {
+                                    "defaultColDef": {
+                                        "resizable": True,
+                                        "sortable": True,
+                                        "filter": True,
+                                        "wrapText": True,
+                                        "autoHeight": True,
+                                    },
+                                    "columnDefs": [
+                                        {"headerName": "Datum", "field": "datum", "width": 130},
+                                        {"headerName": "Befundklasse", "field": "fachgruppe", "minWidth": 160},
+                                        {"headerName": "Dokumenttyp", "field": "dokumenttyp", "minWidth": 190},
+                                        {"headerName": "Kurzfassung", "field": "kurzfassung", "minWidth": 360, "flex": 1},
+                                        {"headerName": "Quelldatei", "field": "dateiname", "minWidth": 220},
+                                    ],
+                                    "rowData": [],
+                                }
+                            ).classes("ced-tabellenrahmen w-full")
 
     def setze_status(text: str, *, fehler: bool = False) -> None:
         """Zeigt den letzten Arbeitsschritt dauerhaft und ohne sensible Inhalte an.
@@ -1208,6 +1234,8 @@ def zeige_hauptseite() -> None:
         verlauf_tabelle.update()
         fachverlauf_tabelle.options["rowData"] = []
         fachverlauf_tabelle.update()
+        fachverlauf_dokumente.options["rowData"] = []
+        fachverlauf_dokumente.update()
 
     def setze_patientenkopf(
         patient: Patient | None,
@@ -1309,11 +1337,18 @@ def zeige_hauptseite() -> None:
         setze_status("Klinischen CED-Verlauf geöffnet")
 
     fachbereiche = {
+        # Findings und Dokumente verwenden dieselben kontrollierten Fachgruppen.
+        # Ein Virologiebefund wird dadurch unter Labor sichtbar, auch solange nur
+        # Dokument und Kurzfassung, aber noch keine Einzelparameter gespeichert sind.
         "labor": ("Laborverlauf", ("Labor",)),
         "calprotectin": ("Calprotectin-Verlauf", ("Calprotectin",)),
         "endoskopie": ("Endoskopiebefunde", ("Endoskopie",)),
         "sonografie": ("Sonografiebefunde", ("Sonografie",)),
-        "schnittbild": ("MRT- / CT-Befunde", ("MRT", "CT")),
+        "schnittbild": ("MRT- / CT-Befunde", ("MRT", "CT", "Röntgen", "Bildgebung")),
+        "weitere": (
+            "Weitere Befunde und Dokumente",
+            ("Arztbriefe", "Medikation", "Pathologie", "Funktionsdiagnostik", "Weitere Befunde"),
+        ),
     }
 
     def oeffne_fachverlauf(schluessel: str) -> None:
@@ -1331,6 +1366,11 @@ def zeige_hauptseite() -> None:
             with get_session() as sitzung:
                 uebersicht = lade_patientenuebersicht(sitzung, zustand.patient_id)
                 fachverlauf = lade_fachverlauf(sitzung, zustand.patient_id, gruppen)
+                dokumente = lade_dokumentenarchiv(
+                    sitzung,
+                    zustand.patient_id,
+                    fachgruppen=gruppen,
+                )
         except (SQLAlchemyError, ValueError) as fehler:
             setze_status(f"Fachverlauf konnte nicht geladen werden: {fehler}", fehler=True)
             return
@@ -1363,11 +1403,27 @@ def zeige_hauptseite() -> None:
             for zeile in fachverlauf.zeilen
         ]
         fachverlauf_tabelle.update()
+        fachverlauf_dokumente.options["rowData"] = [
+            {
+                "datum": (
+                    dokument.dokumentdatum.strftime("%d.%m.%Y")
+                    if dokument.dokumentdatum
+                    else "nicht bestätigt"
+                ),
+                "fachgruppe": dokument.fachgruppe,
+                "dokumenttyp": dokument.dokumenttyp,
+                "kurzfassung": dokument.kurzfassung,
+                "dateiname": dokument.dateiname,
+            }
+            for dokument in dokumente
+        ]
+        fachverlauf_dokumente.update()
         fachverlauf_hinweis.text = (
             f"{len(fachverlauf.zeilen)} Parameter über "
-            f"{len(fachverlauf.daten)} Zeitpunkt(e)"
-            if fachverlauf.daten
-            else "Noch keine bestätigten Daten für diesen Fachbereich vorhanden"
+            f"{len(fachverlauf.daten)} Zeitpunkt(e) · "
+            f"{len(dokumente)} zugeordnete(s) Dokument(e)"
+            if fachverlauf.daten or dokumente
+            else "Noch keine bestätigten Daten oder Dokumente für diesen Fachbereich vorhanden"
         )
         ced_dialog.close()
         patientenansicht_dialog.close()

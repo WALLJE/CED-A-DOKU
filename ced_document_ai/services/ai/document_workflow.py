@@ -19,8 +19,18 @@ class Dokumenttyp(str, Enum):
     CED_FRAGEBOGEN = "CED-Patientenfragebogen"
     ARZTBRIEF = "Arztbrief"
     LABORBEFUND = "Laborbefund"
+    VIROLOGIE = "Virologischer Befund"
+    MIKROBIOLOGIE = "Mikrobiologischer Befund"
+    CALPROTECTIN = "Calprotectin-Befund"
     MEDIKAMENTENPLAN = "Medikamentenplan"
     BILDGEBENDER_BEFUND = "Bildgebender Befund"
+    ENDOSKOPIE = "Endoskopiebefund"
+    SONOGRAFIE = "Sonografiebefund"
+    MRT = "MRT-Befund"
+    CT = "CT-Befund"
+    ROENTGEN = "Röntgenbefund"
+    PATHOLOGIE = "Pathologiebefund"
+    FUNKTIONSDIAGNOSTIK = "Funktionsdiagnostischer Befund"
     SONSTIGES = "sonstiges medizinisches Dokument"
 
 
@@ -52,12 +62,18 @@ Dokumenttypspezifische strukturierte Darstellung:
   Referenzbereich“. Fehlende Zellen bleiben leer. Nur im Original vorhandene
   Referenzbereiche und Kennzeichnungen übernehmen. Kommentare, Materialangaben,
   Probenhinweise und technische Hinweise getrennt unterhalb der Tabelle ausgeben.
+- Virologischer, mikrobiologischer oder Calprotectin-Befund: wie Laborbefund
+  strukturieren, die präzisere Dokumentklasse aber beibehalten. Pathologiebefunde
+  nach Material, Makroskopie, Mikroskopie und Beurteilung gliedern, soweit vorhanden.
 - Medikamentenplan: nach Möglichkeit Tabelle „Medikament/Wirkstoff | Stärke |
   Dosis | Einnahmeschema | Indikation | Bemerkung“. Handelsname und Wirkstoff nicht
   gegenseitig ergänzen; Freitext und Bedarfsmedikation nur wie im Original kennzeichnen.
 - Bildgebender Befund: vorhandene Angaben gliedern in Untersuchung,
   Untersuchungsdatum, Körperregion, Technik, Befund, Beurteilung und Empfehlung.
   Beurteilung nur übernehmen, wenn sie im Dokument enthalten ist.
+- Endoskopie, Sonografie, MRT, CT, Röntgen und Funktionsdiagnostik: die jeweils
+  präzise Dokumentklasse wählen und vorhandene Angaben nach Untersuchung, Datum,
+  Befund, Beurteilung und Empfehlung gliedern. Nichts medizinisch ergänzen.
 - CED-Patientenfragebogen: vorhandene Angaben strukturieren nach Stuhlfrequenz,
   Stuhlgang nachts, Blut im Stuhl, Schleim im Stuhl, Bauchschmerzen,
   Bauchschmerzen VAS, Allgemeinbefinden, Allgemeinbefinden Skalenwert, Gewicht,

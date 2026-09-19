@@ -293,6 +293,26 @@ Stammdatenwiderspruch besteht, wird „Daten zuordnen“ auch für Laborbefunde 
 Nicht-CED-Dokumente aktiv. Die Aktivierung hängt nicht von der CED-spezifischen
 Prüftabelle ab. Nach bereits erfolgter Speicherung bleibt der Schalter gesperrt.
 
+### Dokumentarchiv und Befundklassen
+
+Bestätigt zugeordnete Dokumente bleiben nun auch ohne eigenen Fachparser in der
+Patientenansicht auffindbar. Die Fachansichten zeigen unterhalb strukturierter
+Einzelwerte zusätzlich Dokumentdatum, Befundklasse, Dokumenttyp, gespeicherte
+KI-Kurzfassung und Quelldatei. Ein als `Laborbefund` erkanntes virologisches Dokument
+erscheint deshalb unter **Labor**, auch wenn noch keine einzelnen Virusparameter als
+bestätigte Befunde gespeichert wurden.
+
+Der kontrollierte Katalog unterscheidet derzeit CED-Fragebogen, allgemeines Labor,
+Virologie, Mikrobiologie, Calprotectin, Endoskopie, Sonografie, MRT, CT, Röntgen,
+Pathologie, Funktionsdiagnostik, Arztbriefe, Medikamentenpläne und sonstige
+medizinische Dokumente. Arztbriefe, Pathologie, Funktionsdiagnostik, Medikation und
+nicht anderweitig zuordenbare präzise Dokumenttypen erscheinen unter **Weitere
+Befunde**. Eine unbekannte präzise Bezeichnung bleibt erhalten und wird nicht
+automatisch in „Andere Befunde“ umbenannt. Neue Einzelwerte oder medizinische
+Kategorien werden weiterhin erst nach einem dokumenttypspezifischen Parser und einer
+manuellen Prüfung als `Finding` gespeichert; die reine Archivierung erfindet keine
+Werte.
+
 ## Synthetische Demo-Daten
 
 Für die visuelle Prüfung können fünf vollständig erfundene Patienten mit Haupt- und

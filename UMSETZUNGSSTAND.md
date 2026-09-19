@@ -76,10 +76,10 @@ Diese Anforderungen gehörten nicht zum schmalen ersten CED-Grundpfad und sind n
 nicht oder nur als Datenmodell vorbereitet:
 
 - Allgemeine Dokumente einschließlich Laborbefunden können inzwischen nach Prüfung
-  von Patient, Dokumenttyp und Datum archiviert werden. Fachparser für Labor,
-  Calprotectin, Endoskopie, Sonografie sowie MRT/CT fehlen weiterhin; die vorhandenen
-  Fachansichten lesen bislang nur bereits gespeicherte beziehungsweise synthetische
-  strukturierte Werte.
+  von Patient, Dokumenttyp und Datum archiviert und in den passenden Fachansichten
+  mit ihrer Kurzfassung wieder angezeigt werden. Fachparser für Labor, Virologie,
+  Mikrobiologie, Calprotectin, Endoskopie, Sonografie sowie MRT/CT fehlen weiterhin;
+  daher entstehen aus diesen Dokumenten noch keine geprüften Einzelwerte.
 - Dokumentvergleich für Arztbriefe, Medikamentenpläne und Befunde.
 - Dokumentgestützte, kumulative Diagnose- und Medikationsübernahme. Die aktuelle
   manuelle Pflege ist versioniert, ersetzt aber diesen Importworkflow nicht.
@@ -96,6 +96,15 @@ nicht oder nur als Datenmodell vorbereitet:
 
 ## Empfohlene neue Reihenfolge
 
+### Zuletzt ergänzt: sichtbares Archiv allgemeiner Befunde
+
+Allgemeine bestätigte Dokumente sind jetzt in den Fachansichten sichtbar, auch wenn
+noch kein Fachparser einzelne Werte erzeugt hat. Ein Labor- beziehungsweise
+Virologiebefund wird unter Labor mit Datum, Dokumenttyp, Kurzfassung und Quelldatei
+angezeigt. Weitere Dokumente werden kontrolliert gruppiert gesammelt. Offen bleibt
+die strukturierte Extraktion und manuelle Einzelwertprüfung für Labor, Virologie,
+Mikrobiologie, Bildgebung, Endoskopie und weitere Dokumentklassen.
+
 ### Priorität 1 – ersten CED-Workflow fachlich abschließen
 
 1. Längstabelle samt Datums-, Kategorie- und Dokumenttypfiltern ergänzen.
@@ -105,12 +114,13 @@ nicht oder nur als Datenmodell vorbereitet:
 
 ### Unmittelbar nächstes Arbeitspaket
 
-Die regelbasierte technische Plausibilitätsprüfung ist umgesetzt. Sie prüft
-vorhandene numerische Werte und Einheiten in einem eigenen Dienst, verändert keine
-Angabe und zeigt Auffälligkeiten lediglich als Prüfhinweis mit Qualitätsstatus an.
-`MISSING`- und `UNREADABLE`-Zeilen werden dabei nicht interpretiert. Als Nächstes
-folgt die patientenbezogene Längstabelle mit Datums-, Kategorie- und
-Dokumenttypfiltern.
+Als Nächstes folgt ein gemeinsamer, deterministischer Parser- und Prüfpfad für Labor,
+Virologie und Mikrobiologie. Bekannte Parameter werden einem kontrollierten
+Befundkatalog zugeordnet. Ein unbekannter, eindeutig beschrifteter Parameter wird in
+der Prüftabelle als neuer Kategorievorschlag sichtbar, aber erst nach ausdrücklicher
+Bestätigung angelegt. Eine KI darf keine Kategorie selbstständig dauerhaft anlegen;
+unbeschriftete oder nicht sicher zuordenbare Inhalte bleiben ungeklärt. Danach folgt
+die patientenbezogene Längstabelle mit Datums-, Kategorie- und Dokumenttypfiltern.
 
 ### Priorität 2 – longitudinaler klinischer Nutzen
 
@@ -122,10 +132,10 @@ Dokumenttypfiltern.
 
 ### Priorität 3 – weitere Dokumentarten
 
-Erst danach sollte der Laborparser als nächster Importtyp folgen. Anschließend sind
-Calprotectin, Endoskopie, Sonografie und MRT/CT jeweils als eigener, getesteter
-Parser- und Freigabepfad umzusetzen. Ein allgemeiner Fallbackparser soll dabei nicht
-eingeführt werden; unbekannte Inhalte bleiben sichtbar ungeklärt.
+Nach dem vorgezogenen Labor-/Virologie-/Mikrobiologie-Parser sind Calprotectin,
+Endoskopie, Sonografie und MRT/CT jeweils als eigener, getesteter Parser- und
+Freigabepfad umzusetzen. Ein allgemeiner Fallbackparser soll dabei nicht eingeführt
+werden; unbekannte Inhalte bleiben sichtbar ungeklärt.
 
 ### Priorität 4 – Ausbau
 
@@ -135,7 +145,7 @@ dürfen bestätigte Messwerte nie verändern.
 
 ## Prüfstand
 
-Die fachlichen Tests laufen mit `PYTHONPATH=.` vollständig durch (52 Tests). Der
+Die fachlichen Tests laufen mit `PYTHONPATH=.` vollständig durch (83 Tests). Der
 Aufruf `pytest -q` ohne gesetzten Projektpfad kann in der aktuellen Umgebung das
 lokale Paket nicht importieren. Außerdem meldet SQLAlchemy derzeit Warnungen wegen
 der Verwendung von `datetime.utcnow`; die Umstellung auf zeitzonenbewusste
