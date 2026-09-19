@@ -25,11 +25,19 @@ def initialize_database(settings: Settings | None = None) -> sessionmaker[Sessio
     patientenspalten = {
         spalte["name"] for spalte in inspect(engine).get_columns("patients")
     }
+    dokument_spalten = {
+        spalte["name"] for spalte in inspect(engine).get_columns("documents")
+    }
     with engine.begin() as verbindung:
         if "first_name" not in patientenspalten:
             verbindung.execute(text("ALTER TABLE patients ADD COLUMN first_name VARCHAR(150)"))
         if "last_name" not in patientenspalten:
             verbindung.execute(text("ALTER TABLE patients ADD COLUMN last_name VARCHAR(150)"))
+        if "document_date" not in dokument_spalten:
+            # Das medizinische Dokumentdatum wird nie durch das Importdatum ersetzt.
+            # Bestehende Dokumente bleiben daher bewusst ohne Datum, bis sie geprüft
+            # wurden; es gibt keinen stillen Fallback auf den aktuellen Tag.
+            verbindung.execute(text("ALTER TABLE documents ADD COLUMN document_date DATE"))
     _session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     return _session_factory
 
