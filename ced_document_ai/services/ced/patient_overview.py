@@ -15,14 +15,28 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ced_document_ai.database.models import (
+    AIResult,
     Diagnosis,
+    Document,
+    DocumentType,
     Finding,
     FindingCategory,
     Patient,
     PatientCEDAttribute,
 )
+from ced_document_ai.services.ced.document_categories import ermittle_dokumentfachgruppe
 from ced_document_ai.services.ced.patient_profile import (
     BEFALLSMUSTER,
+    CED_ERKRANKUNGSTYP,
+    CU_AUSDEHNUNG,
+    DIAGNOSE_DETAILS,
+    EIM_AUSWAHL,
+    EIM_WEITERE,
+    MC_LOKALISATION,
+    MC_OBERER_GI,
+    MC_PERIANAL,
+    MC_VERHALTEN,
+    SYMPTOME_SEIT,
     ERSTDIAGNOSE,
     THERAPIE_CHIRURGISCH,
     THERAPIE_MEDIKAMENTOES,
@@ -60,6 +74,16 @@ class PatientenUebersicht:
     befallsmuster: str | None
     therapie_medikamentoes: str | None
     therapie_chirurgisch: str | None
+    diagnose_details: str | None
+    symptome_seit: date | None
+    erkrankungstyp: str | None
+    mc_lokalisation: str | None
+    mc_oberer_gi: bool
+    mc_verhalten: str | None
+    mc_perianal: bool
+    cu_ausdehnung: str | None
+    eim_auswahl: tuple[str, ...]
+    eim_weitere: str | None
     diagnosen: tuple[DiagnoseUebersicht, ...]
     letztes_befunddatum: date | None
     letzte_befunde: tuple[BefundUebersicht, ...]
@@ -79,6 +103,62 @@ class KlinischerVerlauf:
 
     daten: tuple[date, ...]
     zeilen: tuple[Verlaufszeile, ...]
+
+
+@dataclass(frozen=True)
+class ArchiviertesDokument:
+    """Ein bestätigtes Dokument, das auch ohne einzelne Findings sichtbar bleibt."""
+
+    dokument_id: int
+    dokumentdatum: date | None
+    dokumenttyp: str
+    fachgruppe: str
+    dateiname: str
+    kurzfassung: str
+
+
+def lade_dokumentenarchiv(
+    sitzung: Session,
+    patient_id: int,
+    *,
+    fachgruppen: tuple[str, ...] | None = None,
+) -> tuple[ArchiviertesDokument, ...]:
+    """Lädt bestätigte Dokumente mit ihrer gespeicherten KI-Kurzfassung.
+
+    Das Archiv zeigt auch Dokumente ohne strukturierten Fachparser. Dadurch bleibt
+    etwa ein zugeordneter Virologiebefund unter Labor auffindbar, obwohl noch keine
+    einzelnen Virusparameter als bestätigte Findings vorliegen. Leere Kurzfassungen
+    werden sichtbar leer gelassen und nicht aus der Rohantwort ersetzt.
+    """
+
+    if sitzung.get(Patient, patient_id) is None:
+        raise ValueError("Der bestätigte Patient ist nicht mehr vorhanden.")
+    zeilen = sitzung.execute(
+        select(Document, DocumentType, AIResult)
+        .join(DocumentType, Document.document_type_id == DocumentType.id)
+        .outerjoin(AIResult, AIResult.document_id == Document.id)
+        .where(Document.patient_id == patient_id, Document.confirmed.is_(True))
+        .order_by(Document.document_date.desc(), Document.id.desc())
+    )
+    dokumente: list[ArchiviertesDokument] = []
+    erlaubte_gruppen = set(fachgruppen) if fachgruppen is not None else None
+    for dokument, dokumenttyp, ki_ergebnis in zeilen:
+        fachgruppe = ermittle_dokumentfachgruppe(dokumenttyp.name)
+        if erlaubte_gruppen is not None and fachgruppe not in erlaubte_gruppen:
+            continue
+        dokumente.append(
+            ArchiviertesDokument(
+                dokument_id=dokument.id,
+                dokumentdatum=dokument.document_date,
+                dokumenttyp=dokumenttyp.name,
+                fachgruppe=fachgruppe,
+                dateiname=dokument.original_name,
+                kurzfassung=(ki_ergebnis.kis_summary_compact or "")
+                if ki_ergebnis is not None
+                else "",
+            )
+        )
+    return tuple(dokumente)
 
 
 def berechne_alter(geburtsdatum: date | None, *, am: date | None = None) -> int | None:
@@ -169,6 +249,16 @@ def lade_patientenuebersicht(
             BEFALLSMUSTER,
             THERAPIE_MEDIKAMENTOES,
             THERAPIE_CHIRURGISCH,
+            DIAGNOSE_DETAILS,
+            SYMPTOME_SEIT,
+            CED_ERKRANKUNGSTYP,
+            MC_LOKALISATION,
+            MC_OBERER_GI,
+            MC_VERHALTEN,
+            MC_PERIANAL,
+            CU_AUSDEHNUNG,
+            EIM_AUSWAHL,
+            EIM_WEITERE,
         )
     }
     return PatientenUebersicht(
@@ -192,6 +282,46 @@ def lade_patientenuebersicht(
             attribute[THERAPIE_CHIRURGISCH].text_value
             if attribute[THERAPIE_CHIRURGISCH]
             else None
+        ),
+        diagnose_details=(
+            attribute[DIAGNOSE_DETAILS].text_value
+            if attribute[DIAGNOSE_DETAILS]
+            else None
+        ),
+        symptome_seit=(
+            attribute[SYMPTOME_SEIT].date_value if attribute[SYMPTOME_SEIT] else None
+        ),
+        erkrankungstyp=(
+            attribute[CED_ERKRANKUNGSTYP].text_value
+            if attribute[CED_ERKRANKUNGSTYP]
+            else None
+        ),
+        mc_lokalisation=(
+            attribute[MC_LOKALISATION].text_value if attribute[MC_LOKALISATION] else None
+        ),
+        mc_oberer_gi=bool(
+            attribute[MC_OBERER_GI] and attribute[MC_OBERER_GI].text_value == "JA"
+        ),
+        mc_verhalten=(
+            attribute[MC_VERHALTEN].text_value if attribute[MC_VERHALTEN] else None
+        ),
+        mc_perianal=bool(
+            attribute[MC_PERIANAL] and attribute[MC_PERIANAL].text_value == "JA"
+        ),
+        cu_ausdehnung=(
+            attribute[CU_AUSDEHNUNG].text_value if attribute[CU_AUSDEHNUNG] else None
+        ),
+        eim_auswahl=(
+            tuple(
+                zeile
+                for zeile in (attribute[EIM_AUSWAHL].text_value or "").splitlines()
+                if zeile
+            )
+            if attribute[EIM_AUSWAHL]
+            else ()
+        ),
+        eim_weitere=(
+            attribute[EIM_WEITERE].text_value if attribute[EIM_WEITERE] else None
         ),
         diagnosen=diagnosen,
         letztes_befunddatum=letztes_datum,

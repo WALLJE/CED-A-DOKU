@@ -5,18 +5,63 @@ from datetime import date
 from ced_document_ai.config.settings import Settings
 from ced_document_ai.database.database import initialize_database
 from ced_document_ai.database.models import (
+    AIResult,
     ConfidenceStatus,
     Diagnosis,
     Document,
     Finding,
     FindingCategory,
     Patient,
+    DocumentType,
 )
 from ced_document_ai.services.ced.patient_overview import (
     berechne_alter,
     lade_klinischen_verlauf,
+    lade_dokumentenarchiv,
     lade_patientenuebersicht,
 )
+
+
+def test_virologiedokument_bleibt_im_laborarchiv_sichtbar(tmp_path) -> None:
+    fabrik = initialize_database(Settings(database_path=tmp_path / "archiv.sqlite3"))
+    with fabrik() as sitzung:
+        patient = Patient(external_id="TEST-VIRO", name="Viro Beispiel")
+        dokumenttyp = DocumentType(name="Laborbefund")
+        sitzung.add_all([patient, dokumenttyp])
+        sitzung.flush()
+        dokument = Document(
+            patient_id=patient.id,
+            document_type_id=dokumenttyp.id,
+            original_name="virologie.pdf",
+            document_date=date(2026, 9, 19),
+            confirmed=True,
+        )
+        sitzung.add(dokument)
+        sitzung.flush()
+        sitzung.add(
+            AIResult(
+                document_id=dokument.id,
+                raw_ai_response="Synthetische Rohantwort",
+                kis_summary_compact="Virologische Untersuchung ohne Einzelwertspeicherung.",
+                model="TEST",
+                provider="TEST",
+            )
+        )
+        sitzung.commit()
+
+        laborarchiv = lade_dokumentenarchiv(
+            sitzung, patient.id, fachgruppen=("Labor",)
+        )
+        weitere_befunde = lade_dokumentenarchiv(
+            sitzung, patient.id, fachgruppen=("Weitere Befunde",)
+        )
+
+    assert len(laborarchiv) == 1
+    assert laborarchiv[0].fachgruppe == "Labor"
+    assert laborarchiv[0].dokumenttyp == "Laborbefund"
+    assert laborarchiv[0].dateiname == "virologie.pdf"
+    assert laborarchiv[0].kurzfassung.startswith("Virologische Untersuchung")
+    assert weitere_befunde == ()
 
 
 def test_alter_wird_am_stichtag_korrekt_berechnet() -> None:
