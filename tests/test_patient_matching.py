@@ -30,12 +30,13 @@ def test_erkennt_eindeutig_beschriftete_stammdaten() -> None:
     assert erkannt.ausreichend_fuer_vorschlag
 
 
-def test_name_allein_erzeugt_keinen_patientenvorschlag() -> None:
+def test_name_allein_erzeugt_nur_unsicheren_patientenvorschlag() -> None:
     erkannt = erkenne_patientendaten("Patient: Erika Beispiel")
     patienten = [BeispielPatient(1, "TEST-001", "Erika Beispiel", date(1980, 3, 12))]
 
-    assert not erkannt.ausreichend_fuer_vorschlag
-    assert ermittle_patiententreffer(erkannt, patienten) == []
+    assert erkannt.ausreichend_fuer_vorschlag
+    [treffer] = ermittle_patiententreffer(erkannt, patienten)
+    assert treffer.status == "Unsicherer Vorschlag · bitte prüfen"
 
 
 def test_id_name_und_geburtsdatum_erzeugen_eindeutigen_treffer() -> None:
@@ -62,7 +63,7 @@ def test_identische_id_mit_abweichendem_geburtsdatum_wird_nicht_verschwiegen() -
 
     assert treffer[0].status == "Widerspruch"
     assert treffer[0].widerspruch
-    assert "Stammdaten widersprechen" in treffer[0].begruendung[-1]
+    assert "Widerspruch" in treffer[0].begruendung[-1]
 
 
 def test_mehrere_verschiedene_namenszeilen_werden_nicht_geraten() -> None:
@@ -71,7 +72,9 @@ def test_mehrere_verschiedene_namenszeilen_werden_nicht_geraten() -> None:
     )
 
     assert erkannt.name is None
-    assert not erkannt.ausreichend_fuer_vorschlag
+    # Der widersprüchliche Name wird nicht geraten. Das eindeutig gelesene
+    # Geburtsdatum darf dennoch unsichere, manuell zu bestätigende Kandidaten liefern.
+    assert erkannt.ausreichend_fuer_vorschlag
 
 
 def test_getrennt_beschriftete_namen_werden_ohne_raten_uebernommen() -> None:

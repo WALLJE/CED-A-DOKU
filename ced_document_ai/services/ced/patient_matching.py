@@ -58,8 +58,12 @@ class ErkanntePatientendaten:
 
     @property
     def ausreichend_fuer_vorschlag(self) -> bool:
-        """Verhindert einen Patientenvorschlag allein aufgrund eines Namens."""
-        return bool(self.externe_id or (self.name and self.geburtsdatum))
+        """Erlaubt Vorschläge aus jedem vorhandenen, ausdrücklich beschrifteten Merkmal.
+
+        Ein schwaches Einzelmerkmal führt niemals zur automatischen Zuordnung. Es
+        darf lediglich Kandidaten anzeigen, die der Benutzer bewusst bestätigen muss.
+        """
+        return bool(self.externe_id or self.name or self.geburtsdatum)
 
 
 @dataclass(frozen=True)
@@ -164,10 +168,11 @@ def ermittle_patiententreffer(
         geburt_gleich = bool(
             erkannt.geburtsdatum and erkannt.geburtsdatum == patient.birth_date
         )
-        id_widerspruch = bool(
-            id_gleich
+        widerspruch = bool(
+            (id_gleich or name_gleich or geburt_gleich)
             and (
-                (erkannt.name and not name_gleich)
+                (erkannt.externe_id and not id_gleich)
+                or (erkannt.name and not name_gleich)
                 or (erkannt.geburtsdatum and not geburt_gleich)
             )
         )
@@ -179,21 +184,30 @@ def ermittle_patiententreffer(
             gruende.append("Name stimmt überein")
         if geburt_gleich:
             gruende.append("Geburtsdatum stimmt überein")
-        if id_widerspruch:
-            gruende.append("Stammdaten widersprechen der identischen Patienten-ID")
+        if widerspruch:
+            gruende.append("Erkannte Stammdaten enthalten einen Widerspruch")
 
-        # Ein Name allein erzeugt absichtlich keinen Vorschlag. Entweder stimmt die
-        # eindeutige ID oder die Kombination aus Name und Geburtsdatum überein.
-        if not id_gleich and not (name_gleich and geburt_gleich):
+        if not (id_gleich or name_gleich or geburt_gleich):
             continue
+        merkmale = sum((id_gleich, name_gleich, geburt_gleich))
         status = (
             "Widerspruch"
-            if id_widerspruch
+            if widerspruch
             else "Eindeutiger Treffer"
-            if id_gleich and name_gleich and geburt_gleich
-            else "Sehr wahrscheinlicher Treffer"
+            if merkmale == 3
+            else "Wahrscheinlicher Vorschlag"
+            if merkmale >= 2 or id_gleich
+            else "Unsicherer Vorschlag · bitte prüfen"
         )
-        prioritaet = 0 if id_widerspruch else 1 if status == "Eindeutiger Treffer" else 2
+        prioritaet = (
+            0
+            if widerspruch
+            else 1
+            if status == "Eindeutiger Treffer"
+            else 2
+            if status == "Wahrscheinlicher Vorschlag"
+            else 3
+        )
         treffer.append(
             (
                 prioritaet,
@@ -203,7 +217,7 @@ def ermittle_patiententreffer(
                     f"{patient.birth_date.strftime('%d.%m.%Y') if patient.birth_date else 'ohne Geburtsdatum'}",
                     status=status,
                     begruendung=tuple(gruende),
-                    widerspruch=id_widerspruch,
+                    widerspruch=widerspruch,
                 ),
             )
         )
