@@ -114,6 +114,25 @@ class Sitzungszustand:
         default_factory=lambda: tempfile.TemporaryDirectory(prefix="ced_nicegui_")
     )
 
+    @property
+    def datenzuordnung_moeglich(self) -> bool:
+        """Prüft ausschließlich den technischen Zustand des Zuordnungsschalters.
+
+        Maßgeblich ist der tatsächlich vorhandene ausgelesene Inhalt. Die
+        strukturierte Darstellung ist zwar Teil jeder gültigen KI-Antwort, darf den
+        Schalter aber nicht zusätzlich blockieren, nachdem Dokumenttyp, Rohtext und
+        Patient bereits sichtbar vorhanden sind. Ein bestätigter Stammdatenkonflikt
+        oder ein bereits gespeichertes Dokument sperrt die Zuordnung weiterhin.
+        """
+        return bool(
+            self.arbeitsmodus == DATENBANKMODUS
+            and self.patient_id is not None
+            and self.dokumenttyp
+            and self.ausgelesener_inhalt.strip()
+            and self.patientenabgleich_erlaubt
+            and self.gespeichertes_dokument_id is None
+        )
+
 
 def _bildadresse(dateipfad: Path) -> str:
     """Erstellt eine nur im Browser verwendete Datenadresse für die Vorschau."""
@@ -567,7 +586,14 @@ def zeige_hauptseite() -> None:
                                         placeholder="ergänzende bestätigte Details",
                                     ).props("outlined dense readonly").classes("w-full")
                                     erkrankungstyp_ausgabe = ui.select(
-                                        ("Morbus Crohn", "Colitis ulcerosa"),
+                                        # NiceGUI 2.x akzeptiert an dieser Stelle nur
+                                        # Listen oder Zuordnungen. Ein Tupel wird wie
+                                        # eine Zuordnung behandelt und führt bereits
+                                        # beim Seitenaufbau zu ``tuple.keys()``. Diese
+                                        # Liste daher nicht wieder in ein Tupel ändern;
+                                        # bei einem Startfehler zuerst den Typ der an
+                                        # ``options`` übergebenen Werte prüfen.
+                                        ["Morbus Crohn", "Colitis ulcerosa"],
                                         label="CED-Erkrankungstyp",
                                     ).props("outlined dense disable").classes("w-full")
                                     mc_lokalisation_ausgabe = ui.select(
@@ -604,22 +630,6 @@ def zeige_hauptseite() -> None:
                                         "Codiertes Befallsmuster",
                                         value="",
                                         placeholder="wird aus den bestätigten Parametern gebildet",
-                                    ).props("outlined dense readonly").classes("w-full")
-                                    ui.label("Extraintestinale Manifestationen (EIM)").classes(
-                                        "font-semibold text-slate-700 mt-2"
-                                    )
-                                    eim_checkboxen: dict[str, object] = {}
-                                    with ui.element("div").classes(
-                                        "grid grid-cols-1 md:grid-cols-2 gap-1 w-full"
-                                    ):
-                                        for eim_option in EIM_OPTIONEN:
-                                            checkbox = ui.checkbox(eim_option).props(
-                                                "color=teal-8 disable"
-                                            ).classes("eim-option font-medium")
-                                            eim_checkboxen[eim_option] = checkbox
-                                    eim_weitere_ausgabe = ui.textarea(
-                                        "Weitere EIM",
-                                        placeholder="weitere bestätigte Manifestationen",
                                     ).props("outlined dense readonly").classes("w-full")
                                     ui.label("Extraintestinale Manifestationen (EIM)").classes(
                                         "font-semibold text-slate-700 mt-2"
@@ -1500,14 +1510,14 @@ def zeige_hauptseite() -> None:
         verlauf_navigation.enable()
         for fachschalter in fachnavigation_schalter.values():
             fachschalter.enable()
-        ced_navigation.set_enabled(
-            bool(
-                zustand.dokumenttyp
-                and zustand.strukturierte_darstellung.strip()
-                and zustand.patientenabgleich_erlaubt
-                and zustand.gespeichertes_dokument_id is None
-            )
-        )
+        # Explizites enable/disable vermeidet einen widersprüchlichen Buttonzustand,
+        # wenn Optionen und Patientenauswahl während der Dokumentanalyse nacheinander
+        # aktualisiert werden. Für lokales Debugging dürfen nur diese booleschen
+        # Teilzustände geprüft werden, niemals Dokument- oder Patientendaten.
+        if zustand.datenzuordnung_moeglich:
+            ced_navigation.enable()
+        else:
+            ced_navigation.disable()
         ist_ced_fragebogen = zustand.dokumenttyp == Dokumenttyp.CED_FRAGEBOGEN.value
         if ist_ced_fragebogen:
             ced_pruefung_hinweis.text = (
@@ -2277,6 +2287,10 @@ def zeige_hauptseite() -> None:
             aktualisiere_ergebnisanzeige()
             if zustand.arbeitsmodus == DATENBANKMODUS:
                 aktualisiere_patientenvorschlaege()
+                # Nach dem vollständigen Ergebnis wird die Bereitschaft nochmals
+                # abschließend gesetzt. So kann kein vorangegangener Reset während
+                # Upload oder Analyse den nun gültigen Zustand überschreiben.
+                aktualisiere_ced_bereitschaft()
             lesen_schalter.text = f"Dokument mit {anbieter_name} neu bearbeiten"
             setze_status(f"{anbieter_name}: Verarbeitung abgeschlossen · Ergebnis ungeprüft")
         except (ConfigurationError, AIProviderError, DokumentAntwortFehler, OSError, ValueError) as fehler:

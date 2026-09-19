@@ -288,6 +288,11 @@ Dokumente werden mit Rohantwort und KIS-Text archiviert; Fachwerte wie einzelne
 Laborparameter werden ohne eigenen Fachparser nicht als strukturierte Befunde
 geraten oder gespeichert.
 
+Sobald Patient, erkannter Dokumenttyp und ausgelesener Inhalt vorliegen und kein
+Stammdatenwiderspruch besteht, wird „Daten zuordnen“ auch für Laborbefunde und andere
+Nicht-CED-Dokumente aktiv. Die Aktivierung hängt nicht von der CED-spezifischen
+Prüftabelle ab. Nach bereits erfolgter Speicherung bleibt der Schalter gesperrt.
+
 ## Synthetische Demo-Daten
 
 Für die visuelle Prüfung können fünf vollständig erfundene Patienten mit Haupt- und
