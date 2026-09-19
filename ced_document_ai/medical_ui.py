@@ -586,7 +586,14 @@ def zeige_hauptseite() -> None:
                                         placeholder="ergänzende bestätigte Details",
                                     ).props("outlined dense readonly").classes("w-full")
                                     erkrankungstyp_ausgabe = ui.select(
-                                        ("Morbus Crohn", "Colitis ulcerosa"),
+                                        # NiceGUI 2.x akzeptiert an dieser Stelle nur
+                                        # Listen oder Zuordnungen. Ein Tupel wird wie
+                                        # eine Zuordnung behandelt und führt bereits
+                                        # beim Seitenaufbau zu ``tuple.keys()``. Diese
+                                        # Liste daher nicht wieder in ein Tupel ändern;
+                                        # bei einem Startfehler zuerst den Typ der an
+                                        # ``options`` übergebenen Werte prüfen.
+                                        ["Morbus Crohn", "Colitis ulcerosa"],
                                         label="CED-Erkrankungstyp",
                                     ).props("outlined dense disable").classes("w-full")
                                     mc_lokalisation_ausgabe = ui.select(
