@@ -23,11 +23,18 @@ Datei namens `.env` geladen. Die Schlüssel gehören **nicht** in eine Python-Da
    ```dotenv
    # Lokale Geheimnisse: Diese Datei niemals an Git übergeben.
    UK_API_KEY=hier_den_uk_api_schluessel_eintragen
-   OPEN_AI_KEY=hier_den_openai_api_schluessel_eintragen
+   OPENAI_API_KEY=hier_den_openai_api_schluessel_eintragen
    ```
 
    Es sind keine Anführungszeichen erforderlich. Für den in `CED_AI_PROVIDER`
    ausgewählten Anbieter muss der entsprechende Schlüssel gesetzt sein.
+
+   Für die OpenAI-Verbindung zusätzlich den Anbieter aktivieren:
+
+   ```dotenv
+   CED_AI_PROVIDER=openai
+   CED_OPENAI_MODEL=gpt-4.1-mini
+   ```
 
 4. Die Browseranwendung aus dem Projektstamm starten:
 
