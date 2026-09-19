@@ -144,6 +144,7 @@ def speichere_ced_pruefung(sitzung: Session, auftrag: CEDSpeicherauftrag) -> int
             patient_id=auftrag.patient_id,
             document_type_id=dokumenttyp.id,
             original_name=auftrag.original_name,
+            document_date=auftrag.befunddatum,
             confirmed=False,
         )
         sitzung.add(dokument)

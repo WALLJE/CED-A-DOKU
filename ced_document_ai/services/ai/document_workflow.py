@@ -85,6 +85,12 @@ Bearbeite das gesamte Dokument strikt in dieser Reihenfolge:
 4. Strukturiere den ausgelesenen Inhalt passend zu diesem Dokumenttyp.
 5. Erstelle ausschließlich aus dem ausgelesenen Inhalt einen gekürzten KIS-Vorschlag.
 
+Stelle in der STRUKTURIERTEN DARSTELLUNG vor den fachlichen Inhalten vorhandene
+Zuordnungsmerkmale jeweils in einer eigenen beschrifteten Zeile dar: Patienten-ID,
+Vorname, Nachname, Name, Geburtsdatum sowie das passend beschriftete Dokumentdatum
+(zum Beispiel Befunddatum, Entnahmedatum, Untersuchungsdatum oder Berichtsdatum).
+Nur im Original eindeutig vorhandene Angaben übernehmen; nichts ergänzen oder raten.
+
 {FORMATVORGABEN}
 
 Verbindliche Regeln:
