@@ -305,11 +305,24 @@ PYTHONPATH=. python scripts/seed_demo_data.py
 ```
 
 Der Seeder läuft niemals automatisch und verwendet ausschließlich die reservierten
-Patienten-IDs `DEMO-001` bis `DEMO-005`. Existiert bereits eine davon, bricht er mit
-einer verständlichen Meldung ab, statt Datensätze zu überschreiben oder doppelt
-anzulegen. Die Werte sind medizinisch frei erfunden und dürfen nicht als fachliche
-Referenz verwendet werden. Zum Entfernen der Testdaten kann – solange garantiert
-keine realen Daten enthalten sind – die lokale Entwicklungsdatenbank gelöscht werden.
+Patienten-IDs `DEMO-001` bis `DEMO-005`. Er kann gefahrlos erneut ausgeführt werden:
+Er ergänzt nur fehlende IDs und verändert bereits vorhandene Demofälle nicht. Sind
+alle fünf vorhanden, meldet er dies ohne Fehler. Ein vorhandener, aber unvollständiger
+Demofall wird bewusst nicht automatisch repariert oder überschrieben. Die Werte sind
+medizinisch frei erfunden und dürfen nicht als fachliche Referenz verwendet werden.
+Zum Entfernen der Testdaten kann – solange garantiert keine realen Daten enthalten
+sind – die lokale Entwicklungsdatenbank gelöscht werden.
+
+Die Testfälle liegen **nicht im Git-Repository**, sondern ausschließlich in der lokal
+erzeugten SQLite-Datei unter `data/ced_document_ai.sqlite3` beziehungsweise am mit
+`CED_DATABASE_PATH` gesetzten Ort. Der Ordner `data/` ist absichtlich von Git
+ausgeschlossen, damit weder echte noch synthetische Patientendaten durch `git pull`
+übertragen werden. Ein neuer oder neu aufgebauter Codespace besitzt deshalb zunächst
+keine Demo-Patienten. In diesem Fall den obigen Seeder einmal im Projektordner
+ausführen. Seine Abschlussmeldung nennt den tatsächlich verwendeten absoluten
+Datenbankpfad; die App muss mit demselben `CED_DATABASE_PATH` gestartet werden. Ist
+das Dropdown leer, zeigt die Oberfläche ebenfalls diesen ausdrücklichen Hinweis an,
+statt stillschweigend eine zweite Datenbank oder Testpatienten anzulegen.
 
 ## Verbleibende Entwicklungsschritte
 

@@ -1828,7 +1828,19 @@ def zeige_hauptseite() -> None:
         )
         aktiver_patient_auswahl.update()
 
-        if not zustand.ausgelesener_inhalt:
+        if not patienten:
+            # Eine leere Liste ist kein Darstellungsfehler des Auswahlfelds: In der
+            # aktuell verbundenen SQLite-Datei existiert dann tatsächlich kein
+            # Patient. Besonders in Codespaces deutet das meist auf einen neuen
+            # Container oder einen abweichenden CED_DATABASE_PATH hin. Zum Debuggen
+            # ausschließlich den konfigurierten Dateipfad prüfen; Patientendaten
+            # gehören nicht in Konsolen-Logs.
+            dokument_patienten_hinweis.text = (
+                "Keine Patienten in der aktuellen Datenbank. Für synthetische "
+                "Testfälle im Projektordner ausführen: "
+                "PYTHONPATH=. python scripts/seed_demo_data.py"
+            )
+        elif not zustand.ausgelesener_inhalt:
             dokument_patienten_hinweis.text = (
                 "Patient auswählen; die Auswahl aktiviert dessen Fallansichten unmittelbar."
             )
