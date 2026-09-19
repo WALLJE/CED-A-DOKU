@@ -313,6 +313,25 @@ Kategorien werden weiterhin erst nach einem dokumenttypspezifischen Parser und e
 manuellen Prüfung als `Finding` gespeichert; die reine Archivierung erfindet keine
 Werte.
 
+### Labor, Virologie und Mikrobiologie prüfen
+
+Für `Laborbefund`, `Virologischer Befund`, `Mikrobiologischer Befund` und
+`Calprotectin-Befund` wird vor der Speicherung eine editierbare Prüftabelle erzeugt.
+Der deterministische Parser verarbeitet ausschließlich klar beschriftete Tabellen-
+oder `Parameter: Wert`-Zeilen aus der strukturierten Darstellung. Angezeigt werden
+Parameter, Ergebnis, Einheit, Referenzbereich, Quellzeile, Qualitätsstatus und ein
+Übernahmeschalter. Werte und Einheiten werden nicht umgerechnet oder medizinisch
+interpretiert.
+
+Der Parser gleicht Parameter zuerst mit dem festen Anfangskatalog und anschließend
+mit bereits bestätigten Kategorien der lokalen Datenbank ab. Ein neuer eindeutig
+beschrifteter Parameter bleibt zunächst ausgeschaltet und als **Neue Kategorie ·
+prüfen** markiert. Erst ein bewusst gesetzter Übernahmeschalter legt ihn zusammen mit
+dem bestätigten Dokument atomar an. Fehlende beziehungsweise abweichende Einheiten,
+unleserliche Werte und widersprüchliche Doppelangaben sind ebenfalls nicht
+vorausgewählt. Nach erfolgreicher Speicherung öffnet die App direkt den Labor- oder
+Calprotectin-Verlauf.
+
 ## Synthetische Demo-Daten
 
 Für die visuelle Prüfung können fünf vollständig erfundene Patienten mit Haupt- und

@@ -28,6 +28,16 @@ from ced_document_ai.services.ced.document_categories import (
     Dokumentklasse,
     ermittle_dokumentfachgruppe,
 )
+from ced_document_ai.services.ced.laboratory_parser import (
+    LABORDOKUMENTTYPEN,
+    ExtrahierterLaborwert,
+    parse_laborbefund,
+)
+from ced_document_ai.services.ced.laboratory_storage import (
+    FreigegebenerLaborwert,
+    LaborSpeicherauftrag,
+    speichere_laborpruefung,
+)
 from ced_document_ai.services.ced.patient_overview import (
     ArchiviertesDokument,
     BefundUebersicht,
@@ -85,6 +95,12 @@ __all__ = [
     "DOKUMENTKLASSEN",
     "Dokumentklasse",
     "ermittle_dokumentfachgruppe",
+    "LABORDOKUMENTTYPEN",
+    "ExtrahierterLaborwert",
+    "parse_laborbefund",
+    "FreigegebenerLaborwert",
+    "LaborSpeicherauftrag",
+    "speichere_laborpruefung",
     "ArchiviertesDokument",
     "BefundUebersicht",
     "DiagnoseUebersicht",

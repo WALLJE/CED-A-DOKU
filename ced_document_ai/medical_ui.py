@@ -24,7 +24,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from ced_document_ai.config.settings import ConfigurationError, Settings
 from ced_document_ai.database.database import get_session, initialize_database
-from ced_document_ai.database.models import ConfidenceStatus, Patient
+from ced_document_ai.database.models import ConfidenceStatus, FindingCategory, Patient
 from ced_document_ai.services.ai.providers import (
     AIProviderError,
     CloudAPIProvider,
@@ -66,6 +66,16 @@ from ced_document_ai.services.ced.document_storage import (
     DokumentSpeicherauftrag,
     speichere_allgemeines_dokument,
 )
+from ced_document_ai.services.ced.laboratory_parser import (
+    LABORDOKUMENTTYPEN,
+    ExtrahierterLaborwert,
+    parse_laborbefund,
+)
+from ced_document_ai.services.ced.laboratory_storage import (
+    FreigegebenerLaborwert,
+    LaborSpeicherauftrag,
+    speichere_laborpruefung,
+)
 from ced_document_ai.services.ced.validation import pruefe_technische_plausibilitaet
 from ced_document_ai.services.documents.converter import (
     DocumentConversionError,
@@ -104,6 +114,7 @@ class Sitzungszustand:
     # CED-Befunde bleiben bis zu einer späteren ausdrücklichen Freigabe rein
     # temporär. Dieser Umsetzungsschritt schreibt noch keinen Befund in SQLite.
     ced_befunde: list[ExtrahierterBefund] = field(default_factory=list)
+    labor_befunde: list[ExtrahierterLaborwert] = field(default_factory=list)
     gespeichertes_dokument_id: int | None = None
     patientenabgleich_erlaubt: bool = False
     duplikate_bestaetigt: bool = False
@@ -522,6 +533,37 @@ def zeige_hauptseite() -> None:
                             dokument_pruef_text = ui.textarea(
                                 "Erkannte Informationen zur manuellen Prüfung"
                             ).props("outlined readonly").classes("ergebnistext w-full")
+                            labor_pruef_hinweis = ui.label("").classes("text-slate-600")
+                            labor_pruef_tabelle = ui.aggrid(
+                                {
+                                    "defaultColDef": {
+                                        "resizable": True,
+                                        "sortable": True,
+                                        "filter": True,
+                                    },
+                                    "columnDefs": [
+                                        {"headerName": "Status", "field": "status", "width": 145},
+                                        {"headerName": "Parameter", "field": "kategorie", "editable": True, "minWidth": 180},
+                                        {"headerName": "Ergebnis", "field": "wert", "editable": True, "minWidth": 150},
+                                        {"headerName": "Einheit", "field": "einheit", "editable": True, "width": 125},
+                                        {"headerName": "Referenz", "field": "referenz", "minWidth": 150},
+                                        {
+                                            "headerName": "Übernehmen",
+                                            "field": "uebernehmen",
+                                            "editable": True,
+                                            "cellEditor": "agCheckboxCellEditor",
+                                            "cellRenderer": "agCheckboxCellRenderer",
+                                            "width": 135,
+                                        },
+                                        {"headerName": "Prüfhinweis", "field": "pruefhinweis", "minWidth": 280},
+                                        {"headerName": "Quelle", "field": "quelle", "minWidth": 260},
+                                    ],
+                                    "rowData": [],
+                                    "stopEditingWhenCellsLoseFocus": True,
+                                }
+                            ).classes("ced-tabellenrahmen w-full")
+                            labor_pruef_hinweis.set_visibility(False)
+                            labor_pruef_tabelle.set_visibility(False)
                             dokument_pruef_speichern = ui.button(
                                 "Dokument bestätigt zuordnen", icon="save"
                             ).props("color=teal-8 unelevated").classes("w-full")
@@ -858,6 +900,7 @@ def zeige_hauptseite() -> None:
     def setze_ced_pruefung_zurueck() -> None:
         """Entfernt temporäre CED-Werte, wenn Dokument oder Patient wechselt."""
         zustand.ced_befunde.clear()
+        zustand.labor_befunde.clear()
         zustand.gespeichertes_dokument_id = None
         zustand.duplikate_bestaetigt = False
         ced_tabelle.options["rowData"] = []
@@ -866,6 +909,11 @@ def zeige_hauptseite() -> None:
         ced_speichern.disable()
         ced_speichern.text = "Geprüfte CED-Daten speichern"
         ced_navigation.disable()
+        labor_pruef_tabelle.options["rowData"] = []
+        labor_pruef_tabelle.update()
+        labor_pruef_tabelle.set_visibility(False)
+        labor_pruef_hinweis.text = ""
+        labor_pruef_hinweis.set_visibility(False)
         ced_patientenkopf.text = "Noch kein Patient bestätigt"
         ced_dialog.close()
         dokument_pruefdialog.close()
@@ -1973,6 +2021,67 @@ def zeige_hauptseite() -> None:
         dokument_pruef_typ.value = zustand.dokumenttyp
         dokument_pruef_datum.value = datumsvorschlag.isoformat() if datumsvorschlag else ""
         dokument_pruef_text.value = zustand.strukturierte_darstellung
+        ist_laborpfad = zustand.dokumenttyp in LABORDOKUMENTTYPEN
+        labor_pruef_hinweis.set_visibility(ist_laborpfad)
+        labor_pruef_tabelle.set_visibility(ist_laborpfad)
+        if ist_laborpfad:
+            # Nur die strukturierte Darstellung wird geparst. Ein unbeschrifteter
+            # Rohtext wird nicht ersatzweise interpretiert. Bei leerer Tabelle kann
+            # zum Debuggen die KI-Struktur auf eindeutige Tabellen- oder Doppelpunkt-
+            # Zeilen geprüft werden, ohne Patientendaten zu protokollieren.
+            with get_session() as sitzung:
+                bekannte_kategorien = tuple(
+                    (kategorie.name, kategorie.typical_unit, kategorie.group_name)
+                    for kategorie in sitzung.scalars(
+                        select(FindingCategory).where(
+                            FindingCategory.group_name.in_(("Labor", "Calprotectin"))
+                        )
+                    )
+                )
+            zustand.labor_befunde = parse_laborbefund(
+                zustand.strukturierte_darstellung,
+                zustand.dokumenttyp,
+                bestehende_kategorien=bekannte_kategorien,
+            )
+            labor_pruef_tabelle.options["rowData"] = [
+                {
+                    "status": (
+                        "Neue Kategorie · prüfen"
+                        if befund.neue_kategorie
+                        else befund.qualitaet.value
+                    ),
+                    "kategorie": befund.kategorie,
+                    "wert": befund.anzeigewert,
+                    "einheit": befund.einheit or "",
+                    "referenz": befund.referenzbereich or "",
+                    "fachgruppe": befund.fachgruppe,
+                    "uebernehmen": befund.uebernehmen,
+                    "pruefhinweis": befund.pruefhinweis,
+                    "quelle": befund.quelltext,
+                }
+                for befund in zustand.labor_befunde
+            ]
+            labor_pruef_tabelle.update()
+            neue_anzahl = sum(befund.neue_kategorie for befund in zustand.labor_befunde)
+            labor_pruef_hinweis.text = (
+                f"{len(zustand.labor_befunde)} Laborzeile(n) erkannt"
+                + (
+                    f" · {neue_anzahl} neue Kategorie(n) zunächst ausgeschlossen"
+                    if neue_anzahl
+                    else ""
+                )
+                + ". Werte, Einheiten und Referenzbereiche vor der Übernahme prüfen."
+            )
+            dokument_pruef_speichern.text = "Geprüfte Laborwerte speichern"
+            dokument_pruef_speichern.set_enabled(
+                bool(zustand.labor_befunde)
+            )
+        else:
+            zustand.labor_befunde.clear()
+            labor_pruef_tabelle.options["rowData"] = []
+            labor_pruef_tabelle.update()
+            dokument_pruef_speichern.text = "Dokument bestätigt zuordnen"
+            dokument_pruef_speichern.enable()
         ced_dialog.close()
         patientenansicht_dialog.close()
         verlauf_dialog.close()
@@ -1982,7 +2091,7 @@ def zeige_hauptseite() -> None:
             "Patient, Dokumentdatum und erkannte Informationen bitte vor der Zuordnung prüfen"
         )
 
-    def speichere_allgemeine_dokumentzuordnung() -> None:
+    async def speichere_allgemeine_dokumentzuordnung() -> None:
         """Archiviert einen Nicht-CED-Befund erst nach Patient- und Datumsbestätigung."""
         if zustand.patient_id is None:
             setze_status("Bitte zuerst einen Patienten auswählen.", fehler=True)
@@ -2000,26 +2109,97 @@ def zeige_hauptseite() -> None:
         )
         try:
             with get_session() as sitzung:
-                dokument_id = speichere_allgemeines_dokument(
-                    sitzung,
-                    DokumentSpeicherauftrag(
-                        patient_id=zustand.patient_id,
-                        dokumenttyp=zustand.dokumenttyp,
-                        dokumentdatum=dokumentdatum,
-                        original_name=" + ".join(zustand.dokumentnamen) or "Dokument",
-                        rohe_ki_antwort=zustand.rohe_ki_antwort,
-                        kis_vorschlag=zustand.kis_vorschlag,
-                        provider=provider_name,
-                        modell=modell,
-                    ),
-                )
+                if zustand.dokumenttyp in LABORDOKUMENTTYPEN:
+                    tabellenzeilen = await labor_pruef_tabelle.get_client_data()
+                    freigegebene: list[FreigegebenerLaborwert] = []
+                    for zeile in tabellenzeilen:
+                        if not zeile.get("uebernehmen"):
+                            continue
+                        kategorie = str(zeile.get("kategorie") or "").strip()
+                        wert = str(zeile.get("wert") or "").strip()
+                        einheit = str(zeile.get("einheit") or "").strip()
+                        referenz = str(zeile.get("referenz") or "").strip()
+                        # Der sichtbare, gegebenenfalls editierte Wert wird erneut
+                        # durch denselben deterministischen Parser gelesen. Es gibt
+                        # keinen Rückgriff auf den alten KI-Wert.
+                        erneut = parse_laborbefund(
+                            f"| {kategorie} | {wert} | {einheit} | {referenz} |",
+                            zustand.dokumenttyp,
+                        )
+                        if len(erneut) != 1:
+                            raise ValueError(
+                                "Eine ausgewählte Laborzeile konnte nicht eindeutig geprüft werden."
+                            )
+                        geprueft = erneut[0]
+                        status_text = str(zeile.get("status") or "")
+                        qualitaet = (
+                            ConfidenceStatus.UNCERTAIN
+                            if status_text == "Neue Kategorie · prüfen" or geprueft.neue_kategorie
+                            else ConfidenceStatus(status_text)
+                        )
+                        freigegebene.append(
+                            FreigegebenerLaborwert(
+                                kategorie=kategorie,
+                                anzeigewert=wert,
+                                numerischer_wert=geprueft.numerischer_wert,
+                                einheit=einheit or None,
+                                referenzbereich=referenz or None,
+                                quelltext=str(zeile.get("quelle") or "").strip(),
+                                fachgruppe=geprueft.fachgruppe,
+                                qualitaet=qualitaet,
+                            )
+                        )
+                    dokument_id = speichere_laborpruefung(
+                        sitzung,
+                        LaborSpeicherauftrag(
+                            patient_id=zustand.patient_id,
+                            dokumenttyp=zustand.dokumenttyp,
+                            befunddatum=dokumentdatum,
+                            original_name=" + ".join(zustand.dokumentnamen) or "Laborbefund",
+                            rohe_ki_antwort=zustand.rohe_ki_antwort,
+                            kis_vorschlag=zustand.kis_vorschlag,
+                            provider=provider_name,
+                            modell=modell,
+                            befunde=tuple(freigegebene),
+                        ),
+                    )
+                else:
+                    dokument_id = speichere_allgemeines_dokument(
+                        sitzung,
+                        DokumentSpeicherauftrag(
+                            patient_id=zustand.patient_id,
+                            dokumenttyp=zustand.dokumenttyp,
+                            dokumentdatum=dokumentdatum,
+                            original_name=" + ".join(zustand.dokumentnamen) or "Dokument",
+                            rohe_ki_antwort=zustand.rohe_ki_antwort,
+                            kis_vorschlag=zustand.kis_vorschlag,
+                            provider=provider_name,
+                            modell=modell,
+                        ),
+                    )
+        except TimeoutError:
+            setze_status(
+                "Laborwerte konnten nicht aus der Prüftabelle gelesen werden. "
+                "Bitte die letzte Zelle verlassen und erneut speichern.",
+                fehler=True,
+            )
+            return
         except (SQLAlchemyError, ValueError) as fehler:
             setze_status(f"Dokument konnte nicht zugeordnet werden: {fehler}", fehler=True)
             return
         zustand.gespeichertes_dokument_id = dokument_id
         dokument_pruefdialog.close()
         ced_navigation.disable()
-        setze_status("Dokument wurde dem bestätigten Patienten zugeordnet")
+        if zustand.dokumenttyp in LABORDOKUMENTTYPEN:
+            fachschluessel = (
+                "calprotectin"
+                if zustand.dokumenttyp == Dokumenttyp.CALPROTECTIN.value
+                else "labor"
+            )
+            oeffne_fachverlauf(fachschluessel)
+            setze_status("Geprüfte Laborwerte gespeichert · Fachansicht geöffnet")
+        else:
+            setze_status("Dokument wurde dem bestätigten Patienten zugeordnet")
 
     def aktiviere_patientenauswahl(
         ereignis: events.ValueChangeEventArguments | None = None,

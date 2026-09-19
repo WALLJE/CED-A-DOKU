@@ -114,13 +114,12 @@ Mikrobiologie, Bildgebung, Endoskopie und weitere Dokumentklassen.
 
 ### Unmittelbar nächstes Arbeitspaket
 
-Als Nächstes folgt ein gemeinsamer, deterministischer Parser- und Prüfpfad für Labor,
-Virologie und Mikrobiologie. Bekannte Parameter werden einem kontrollierten
-Befundkatalog zugeordnet. Ein unbekannter, eindeutig beschrifteter Parameter wird in
-der Prüftabelle als neuer Kategorievorschlag sichtbar, aber erst nach ausdrücklicher
-Bestätigung angelegt. Eine KI darf keine Kategorie selbstständig dauerhaft anlegen;
-unbeschriftete oder nicht sicher zuordenbare Inhalte bleiben ungeklärt. Danach folgt
-die patientenbezogene Längstabelle mit Datums-, Kategorie- und Dokumenttypfiltern.
+Der gemeinsame deterministische Parser- und Prüfpfad für Labor, Virologie,
+Mikrobiologie und Calprotectin ist umgesetzt. Bekannte Parameter werden mit festem
+Katalog und bereits bestätigten dynamischen Kategorien abgeglichen. Neue Parameter,
+Einheitenabweichungen, unleserliche Werte und Konflikte sind nicht vorausgewählt;
+erst die manuelle Auswahl führt zur atomaren Speicherung. Als Nächstes folgt die
+patientenbezogene Längstabelle mit Datums-, Kategorie- und Dokumenttypfiltern.
 
 ### Priorität 2 – longitudinaler klinischer Nutzen
 
@@ -132,8 +131,8 @@ die patientenbezogene Längstabelle mit Datums-, Kategorie- und Dokumenttypfilte
 
 ### Priorität 3 – weitere Dokumentarten
 
-Nach dem vorgezogenen Labor-/Virologie-/Mikrobiologie-Parser sind Calprotectin,
-Endoskopie, Sonografie und MRT/CT jeweils als eigener, getesteter Parser- und
+Nach dem Labor-/Virologie-/Mikrobiologie-/Calprotectin-Parser sind Endoskopie,
+Sonografie und MRT/CT jeweils als eigener, getesteter Parser- und
 Freigabepfad umzusetzen. Ein allgemeiner Fallbackparser soll dabei nicht eingeführt
 werden; unbekannte Inhalte bleiben sichtbar ungeklärt.
 
@@ -145,7 +144,7 @@ dürfen bestätigte Messwerte nie verändern.
 
 ## Prüfstand
 
-Die fachlichen Tests laufen mit `PYTHONPATH=.` vollständig durch (83 Tests). Der
+Die fachlichen Tests laufen mit `PYTHONPATH=.` vollständig durch (92 Tests). Der
 Aufruf `pytest -q` ohne gesetzten Projektpfad kann in der aktuellen Umgebung das
 lokale Paket nicht importieren. Außerdem meldet SQLAlchemy derzeit Warnungen wegen
 der Verwendung von `datetime.utcnow`; die Umstellung auf zeitzonenbewusste
