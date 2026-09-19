@@ -1160,6 +1160,11 @@ def zeige_hauptseite() -> None:
         patientenansicht_stammdaten.text = ""
         erstdiagnose_ausgabe.value = ""
         symptome_seit_ausgabe.value = ""
+        # Auch beim Zurücksetzen muss exakt dieselbe Referenz wie beim Aufbau der
+        # Oberfläche verwendet werden. Eine veraltete Feldbezeichnung wird von
+        # Python erst beim Aktivieren des Datenbankmodus als NameError sichtbar.
+        # Zum Debuggen deshalb die Referenzen in Aufbau, Laden und Zurücksetzen
+        # gemeinsam vergleichen, anstatt einen Alias oder Fallback einzuführen.
         diagnose_details_ausgabe.value = ""
         befallsmuster_ausgabe.value = ""
         erkrankungstyp_ausgabe.value = None

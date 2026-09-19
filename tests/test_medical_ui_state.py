@@ -1,6 +1,8 @@
-"""Tests des reinen Sitzungszustands ohne Browser- oder NiceGUI-Interaktion."""
+"""Tests des Sitzungszustands und kritischer UI-Referenzen ohne Browser."""
 
-from ced_document_ai.medical_ui import DATENBANKMODUS, Sitzungszustand
+import inspect
+
+from ced_document_ai.medical_ui import DATENBANKMODUS, Sitzungszustand, zeige_hauptseite
 
 
 def test_ausgelesenes_labor_mit_patient_aktiviert_datenzuordnung() -> None:
@@ -37,3 +39,17 @@ def test_widerspruch_oder_bereits_gespeichertes_dokument_sperrt_zuordnung() -> N
 
     assert not widerspruch.datenzuordnung_moeglich
     assert not gespeichert.datenzuordnung_moeglich
+
+
+def test_diagnosedetails_verwendet_keine_veraltete_ui_referenz() -> None:
+    """Sichert die vollständige Umbenennung des Diagnosedetail-Feldes ab.
+
+    NiceGUI erzeugt die verschachtelten Rücksetzfunktionen erst beim Seitenaufbau.
+    Der frühere Bezeichner würde daher trotz erfolgreichem Import erst nach dem Klick
+    auf „CED-Datenbank aktivieren“ einen NameError auslösen. Die Quelltextprüfung ist
+    hier bewusst eng auf diesen regressionsanfälligen UI-Bezeichner begrenzt.
+    """
+    quelltext = inspect.getsource(zeige_hauptseite)
+
+    assert "diagnose_details_ausgabe" in quelltext
+    assert "diagnose_hinweise_ausgabe" not in quelltext
