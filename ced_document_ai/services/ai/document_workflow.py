@@ -62,6 +62,10 @@ Dokumenttypspezifische strukturierte Darstellung:
   Referenzbereich“. Fehlende Zellen bleiben leer. Nur im Original vorhandene
   Referenzbereiche und Kennzeichnungen übernehmen. Kommentare, Materialangaben,
   Probenhinweise und technische Hinweise getrennt unterhalb der Tabelle ausgeben.
+  Enthält das Original mehrere Messzeitpunkte als Spalten, diese nicht verdichten:
+  für jeden vorhandenen Messwert eine eigene Zeile „Datum | Parameter | Ergebnis |
+  Einheit | Referenzbereich“ ausgeben. Leere historische Zellen nicht als Messwert
+  ausgeben und auffällige Zeichen wie Pfeile oder Sternchen unverändert erhalten.
 - Virologischer, mikrobiologischer oder Calprotectin-Befund: wie Laborbefund
   strukturieren, die präzisere Dokumentklasse aber beibehalten. Pathologiebefunde
   nach Material, Makroskopie, Mikroskopie und Beurteilung gliedern, soweit vorhanden.

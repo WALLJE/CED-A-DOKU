@@ -512,10 +512,11 @@ def zeige_hauptseite() -> None:
                             ).props("color=teal-8 unelevated").classes("w-full")
                             ced_speichern.disable()
 
-                    # Andere Dokumenttypen erhalten vor der Archivierung ebenfalls
-                    # eine ausdrückliche Patienten- und Datumsprüfung. Strukturierte
-                    # Fachwerte werden hier noch nicht automatisch als Findings
-                    # angelegt; dafür bleibt ein eigener Fachparser erforderlich.
+                    # Nicht-CED-Dokumente erhalten vor der Archivierung eine
+                    # ausdrückliche Patienten- und Datumsprüfung. Für Labor,
+                    # Virologie, Mikrobiologie und Calprotectin erscheint zusätzlich
+                    # die Fachwerttabelle; andere Dokumentklassen bleiben beim
+                    # sicheren Archivpfad ohne erfundene Einzelwerte.
                     with ui.dialog().props("maximized seamless").classes(
                         "ced-pruefdialog"
                     ) as dokument_pruefdialog:
@@ -543,6 +544,7 @@ def zeige_hauptseite() -> None:
                                     },
                                     "columnDefs": [
                                         {"headerName": "Status", "field": "status", "width": 145},
+                                        {"headerName": "Befunddatum", "field": "datum", "editable": True, "width": 145},
                                         {"headerName": "Parameter", "field": "kategorie", "editable": True, "minWidth": 180},
                                         {"headerName": "Ergebnis", "field": "wert", "editable": True, "minWidth": 150},
                                         {"headerName": "Einheit", "field": "einheit", "editable": True, "width": 125},
@@ -2051,6 +2053,11 @@ def zeige_hauptseite() -> None:
                         else befund.qualitaet.value
                     ),
                     "kategorie": befund.kategorie,
+                    "datum": (
+                        befund.befunddatum.isoformat()
+                        if befund.befunddatum
+                        else (datumsvorschlag.isoformat() if datumsvorschlag else "")
+                    ),
                     "wert": befund.anzeigewert,
                     "einheit": befund.einheit or "",
                     "referenz": befund.referenzbereich or "",
@@ -2062,6 +2069,16 @@ def zeige_hauptseite() -> None:
                 for befund in zustand.labor_befunde
             ]
             labor_pruef_tabelle.update()
+            erkannte_messdaten = {
+                befund.befunddatum
+                for befund in zustand.labor_befunde
+                if befund.befunddatum is not None
+            }
+            if datumsvorschlag is None and erkannte_messdaten:
+                # Bei einer expliziten mehrspaltigen Laborhistorie ist das jüngste
+                # vorhandene Abnahmedatum der Vorschlag für das Dokumentdatum. Es
+                # bleibt im sichtbaren Pflichtfeld manuell korrigierbar.
+                dokument_pruef_datum.value = max(erkannte_messdaten).isoformat()
             neue_anzahl = sum(befund.neue_kategorie for befund in zustand.labor_befunde)
             labor_pruef_hinweis.text = (
                 f"{len(zustand.labor_befunde)} Laborzeile(n) erkannt"
@@ -2116,6 +2133,21 @@ def zeige_hauptseite() -> None:
                         if not zeile.get("uebernehmen"):
                             continue
                         kategorie = str(zeile.get("kategorie") or "").strip()
+                        datum_text = str(zeile.get("datum") or "").strip()
+                        # Ein leerer Zeilenwert übernimmt ausschließlich das oben
+                        # ausdrücklich bestätigte Dokumentdatum. Bei einer
+                        # mehrspaltigen Historie steht dagegen jedes erkannte Datum
+                        # sichtbar in der Zeile und kann einzeln korrigiert werden.
+                        try:
+                            zeilendatum = (
+                                date.fromisoformat(datum_text)
+                                if datum_text
+                                else dokumentdatum
+                            )
+                        except ValueError as fehler:
+                            raise ValueError(
+                                "Jede ausgewählte Laborzeile benötigt ein vollständiges Befunddatum."
+                            ) from fehler
                         wert = str(zeile.get("wert") or "").strip()
                         einheit = str(zeile.get("einheit") or "").strip()
                         referenz = str(zeile.get("referenz") or "").strip()
@@ -2144,6 +2176,7 @@ def zeige_hauptseite() -> None:
                                 numerischer_wert=geprueft.numerischer_wert,
                                 einheit=einheit or None,
                                 referenzbereich=referenz or None,
+                                befunddatum=zeilendatum,
                                 quelltext=str(zeile.get("quelle") or "").strip(),
                                 fachgruppe=geprueft.fachgruppe,
                                 qualitaet=qualitaet,

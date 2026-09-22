@@ -1,5 +1,7 @@
 """Tests des deterministischen Labor-/Virologie-/Mikrobiologie-Parsers."""
 
+from datetime import date
+
 import pytest
 
 from ced_document_ai.database.models import ConfidenceStatus
@@ -25,6 +27,7 @@ def test_markdown_laborwerte_werden_ohne_interpretation_gelesen() -> None:
     ]
     assert befunde[0].numerischer_wert == 12.4
     assert befunde[0].referenzbereich == "< 5"
+    assert befunde[0].befunddatum is None
     assert befunde[0].qualitaet is ConfidenceStatus.HIGH_CONFIDENCE
     assert befunde[0].uebernehmen
 
@@ -94,3 +97,37 @@ def test_fehlende_oder_abweichende_einheit_wird_nicht_korrigiert() -> None:
 def test_unterstuetzter_dokumenttyp_ist_verpflichtend() -> None:
     with pytest.raises(ValueError, match="kein unterstützter Laborpfad"):
         parse_laborbefund("CRP: 12 mg/l", "Arztbrief")
+
+
+def test_mehrspaltiger_laborverlauf_erzeugt_datierten_wert_pro_messzelle() -> None:
+    befunde = parse_laborbefund(
+        """
+        | Auftragsnummer | Referenzbereich | Einheit | 02164428 | 51742538 |
+        | Abnahmedatum |  |  | 13.09.2026 | 22.09.2026 |
+        | CRP | < 5.0 | mg/l | 13.6↑ | 5.8↑ |
+        | Hämoglobin | 12-16 | g/dl |  | 12.3 |
+        """,
+        "Laborbefund",
+    )
+
+    assert [(befund.kategorie, befund.anzeigewert, befund.befunddatum) for befund in befunde] == [
+        ("CRP", "13.6↑", date(2026, 9, 13)),
+        ("CRP", "5.8↑", date(2026, 9, 22)),
+        ("Hämoglobin", "12.3", date(2026, 9, 22)),
+    ]
+    # Werte desselben Parameters an verschiedenen Daten sind ein Verlauf und kein
+    # Widerspruch. Die Pfeilmarkierung bleibt im Anzeigewert erhalten.
+    assert all(befund.qualitaet is ConfidenceStatus.HIGH_CONFIDENCE for befund in befunde)
+
+
+def test_normalisiertes_langformat_bewahrt_datum_und_referenzbereich() -> None:
+    befunde = parse_laborbefund(
+        "| Datum | Parameter | Ergebnis | Einheit | Referenzbereich |\n"
+        "| 22.09.2026 | CRP | 5.8↑ | mg/l | < 5.0 |",
+        "Laborbefund",
+    )
+
+    assert len(befunde) == 1
+    assert befunde[0].befunddatum == date(2026, 9, 22)
+    assert befunde[0].anzeigewert == "5.8↑"
+    assert befunde[0].referenzbereich == "< 5.0"

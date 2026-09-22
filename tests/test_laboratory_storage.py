@@ -39,6 +39,7 @@ def _auftrag(patient_id: int) -> LaborSpeicherauftrag:
                 numerischer_wert=None,
                 einheit=None,
                 referenzbereich="negativ",
+                befunddatum=date(2026, 9, 19),
                 quelltext="| CMV-PCR | negativ | | negativ |",
                 fachgruppe="Labor",
                 qualitaet=ConfidenceStatus.UNCERTAIN,
@@ -62,6 +63,7 @@ def test_bestaetigter_virologiewert_wird_atomar_gespeichert(tmp_path) -> None:
         assert dokument is not None and dokument.confirmed
         assert dokument.document_date == date(2026, 9, 19)
         assert befund is not None and befund.text_value == "negativ"
+        assert befund.finding_date == date(2026, 9, 19)
         assert befund.confirmed_by_user
         assert kategorie is not None and kategorie.name == "CMV-PCR"
         assert kategorie.group_name == "Labor"

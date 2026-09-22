@@ -323,6 +323,15 @@ Parameter, Ergebnis, Einheit, Referenzbereich, Quellzeile, Qualitätsstatus und 
 Übernahmeschalter. Werte und Einheiten werden nicht umgerechnet oder medizinisch
 interpretiert.
 
+Mehrspaltige Laborverläufe werden ebenfalls unterstützt. Enthält eine Tabelle eine
+explizit beschriftete Zeile `Abnahmedatum`, `Entnahmedatum`, `Befunddatum` oder
+`Messdatum`, wird jede nicht leere Messzelle als eigener Wert mit genau diesem Datum
+in der Prüftabelle angezeigt. Alternativ verarbeitet der Parser das normalisierte
+Langformat `Datum | Parameter | Ergebnis | Einheit | Referenzbereich`. Historische
+Messspalten werden dadurch nicht als widersprüchliche Doppelwerte behandelt. Das
+jüngste ausdrücklich erkannte Messdatum wird lediglich als sichtbarer Vorschlag für
+das Dokumentdatum eingesetzt und kann vor der Speicherung korrigiert werden.
+
 Der Parser gleicht Parameter zuerst mit dem festen Anfangskatalog und anschließend
 mit bereits bestätigten Kategorien der lokalen Datenbank ab. Ein neuer eindeutig
 beschrifteter Parameter bleibt zunächst ausgeschaltet und als **Neue Kategorie ·

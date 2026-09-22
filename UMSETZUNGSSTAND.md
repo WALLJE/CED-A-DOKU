@@ -118,7 +118,9 @@ Der gemeinsame deterministische Parser- und Prüfpfad für Labor, Virologie,
 Mikrobiologie und Calprotectin ist umgesetzt. Bekannte Parameter werden mit festem
 Katalog und bereits bestätigten dynamischen Kategorien abgeglichen. Neue Parameter,
 Einheitenabweichungen, unleserliche Werte und Konflikte sind nicht vorausgewählt;
-erst die manuelle Auswahl führt zur atomaren Speicherung. Als Nächstes folgt die
+erst die manuelle Auswahl führt zur atomaren Speicherung. Mehrspaltige
+Laborhistorien werden anhand ihrer ausdrücklich beschrifteten Abnahme- oder
+Messdatumszeile in einzelne datierte Befunde aufgelöst. Als Nächstes folgt die
 patientenbezogene Längstabelle mit Datums-, Kategorie- und Dokumenttypfiltern.
 
 ### Priorität 2 – longitudinaler klinischer Nutzen

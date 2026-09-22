@@ -30,6 +30,7 @@ class FreigegebenerLaborwert:
     numerischer_wert: float | None
     einheit: str | None
     referenzbereich: str | None
+    befunddatum: date
     quelltext: str
     fachgruppe: str
     qualitaet: ConfidenceStatus
@@ -123,7 +124,7 @@ def speichere_laborpruefung(sitzung: Session, auftrag: LaborSpeicherauftrag) -> 
                     patient_id=auftrag.patient_id,
                     document_id=dokument.id,
                     category_id=kategorie.id,
-                    finding_date=auftrag.befunddatum,
+                    finding_date=freigegeben.befunddatum,
                     numeric_value=freigegeben.numerischer_wert,
                     text_value=freigegeben.anzeigewert.strip(),
                     unit=(freigegeben.einheit or "").strip() or None,

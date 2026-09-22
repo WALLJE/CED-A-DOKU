@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from dataclasses import dataclass, replace
+from datetime import date, datetime
 
 from ced_document_ai.database.models import ConfidenceStatus
 
@@ -35,6 +36,7 @@ class ExtrahierterLaborwert:
     numerischer_wert: float | None
     einheit: str | None
     referenzbereich: str | None
+    befunddatum: date | None
     quelltext: str
     fachgruppe: str
     qualitaet: ConfidenceStatus
@@ -94,8 +96,12 @@ _METADATEN = {
         "Befunddatum",
         "Entnahmedatum",
         "Auftragsdatum",
+        "Auftragsnummer",
         "Berichtsdatum",
         "Probeneingang",
+        "Abnahmezeit",
+        "Fall-Nr",
+        "Methode",
         "Material",
         "Kommentar",
         "Kommentare",
@@ -108,6 +114,7 @@ _ZAHL = re.compile(r"(?<![\w])([<>≤≥]?\s*-?\d+(?:[.,]\d+)?)")
 _WERT_MIT_EINHEIT = re.compile(
     r"^\s*(?P<wert>[<>≤≥]?\s*-?\d+(?:[.,]\d+)?)\s*(?P<einheit>[^\d\s].*?)?\s*$"
 )
+_DATUM = re.compile(r"(?<!\d)(\d{1,2}[./]\d{1,2}[./]\d{4}|\d{4}-\d{2}-\d{2})(?!\d)")
 
 
 def _fachgruppe_fuer_unbekannten_parameter(dokumenttyp: str) -> str:
@@ -132,6 +139,39 @@ def _zerlege_tabellenzeile(zeile: str) -> tuple[str, str, str, str] | None:
         return None
     zellen.extend([""] * (4 - len(zellen)))
     return zellen[0], zellen[1], zellen[2], zellen[3]
+
+
+def _tabellenzellen(zeile: str) -> list[str] | None:
+    """Gibt alle Zellen einer echten Tabellenzeile unverändert zurück."""
+
+    if "|" not in zeile:
+        return None
+    zellen = [zelle.strip() for zelle in zeile.strip().strip("|").split("|")]
+    if len(zellen) < 2:
+        return None
+    if all(not zelle or set(zelle) <= {"-", ":"} for zelle in zellen):
+        return None
+    return zellen
+
+
+def _parse_datum(text: str) -> date | None:
+    """Liest genau ein vorhandenes Datum aus einer Tabellenzelle."""
+
+    treffer = _DATUM.search(text)
+    if treffer is None:
+        return None
+    rohdatum = treffer.group(1)
+    formatierung = (
+        "%Y-%m-%d"
+        if "-" in rohdatum
+        else "%d.%m.%Y"
+        if "." in rohdatum
+        else "%d/%m/%Y"
+    )
+    try:
+        return datetime.strptime(rohdatum, formatierung).date()
+    except ValueError:
+        return None
 
 
 def _zerlege_beschriftete_zeile(zeile: str) -> tuple[str, str, str, str] | None:
@@ -184,62 +224,73 @@ def parse_laborbefund(
         if gruppe in {"Labor", "Calprotectin"} and name.strip()
     }
     ergebnisse: list[ExtrahierterLaborwert] = []
-    positionen: dict[str, list[int]] = {}
+    positionen: dict[tuple[str, date | None], list[int]] = {}
+    # Manche Laborblätter enthalten mehrere historische Messspalten. Die explizit
+    # beschriftete Zeile „Abnahme-/Entnahmedatum“ ordnet jede Ergebnisspalte ihrem
+    # eigenen Datum zu. Ohne eine solche Zeile bleibt der bisherige vier-spaltige
+    # Einzelwertparser aktiv; es wird nicht anhand der Spaltenposition geraten.
+    messdaten_nach_spalte: dict[int, date] = {}
     for rohzeile in text.splitlines():
         zeile = rohzeile.strip()
         if not zeile:
             continue
-        zerlegt = _zerlege_tabellenzeile(zeile) or _zerlege_beschriftete_zeile(zeile)
-        if zerlegt is None:
+        zellen = _tabellenzellen(zeile)
+        if (
+            zellen is not None
+            and _normalisiere(zellen[0]) == "datum"
+            and len(zellen) > 1
+            and _normalisiere(zellen[1]) in {"parameter", "analyt", "untersuchung", "test"}
+        ):
             continue
-        parameter, wert, einheit, referenzbereich = zerlegt
-        normalisiert = _normalisiere(parameter)
-        if normalisiert in _METADATEN:
+        if zellen is not None and _normalisiere(zellen[0]) in {
+            "abnahmedatum",
+            "entnahmedatum",
+            "befunddatum",
+            "messdatum",
+        }:
+            messdaten_nach_spalte = {
+                index: datum
+                for index, zelle in enumerate(zellen[1:], start=1)
+                if (datum := _parse_datum(zelle)) is not None
+            }
             continue
-        katalog = _ALIASDATEN.get(normalisiert) or vorhandene_aliasdaten.get(normalisiert)
-        if katalog is None:
-            kategorie = parameter
-            typische_einheit = None
-            fachgruppe = _fachgruppe_fuer_unbekannten_parameter(dokumenttyp)
-            neue_kategorie = True
+        matrixwerte: list[tuple[str, str, str, str, date | None]] = []
+        zeilendatum = _parse_datum(zellen[0]) if zellen is not None else None
+        if zellen is not None and zeilendatum is not None and len(zellen) >= 5:
+            # Bevorzugtes Langformat aus dem aktuellen KI-Prompt: jeder Messwert
+            # trägt sein Datum direkt in derselben Zeile.
+            matrixwerte = [(zellen[1], zellen[2], zellen[3], zellen[4], zeilendatum)]
+        elif zellen is not None and messdaten_nach_spalte:
+            if len(zellen) < 4:
+                continue
+            parameter = zellen[0]
+            referenzbereich = zellen[1]
+            einheit = zellen[2]
+            matrixwerte = [
+                (parameter, zellen[index], einheit, referenzbereich, datum)
+                for index, datum in sorted(messdaten_nach_spalte.items())
+                if index < len(zellen) and zellen[index].strip()
+            ]
         else:
-            kategorie, typische_einheit, fachgruppe = katalog
-            neue_kategorie = False
-        qualitaet = ConfidenceStatus.HIGH_CONFIDENCE
-        uebernehmen = not neue_kategorie
-        hinweise: list[str] = []
-        if _normalisiere(wert) in _UNLESERLICH:
-            qualitaet = ConfidenceStatus.UNREADABLE
-            uebernehmen = False
-            hinweise.append("Wert ist als unleserlich gekennzeichnet.")
-        if neue_kategorie:
-            qualitaet = ConfidenceStatus.UNCERTAIN
-            hinweise.append("Neue Kategorie: Bezeichnung vor Übernahme ausdrücklich prüfen.")
-        if typische_einheit and not einheit:
-            qualitaet = ConfidenceStatus.UNCERTAIN
-            uebernehmen = False
-            hinweise.append(f"Erwartete Einheit {typische_einheit!r} fehlt.")
-        elif typische_einheit and _normalisiere(einheit) != _normalisiere(typische_einheit):
-            qualitaet = ConfidenceStatus.UNCERTAIN
-            uebernehmen = False
-            hinweise.append(
-                f"Einheit {einheit!r} weicht von der hinterlegten Einheit {typische_einheit!r} ab."
+            zerlegt = _zerlege_tabellenzeile(zeile) or _zerlege_beschriftete_zeile(zeile)
+            if zerlegt is None:
+                continue
+            parameter, wert, einheit, referenzbereich = zerlegt
+            matrixwerte = [(parameter, wert, einheit, referenzbereich, None)]
+
+        for parameter, wert, einheit, referenzbereich, befunddatum in matrixwerte:
+            _ergaenze_laborwert(
+                ergebnisse,
+                positionen,
+                parameter=parameter,
+                wert=wert,
+                einheit=einheit,
+                referenzbereich=referenzbereich,
+                befunddatum=befunddatum,
+                quelltext=zeile,
+                dokumenttyp=dokumenttyp,
+                vorhandene_aliasdaten=vorhandene_aliasdaten,
             )
-        ergebnis = ExtrahierterLaborwert(
-            kategorie=kategorie,
-            anzeigewert=wert,
-            numerischer_wert=_numerischer_wert(wert),
-            einheit=einheit or None,
-            referenzbereich=referenzbereich or None,
-            quelltext=zeile,
-            fachgruppe=fachgruppe,
-            qualitaet=qualitaet,
-            neue_kategorie=neue_kategorie,
-            uebernehmen=uebernehmen,
-            pruefhinweis=" ".join(hinweise),
-        )
-        positionen.setdefault(_normalisiere(kategorie), []).append(len(ergebnisse))
-        ergebnisse.append(ergebnis)
 
     for indizes in positionen.values():
         if len(indizes) < 2:
@@ -261,3 +312,68 @@ def parse_laborbefund(
                 ).strip(),
             )
     return ergebnisse
+
+
+def _ergaenze_laborwert(
+    ergebnisse: list[ExtrahierterLaborwert],
+    positionen: dict[tuple[str, date | None], list[int]],
+    *,
+    parameter: str,
+    wert: str,
+    einheit: str,
+    referenzbereich: str,
+    befunddatum: date | None,
+    quelltext: str,
+    dokumenttyp: str,
+    vorhandene_aliasdaten: dict[str, tuple[str, str | None, str]],
+) -> None:
+    """Erzeugt genau einen Laborwert aus bereits eindeutig getrennten Zellen."""
+
+    normalisiert = _normalisiere(parameter)
+    if normalisiert in _METADATEN:
+        return
+    katalog = _ALIASDATEN.get(normalisiert) or vorhandene_aliasdaten.get(normalisiert)
+    if katalog is None:
+        kategorie = parameter
+        typische_einheit = None
+        fachgruppe = _fachgruppe_fuer_unbekannten_parameter(dokumenttyp)
+        neue_kategorie = True
+    else:
+        kategorie, typische_einheit, fachgruppe = katalog
+        neue_kategorie = False
+    qualitaet = ConfidenceStatus.HIGH_CONFIDENCE
+    uebernehmen = not neue_kategorie
+    hinweise: list[str] = []
+    if _normalisiere(wert) in _UNLESERLICH:
+        qualitaet = ConfidenceStatus.UNREADABLE
+        uebernehmen = False
+        hinweise.append("Wert ist als unleserlich gekennzeichnet.")
+    if neue_kategorie:
+        qualitaet = ConfidenceStatus.UNCERTAIN
+        hinweise.append("Neue Kategorie: Bezeichnung vor Übernahme ausdrücklich prüfen.")
+    if typische_einheit and not einheit:
+        qualitaet = ConfidenceStatus.UNCERTAIN
+        uebernehmen = False
+        hinweise.append(f"Erwartete Einheit {typische_einheit!r} fehlt.")
+    elif typische_einheit and _normalisiere(einheit) != _normalisiere(typische_einheit):
+        qualitaet = ConfidenceStatus.UNCERTAIN
+        uebernehmen = False
+        hinweise.append(
+            f"Einheit {einheit!r} weicht von der hinterlegten Einheit {typische_einheit!r} ab."
+        )
+    ergebnis = ExtrahierterLaborwert(
+        kategorie=kategorie,
+        anzeigewert=wert,
+        numerischer_wert=_numerischer_wert(wert),
+        einheit=einheit or None,
+        referenzbereich=referenzbereich or None,
+        befunddatum=befunddatum,
+        quelltext=quelltext,
+        fachgruppe=fachgruppe,
+        qualitaet=qualitaet,
+        neue_kategorie=neue_kategorie,
+        uebernehmen=uebernehmen,
+        pruefhinweis=" ".join(hinweise),
+    )
+    positionen.setdefault((_normalisiere(kategorie), befunddatum), []).append(len(ergebnisse))
+    ergebnisse.append(ergebnis)
