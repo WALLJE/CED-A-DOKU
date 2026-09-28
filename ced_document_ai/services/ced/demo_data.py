@@ -2,7 +2,8 @@
 
 Dieses Modul wird beim normalen Anwendungsstart bewusst nicht ausgeführt. Dadurch
 gelangen Demo-Einträge niemals unbemerkt in eine reale Datenbank. Der separate
-Seeder bricht ab, sobald eine seiner reservierten ``DEMO-*``-IDs bereits existiert.
+Seeder ergänzt nur fehlende reservierte ``DEMO-*``-IDs und verändert bereits
+vorhandene Demo- oder Patientendatensätze nicht.
 """
 
 from __future__ import annotations
@@ -46,15 +47,22 @@ KATEGORIEN = (
 
 
 def erzeuge_demo_daten(sitzung: Session) -> int:
-    """Legt fünf Patienten mit longitudinalen, fachlich getrennten Testwerten an."""
+    """Ergänzt fehlende Demo-Patienten samt fachlich getrennten Testwerten.
+
+    Der Rückgabewert ist die Anzahl der in diesem Aufruf neu angelegten Patienten.
+    Vorhandene reservierte IDs werden bewusst übersprungen und weder repariert noch
+    überschrieben. Falls ein vorhandener Demofall unvollständig erscheint, sollte
+    dessen Inhalt gezielt in SQLite geprüft werden; ein automatisches Auffüllen
+    könnte sonst manuelle Änderungen unbemerkt verändern.
+    """
     demo_ids = tuple(f"DEMO-{nummer:03d}" for nummer in range(1, 6))
-    vorhanden = sitzung.scalar(
-        select(Patient.id).where(Patient.external_id.in_(demo_ids)).limit(1)
-    )
-    if vorhanden is not None:
-        raise ValueError(
-            "Demo-Daten wurden nicht angelegt: Mindestens eine DEMO-Patienten-ID existiert bereits."
+    vorhandene_demo_ids = set(
+        sitzung.scalars(
+            select(Patient.external_id).where(Patient.external_id.in_(demo_ids))
         )
+    )
+    if vorhandene_demo_ids == set(demo_ids):
+        return 0
 
     kategorien: dict[str, FindingCategory] = {}
     for name, gruppe, einheit in KATEGORIEN:
@@ -82,7 +90,10 @@ def erzeuge_demo_daten(sitzung: Session) -> int:
     )
     zeitpunkte = (date(2025, 1, 15), date(2025, 7, 15), date(2026, 1, 15))
 
+    anzahl_neu = 0
     for index, (nachname, vorname, geburt, diagnose, befall) in enumerate(patienten):
+        if demo_ids[index] in vorhandene_demo_ids:
+            continue
         patient = Patient(
             external_id=demo_ids[index],
             first_name=vorname,
@@ -176,5 +187,6 @@ def erzeuge_demo_daten(sitzung: Session) -> int:
                         confirmed_by_user=True,
                     )
                 )
+        anzahl_neu += 1
     sitzung.commit()
-    return len(patienten)
+    return anzahl_neu
