@@ -328,6 +328,54 @@ Stammdatenwiderspruch besteht, wird „Daten zuordnen“ auch für Laborbefunde 
 Nicht-CED-Dokumente aktiv. Die Aktivierung hängt nicht von der CED-spezifischen
 Prüftabelle ab. Nach bereits erfolgter Speicherung bleibt der Schalter gesperrt.
 
+### Dokumentarchiv und Befundklassen
+
+Bestätigt zugeordnete Dokumente bleiben nun auch ohne eigenen Fachparser in der
+Patientenansicht auffindbar. Die Fachansichten zeigen unterhalb strukturierter
+Einzelwerte zusätzlich Dokumentdatum, Befundklasse, Dokumenttyp, gespeicherte
+KI-Kurzfassung und Quelldatei. Ein als `Laborbefund` erkanntes virologisches Dokument
+erscheint deshalb unter **Labor**, auch wenn noch keine einzelnen Virusparameter als
+bestätigte Befunde gespeichert wurden.
+
+Der kontrollierte Katalog unterscheidet derzeit CED-Fragebogen, allgemeines Labor,
+Virologie, Mikrobiologie, Calprotectin, Endoskopie, Sonografie, MRT, CT, Röntgen,
+Pathologie, Funktionsdiagnostik, Arztbriefe, Medikamentenpläne und sonstige
+medizinische Dokumente. Arztbriefe, Pathologie, Funktionsdiagnostik, Medikation und
+nicht anderweitig zuordenbare präzise Dokumenttypen erscheinen unter **Weitere
+Befunde**. Eine unbekannte präzise Bezeichnung bleibt erhalten und wird nicht
+automatisch in „Andere Befunde“ umbenannt. Neue Einzelwerte oder medizinische
+Kategorien werden weiterhin erst nach einem dokumenttypspezifischen Parser und einer
+manuellen Prüfung als `Finding` gespeichert; die reine Archivierung erfindet keine
+Werte.
+
+### Labor, Virologie und Mikrobiologie prüfen
+
+Für `Laborbefund`, `Virologischer Befund`, `Mikrobiologischer Befund` und
+`Calprotectin-Befund` wird vor der Speicherung eine editierbare Prüftabelle erzeugt.
+Der deterministische Parser verarbeitet ausschließlich klar beschriftete Tabellen-
+oder `Parameter: Wert`-Zeilen aus der strukturierten Darstellung. Angezeigt werden
+Parameter, Ergebnis, Einheit, Referenzbereich, Quellzeile, Qualitätsstatus und ein
+Übernahmeschalter. Werte und Einheiten werden nicht umgerechnet oder medizinisch
+interpretiert.
+
+Mehrspaltige Laborverläufe werden ebenfalls unterstützt. Enthält eine Tabelle eine
+explizit beschriftete Zeile `Abnahmedatum`, `Entnahmedatum`, `Befunddatum` oder
+`Messdatum`, wird jede nicht leere Messzelle als eigener Wert mit genau diesem Datum
+in der Prüftabelle angezeigt. Alternativ verarbeitet der Parser das normalisierte
+Langformat `Datum | Parameter | Ergebnis | Einheit | Referenzbereich`. Historische
+Messspalten werden dadurch nicht als widersprüchliche Doppelwerte behandelt. Das
+jüngste ausdrücklich erkannte Messdatum wird lediglich als sichtbarer Vorschlag für
+das Dokumentdatum eingesetzt und kann vor der Speicherung korrigiert werden.
+
+Der Parser gleicht Parameter zuerst mit dem festen Anfangskatalog und anschließend
+mit bereits bestätigten Kategorien der lokalen Datenbank ab. Ein neuer eindeutig
+beschrifteter Parameter bleibt zunächst ausgeschaltet und als **Neue Kategorie ·
+prüfen** markiert. Erst ein bewusst gesetzter Übernahmeschalter legt ihn zusammen mit
+dem bestätigten Dokument atomar an. Fehlende beziehungsweise abweichende Einheiten,
+unleserliche Werte und widersprüchliche Doppelangaben sind ebenfalls nicht
+vorausgewählt. Nach erfolgreicher Speicherung öffnet die App direkt den Labor- oder
+Calprotectin-Verlauf.
+
 ## Synthetische Demo-Daten
 
 Für die visuelle Prüfung können fünf vollständig erfundene Patienten mit Haupt- und

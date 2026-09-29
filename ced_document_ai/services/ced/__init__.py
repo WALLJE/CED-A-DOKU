@@ -23,7 +23,23 @@ from ced_document_ai.services.ced.document_storage import (
     DokumentSpeicherauftrag,
     speichere_allgemeines_dokument,
 )
+from ced_document_ai.services.ced.document_categories import (
+    DOKUMENTKLASSEN,
+    Dokumentklasse,
+    ermittle_dokumentfachgruppe,
+)
+from ced_document_ai.services.ced.laboratory_parser import (
+    LABORDOKUMENTTYPEN,
+    ExtrahierterLaborwert,
+    parse_laborbefund,
+)
+from ced_document_ai.services.ced.laboratory_storage import (
+    FreigegebenerLaborwert,
+    LaborSpeicherauftrag,
+    speichere_laborpruefung,
+)
 from ced_document_ai.services.ced.patient_overview import (
+    ArchiviertesDokument,
     BefundUebersicht,
     DiagnoseUebersicht,
     KlinischerVerlauf,
@@ -32,6 +48,7 @@ from ced_document_ai.services.ced.patient_overview import (
     berechne_alter,
     lade_klinischen_verlauf,
     lade_fachverlauf,
+    lade_dokumentenarchiv,
     lade_patientenuebersicht,
 )
 from ced_document_ai.services.ced.patient_profile import (
@@ -75,6 +92,16 @@ __all__ = [
     "pruefe_technische_plausibilitaet",
     "DokumentSpeicherauftrag",
     "speichere_allgemeines_dokument",
+    "DOKUMENTKLASSEN",
+    "Dokumentklasse",
+    "ermittle_dokumentfachgruppe",
+    "LABORDOKUMENTTYPEN",
+    "ExtrahierterLaborwert",
+    "parse_laborbefund",
+    "FreigegebenerLaborwert",
+    "LaborSpeicherauftrag",
+    "speichere_laborpruefung",
+    "ArchiviertesDokument",
     "BefundUebersicht",
     "DiagnoseUebersicht",
     "KlinischerVerlauf",
@@ -83,6 +110,7 @@ __all__ = [
     "berechne_alter",
     "lade_klinischen_verlauf",
     "lade_fachverlauf",
+    "lade_dokumentenarchiv",
     "lade_patientenuebersicht",
     "BEFALLSMUSTER",
     "CED_ERKRANKUNGSTYP",
