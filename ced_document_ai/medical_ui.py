@@ -1193,7 +1193,6 @@ def zeige_hauptseite() -> None:
         setze_stammdaten_bearbeitung(False)
         hauptdiagnose_ausgabe.value = ""
         nebendiagnosen_ausgabe.value = ""
-        diagnose_hinweise_ausgabe.value = ""
         therapie_medikamentoes_ausgabe.value = ""
         therapie_chirurgisch_ausgabe.value = ""
         diagnosen_original.update(hauptdiagnose="", nebendiagnosen="")
@@ -1420,7 +1419,6 @@ def zeige_hauptseite() -> None:
             for diagnose in uebersicht.diagnosen
             if diagnose is not hauptdiagnose and diagnose.status != "ERSETZT"
         )
-        diagnose_hinweise_ausgabe.value = uebersicht.diagnose_hinweise or ""
         therapie_medikamentoes_ausgabe.value = uebersicht.therapie_medikamentoes or ""
         therapie_chirurgisch_ausgabe.value = uebersicht.therapie_chirurgisch or ""
         diagnosen_original.update(
