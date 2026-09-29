@@ -77,6 +77,82 @@ class Patiententreffer:
     widerspruch: bool = False
 
 
+@dataclass(frozen=True)
+class Patientenabgleich:
+    """Ergebnis des Abgleichs mit dem bewusst ausgewählten aktiven Patienten."""
+
+    status: str
+    farbe: str
+    zuordnung_erlaubt: bool
+    gruende: tuple[str, ...]
+
+
+def pruefe_aktiven_patienten(
+    erkannt: ErkanntePatientendaten,
+    patient: PatientMitStammdaten,
+) -> Patientenabgleich:
+    """Erklärt Übereinstimmungen und Abweichungen feldweise und ohne Raten.
+
+    Fehlende Dokumentstammdaten sind kein behaupteter Widerspruch. Die Zuordnung
+    bleibt nach der bewussten Patientenauswahl möglich, wird aber rot als vollständig
+    manuell zu prüfen markiert. Explizit gelesene abweichende Merkmale sperren die
+    Speicherung weiterhin.
+    """
+
+    pruefungen: list[tuple[str, bool]] = []
+    if erkannt.externe_id:
+        pruefungen.append(
+            (
+                "Patienten-ID",
+                _normalisiere(erkannt.externe_id) == _normalisiere(patient.external_id),
+            )
+        )
+    if erkannt.name:
+        pruefungen.append(
+            (
+                "Name",
+                any(
+                    _normalisiere(erkannt.name) == _normalisiere(name)
+                    for name in _namen_fuer_abgleich(patient)
+                ),
+            )
+        )
+    if erkannt.geburtsdatum:
+        pruefungen.append(("Geburtsdatum", erkannt.geburtsdatum == patient.birth_date))
+
+    if not pruefungen:
+        return Patientenabgleich(
+            status="Keine Patientendaten erkannt",
+            farbe="rot",
+            zuordnung_erlaubt=True,
+            gruende=(
+                "Im Dokument wurden weder Patienten-ID noch eindeutig beschrifteter Name oder Geburtsdatum erkannt",
+                "Zuordnung beruht ausschließlich auf der manuellen Patientenauswahl",
+            ),
+        )
+
+    abweichungen = [feld for feld, stimmt in pruefungen if not stimmt]
+    treffer = [feld for feld, stimmt in pruefungen if stimmt]
+    if abweichungen:
+        return Patientenabgleich(
+            status="Stammdatenwiderspruch",
+            farbe="rot",
+            zuordnung_erlaubt=False,
+            gruende=tuple(
+                [*(f"{feld} stimmt überein" for feld in treffer),
+                 *(f"{feld} weicht vom aktiven Patienten ab" for feld in abweichungen)]
+            ),
+        )
+
+    sicher = "Patienten-ID" in treffer or {"Name", "Geburtsdatum"}.issubset(treffer)
+    return Patientenabgleich(
+        status="Sicherer Vorschlag" if sicher else "Unsicherer Vorschlag",
+        farbe="gruen" if sicher else "gelb",
+        zuordnung_erlaubt=True,
+        gruende=tuple(f"{feld} stimmt überein" for feld in treffer),
+    )
+
+
 # Die Muster sind absichtlich eng gefasst: Nur eine klar beschriftete Zeile wird
 # übernommen. Für lokales Debugging kann die Liste der erkannten Feldnamen ausgegeben
 # werden; vollständige Dokumenttexte oder Patientenwerte gehören nicht in Logs.

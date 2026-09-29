@@ -35,6 +35,7 @@ from ced_document_ai.services.ced.patient_matching import (
     ErkanntePatientendaten,
     erkenne_patientendaten,
     ermittle_patiententreffer,
+    pruefe_aktiven_patienten,
 )
 from ced_document_ai.services.ced.patient_overview import (
     lade_dokumentenarchiv,
@@ -64,7 +65,13 @@ from ced_document_ai.services.ced.storage import (
 )
 from ced_document_ai.services.ced.document_storage import (
     DokumentSpeicherauftrag,
+    FreigegebenerDokumentbefund,
+    finde_vorhandene_dokumentzuordnungen,
     speichere_allgemeines_dokument,
+)
+from ced_document_ai.services.ced.letter_parser import (
+    ExtrahierterArztbriefabschnitt,
+    parse_arztbrief,
 )
 from ced_document_ai.services.ced.laboratory_parser import (
     LABORDOKUMENTTYPEN,
@@ -115,6 +122,7 @@ class Sitzungszustand:
     # temporär. Dieser Umsetzungsschritt schreibt noch keinen Befund in SQLite.
     ced_befunde: list[ExtrahierterBefund] = field(default_factory=list)
     labor_befunde: list[ExtrahierterLaborwert] = field(default_factory=list)
+    arztbrief_abschnitte: list[ExtrahierterArztbriefabschnitt] = field(default_factory=list)
     gespeichertes_dokument_id: int | None = None
     patientenabgleich_erlaubt: bool = False
     duplikate_bestaetigt: bool = False
@@ -222,6 +230,15 @@ def zeige_hauptseite() -> None:
             border: 2px solid #dc2626; border-radius: 10px; padding: 12px 14px;
             font-weight: 700; width: 100%; }
           .ced-ausgeschlossen { color: #b91c1c !important; }
+          .patientenabgleich-gruen { color: #166534 !important; background: #dcfce7;
+            border: 1px solid #16a34a; border-radius: 10px; padding: 10px 12px;
+            font-weight: 700; width: 100%; }
+          .patientenabgleich-gelb { color: #854d0e !important; background: #fef9c3;
+            border: 1px solid #ca8a04; border-radius: 10px; padding: 10px 12px;
+            font-weight: 700; width: 100%; }
+          .patientenabgleich-rot { color: #991b1b !important; background: #fee2e2;
+            border: 1px solid #dc2626; border-radius: 10px; padding: 10px 12px;
+            font-weight: 700; width: 100%; }
           /* Gesetzte EIM bleiben auch im schreibgeschützten Zustand deutlich
              erkennbar. Falls Quasar seine internen Klassennamen ändert, im Browser
              ausschließlich den Checkbox-Zustand prüfen, keine Patientendaten loggen. */
@@ -272,11 +289,8 @@ def zeige_hauptseite() -> None:
                 "Patient anlegen", icon="person_add"
             ).props("color=teal-8").classes("w-full")
         neuer_patient_formular.set_visibility(False)
-        ced_navigation = ui.button(
-            "Daten zuordnen", icon="fact_check"
-        ).props("outline color=teal-8").classes("w-full mt-3")
         einlesen_navigation = ui.button(
-            "Dokument einlesen", icon="document_scanner"
+            "Zur Dokumentansicht", icon="document_scanner"
         ).props("outline color=teal-8").classes("w-full mt-2")
         patientenansicht_navigation = ui.button(
             "Patientenübersicht", icon="person"
@@ -305,8 +319,6 @@ def zeige_hauptseite() -> None:
         aktiver_patient_auswahl.set_visibility(False)
         dokument_patienten_hinweis.set_visibility(False)
         neuer_patient_schalter.set_visibility(False)
-        ced_navigation.set_visibility(False)
-        ced_navigation.disable()
         einlesen_navigation.set_visibility(False)
         patientenansicht_navigation.set_visibility(False)
         patientenansicht_navigation.disable()
@@ -391,13 +403,9 @@ def zeige_hauptseite() -> None:
                         ui.label(
                             "Auch Einfügen aus der Zwischenablage ist mit Strg+V / Cmd+V möglich."
                         ).classes("upload-hinweis")
-                    with ui.row().classes("w-full gap-2"):
-                        neu_schalter = ui.button(
-                            "Neues Dokument einlesen", icon="note_add"
-                        ).props("outline color=teal-8")
-                        alles_loeschen_schalter = ui.button(
-                            "Alles löschen / neu beginnen", icon="delete_sweep"
-                        ).props("outline color=negative")
+                    dokument_verwerfen_schalter = ui.button(
+                        "Dokument verwerfen / neue Eingabe", icon="delete_sweep"
+                    ).props("outline color=negative").classes("w-full")
                 with ui.column().classes("ergebnisspalte flex-1 lg:w-1/2 gap-5"):
                     with ui.card().classes("arbeitskarte w-full p-5"):
                         with ui.row().classes("items-center gap-2"):
@@ -407,7 +415,7 @@ def zeige_hauptseite() -> None:
                             "Erkannter Dokumenttyp", value=""
                         ).props("outlined readonly").classes("w-full")
                         lesen_schalter = ui.button(
-                            "Dokument auslesen", icon="document_scanner"
+                            "Dokument analysieren", icon="document_scanner"
                         ).props("color=teal-8 unelevated").classes("w-full")
 
                     with ui.card().classes("arbeitskarte w-full p-5"):
@@ -427,6 +435,14 @@ def zeige_hauptseite() -> None:
                         kopieren_schalter = ui.button(
                             "Angezeigten Text kopieren", icon="content_copy"
                         ).props("color=teal-8 unelevated").classes("w-full")
+                        # Die Zuordnung ist fachlich der nächste Schritt nach der
+                        # Dokumentanalyse. Sie steht deshalb direkt unter dem
+                        # Ergebnis und nicht zwischen administrativen Funktionen.
+                        ced_navigation = ui.button(
+                            "Erkannte Daten dem Patienten zuordnen", icon="fact_check"
+                        ).props("color=teal-8 unelevated").classes("w-full")
+                        ced_navigation.set_visibility(False)
+                        ced_navigation.disable()
 
                     # Die Arbeitsansicht bleibt rechts neben der Navigation. Der
                     # Einlesebereich bleibt im Hintergrund unverändert erhalten und
@@ -566,6 +582,33 @@ def zeige_hauptseite() -> None:
                             ).classes("ced-tabellenrahmen w-full")
                             labor_pruef_hinweis.set_visibility(False)
                             labor_pruef_tabelle.set_visibility(False)
+                            arztbrief_pruef_hinweis = ui.label("").classes("text-slate-600")
+                            arztbrief_pruef_tabelle = ui.aggrid(
+                                {
+                                    "defaultColDef": {
+                                        "resizable": True,
+                                        "sortable": True,
+                                        "filter": True,
+                                        "wrapText": True,
+                                        "autoHeight": True,
+                                    },
+                                    "columnDefs": [
+                                        {"headerName": "Bereich", "field": "kategorie", "minWidth": 180},
+                                        {"headerName": "Extrahierter Inhalt", "field": "inhalt", "minWidth": 520, "flex": 1},
+                                        {
+                                            "headerName": "Übernehmen",
+                                            "field": "uebernehmen",
+                                            "editable": True,
+                                            "cellEditor": "agCheckboxCellEditor",
+                                            "cellRenderer": "agCheckboxCellRenderer",
+                                            "width": 135,
+                                        },
+                                    ],
+                                    "rowData": [],
+                                }
+                            ).classes("ced-tabellenrahmen w-full")
+                            arztbrief_pruef_hinweis.set_visibility(False)
+                            arztbrief_pruef_tabelle.set_visibility(False)
                             dokument_pruef_speichern = ui.button(
                                 "Dokument bestätigt zuordnen", icon="save"
                             ).props("color=teal-8 unelevated").classes("w-full")
@@ -830,30 +873,36 @@ def zeige_hauptseite() -> None:
                                     "rowData": [],
                                 }
                             ).classes("verlaufs-tabelle w-full")
-                            ui.label("Zugeordnete Dokumente").classes("bereichstitel mt-3")
-                            ui.label(
-                                "Bestätigte Dokumente bleiben hier auch dann sichtbar, "
-                                "wenn noch kein Fachparser einzelne Werte erzeugt hat."
-                            ).classes("text-slate-600")
-                            fachverlauf_dokumente = ui.aggrid(
-                                {
-                                    "defaultColDef": {
-                                        "resizable": True,
-                                        "sortable": True,
-                                        "filter": True,
-                                        "wrapText": True,
-                                        "autoHeight": True,
-                                    },
-                                    "columnDefs": [
-                                        {"headerName": "Datum", "field": "datum", "width": 130},
-                                        {"headerName": "Befundklasse", "field": "fachgruppe", "minWidth": 160},
-                                        {"headerName": "Dokumenttyp", "field": "dokumenttyp", "minWidth": 190},
-                                        {"headerName": "Kurzfassung", "field": "kurzfassung", "minWidth": 360, "flex": 1},
-                                        {"headerName": "Quelldatei", "field": "dateiname", "minWidth": 220},
-                                    ],
-                                    "rowData": [],
-                                }
-                            ).classes("ced-tabellenrahmen w-full")
+                            with ui.expansion(
+                                "Zugeordnete Dokumente",
+                                icon="folder_open",
+                                value=False,
+                            ).props("header-class='text-teal-900 font-bold'").classes(
+                                "w-full border border-slate-200 rounded-lg mt-3"
+                            ):
+                                ui.label(
+                                    "Bestätigte Dokumente bleiben hier auch dann sichtbar, "
+                                    "wenn noch kein Fachparser einzelne Werte erzeugt hat."
+                                ).classes("text-slate-600 px-2")
+                                fachverlauf_dokumente = ui.aggrid(
+                                    {
+                                        "defaultColDef": {
+                                            "resizable": True,
+                                            "sortable": True,
+                                            "filter": True,
+                                            "wrapText": True,
+                                            "autoHeight": True,
+                                        },
+                                        "columnDefs": [
+                                            {"headerName": "Datum", "field": "datum", "width": 130},
+                                            {"headerName": "Befundklasse", "field": "fachgruppe", "minWidth": 160},
+                                            {"headerName": "Dokumenttyp", "field": "dokumenttyp", "minWidth": 190},
+                                            {"headerName": "Kurzfassung", "field": "kurzfassung", "minWidth": 360, "flex": 1},
+                                            {"headerName": "Quelldatei", "field": "dateiname", "minWidth": 220},
+                                        ],
+                                        "rowData": [],
+                                    }
+                                ).classes("ced-tabellenrahmen w-full")
 
     def setze_status(text: str, *, fehler: bool = False) -> None:
         """Zeigt den letzten Arbeitsschritt dauerhaft und ohne sensible Inhalte an.
@@ -872,6 +921,19 @@ def zeige_hauptseite() -> None:
         ced_pruefung_hinweis.classes(remove="ced-fehler")
         if fehler:
             ced_pruefung_hinweis.classes(add="ced-fehler")
+
+    def setze_patientenabgleich_hinweis(text: str, farbe: str) -> None:
+        """Zeigt den lokalen Stammdatenabgleich als eindeutige Ampel an."""
+
+        for klasse in (
+            "ced-fehler",
+            "patientenabgleich-gruen",
+            "patientenabgleich-gelb",
+            "patientenabgleich-rot",
+        ):
+            dokument_patienten_hinweis.classes(remove=klasse)
+        dokument_patienten_hinweis.classes(add=f"patientenabgleich-{farbe}")
+        dokument_patienten_hinweis.text = text
 
     def zeige_einlesebereich() -> None:
         """Schließt medizinische Arbeitsansichten, die Seitenleiste bleibt bestehen."""
@@ -894,7 +956,7 @@ def zeige_hauptseite() -> None:
         )
         if zustand.seiten:
             neuer_name = "UK-API" if zustand.anbieter == "uk" else "OpenAI"
-            lesen_schalter.text = f"Dokument mit {neuer_name} neu bearbeiten"
+            lesen_schalter.text = f"Mit {neuer_name} erneut analysieren"
             setze_status(
                 f"Anbieter auf {neuer_name} gewechselt · Dokument bereit zur erneuten Verarbeitung"
             )
@@ -903,6 +965,7 @@ def zeige_hauptseite() -> None:
         """Entfernt temporäre CED-Werte, wenn Dokument oder Patient wechselt."""
         zustand.ced_befunde.clear()
         zustand.labor_befunde.clear()
+        zustand.arztbrief_abschnitte.clear()
         zustand.gespeichertes_dokument_id = None
         zustand.duplikate_bestaetigt = False
         ced_tabelle.options["rowData"] = []
@@ -916,6 +979,11 @@ def zeige_hauptseite() -> None:
         labor_pruef_tabelle.set_visibility(False)
         labor_pruef_hinweis.text = ""
         labor_pruef_hinweis.set_visibility(False)
+        arztbrief_pruef_tabelle.options["rowData"] = []
+        arztbrief_pruef_tabelle.update()
+        arztbrief_pruef_tabelle.set_visibility(False)
+        arztbrief_pruef_hinweis.text = ""
+        arztbrief_pruef_hinweis.set_visibility(False)
         ced_patientenkopf.text = "Noch kein Patient bestätigt"
         ced_dialog.close()
         dokument_pruefdialog.close()
@@ -1638,7 +1706,7 @@ def zeige_hauptseite() -> None:
                 f"CED-Extraktion nicht gestartet: Dokumenttyp ist {zustand.dokumenttyp}."
             )
         else:
-            ced_pruefung_hinweis.text = "Bitte zunächst das Dokument auslesen."
+            ced_pruefung_hinweis.text = "Bitte zunächst das Dokument analysieren."
 
     def oeffne_ced_pruefung() -> None:
         """Schlägt das Datum vor, extrahiert die Werte und öffnet den Prüfscreen."""
@@ -1921,7 +1989,13 @@ def zeige_hauptseite() -> None:
 
         optionen: dict[int, str] = {}
         for patiententreffer in trefferliste:
-            kennzeichnung = "⚠" if patiententreffer.widerspruch else "Vorschlag"
+            kennzeichnung = (
+                "🔴 Widerspruch"
+                if patiententreffer.widerspruch
+                else "🟢 Sicher"
+                if patiententreffer.status in {"Eindeutiger Treffer", "Wahrscheinlicher Vorschlag"}
+                else "🟡 Unsicher"
+            )
             optionen[patiententreffer.patient_id] = (
                 f"{kennzeichnung}: {patiententreffer.bezeichnung} · {patiententreffer.status}"
             )
@@ -2005,6 +2079,30 @@ def zeige_hauptseite() -> None:
         if zustand.gespeichertes_dokument_id is not None:
             setze_status("Die Daten dieses Dokuments wurden bereits gespeichert.", fehler=True)
             return
+        with get_session() as sitzung:
+            vorhandene_zuordnungen = finde_vorhandene_dokumentzuordnungen(
+                sitzung, zustand.rohe_ki_antwort
+            )
+        if vorhandene_zuordnungen:
+            fremde_patienten = {
+                zuordnung.patient_id
+                for zuordnung in vorhandene_zuordnungen
+                if zuordnung.patient_id != zustand.patient_id
+            }
+            if fremde_patienten:
+                setze_status(
+                    "Zuordnung gesperrt: Derselbe vollständig ausgelesene Dokumentinhalt "
+                    "ist bereits einem anderen Patienten zugeordnet. Bitte Patient und "
+                    "Originaldokument prüfen.",
+                    fehler=True,
+                )
+            else:
+                setze_status(
+                    "Zuordnung gesperrt: Dieses Dokument ist beim aktiven Patienten "
+                    "bereits archiviert.",
+                    fehler=True,
+                )
+            return
         if zustand.dokumenttyp == Dokumenttyp.CED_FRAGEBOGEN.value:
             oeffne_ced_pruefung()
             return
@@ -2024,8 +2122,11 @@ def zeige_hauptseite() -> None:
         dokument_pruef_datum.value = datumsvorschlag.isoformat() if datumsvorschlag else ""
         dokument_pruef_text.value = zustand.strukturierte_darstellung
         ist_laborpfad = zustand.dokumenttyp in LABORDOKUMENTTYPEN
+        ist_arztbrief = zustand.dokumenttyp == Dokumenttyp.ARZTBRIEF.value
         labor_pruef_hinweis.set_visibility(ist_laborpfad)
         labor_pruef_tabelle.set_visibility(ist_laborpfad)
+        arztbrief_pruef_hinweis.set_visibility(ist_arztbrief)
+        arztbrief_pruef_tabelle.set_visibility(ist_arztbrief)
         if ist_laborpfad:
             # Nur die strukturierte Darstellung wird geparst. Ein unbeschrifteter
             # Rohtext wird nicht ersatzweise interpretiert. Bei leerer Tabelle kann
@@ -2097,6 +2198,31 @@ def zeige_hauptseite() -> None:
             zustand.labor_befunde.clear()
             labor_pruef_tabelle.options["rowData"] = []
             labor_pruef_tabelle.update()
+        if ist_arztbrief:
+            zustand.arztbrief_abschnitte = parse_arztbrief(
+                zustand.strukturierte_darstellung
+            )
+            arztbrief_pruef_tabelle.options["rowData"] = [
+                {
+                    "kategorie": abschnitt.kategorie,
+                    "inhalt": abschnitt.inhalt,
+                    "quelle": abschnitt.quelltext,
+                    "uebernehmen": abschnitt.uebernehmen,
+                }
+                for abschnitt in zustand.arztbrief_abschnitte
+            ]
+            arztbrief_pruef_tabelle.update()
+            arztbrief_pruef_hinweis.text = (
+                f"{len(zustand.arztbrief_abschnitte)} gegliederte(r) Abschnitt(e) erkannt. "
+                "Nur ausdrücklich ausgewählte Abschnitte werden strukturiert gespeichert."
+            )
+            dokument_pruef_speichern.text = "Arztbrief und ausgewählte Abschnitte speichern"
+            dokument_pruef_speichern.enable()
+        else:
+            zustand.arztbrief_abschnitte.clear()
+            arztbrief_pruef_tabelle.options["rowData"] = []
+            arztbrief_pruef_tabelle.update()
+        if not ist_laborpfad and not ist_arztbrief:
             dokument_pruef_speichern.text = "Dokument bestätigt zuordnen"
             dokument_pruef_speichern.enable()
         ced_dialog.close()
@@ -2197,6 +2323,19 @@ def zeige_hauptseite() -> None:
                         ),
                     )
                 else:
+                    dokumentbefunde: tuple[FreigegebenerDokumentbefund, ...] = ()
+                    if zustand.dokumenttyp == Dokumenttyp.ARZTBRIEF.value:
+                        briefzeilen = await arztbrief_pruef_tabelle.get_client_data()
+                        dokumentbefunde = tuple(
+                            FreigegebenerDokumentbefund(
+                                kategorie=str(zeile.get("kategorie") or "").strip(),
+                                inhalt=str(zeile.get("inhalt") or "").strip(),
+                                quelltext=str(zeile.get("quelle") or "").strip(),
+                                fachgruppe="Arztbriefe",
+                            )
+                            for zeile in briefzeilen
+                            if zeile.get("uebernehmen")
+                        )
                     dokument_id = speichere_allgemeines_dokument(
                         sitzung,
                         DokumentSpeicherauftrag(
@@ -2208,11 +2347,12 @@ def zeige_hauptseite() -> None:
                             kis_vorschlag=zustand.kis_vorschlag,
                             provider=provider_name,
                             modell=modell,
+                            befunde=dokumentbefunde,
                         ),
                     )
         except TimeoutError:
             setze_status(
-                "Laborwerte konnten nicht aus der Prüftabelle gelesen werden. "
+                "Geprüfte Inhalte konnten nicht aus der Tabelle gelesen werden. "
                 "Bitte die letzte Zelle verlassen und erneut speichern.",
                 fehler=True,
             )
@@ -2231,6 +2371,9 @@ def zeige_hauptseite() -> None:
             )
             oeffne_fachverlauf(fachschluessel)
             setze_status("Geprüfte Laborwerte gespeichert · Fachansicht geöffnet")
+        elif zustand.dokumenttyp == Dokumenttyp.ARZTBRIEF.value:
+            oeffne_fachverlauf("weitere")
+            setze_status("Arztbrief und bestätigte Abschnitte gespeichert · Weitere Befunde geöffnet")
         else:
             setze_status("Dokument wurde dem bestätigten Patienten zugeordnet")
 
@@ -2255,30 +2398,23 @@ def zeige_hauptseite() -> None:
             if patient is None:
                 setze_status("Der ausgewählte Patient ist nicht mehr vorhanden.", fehler=True)
                 return
-            treffer = ermittle_patiententreffer(
-                zustand.erkannte_patientendaten, [patient]
-            )
         zustand.patient_id = ausgewaehlte_id
         setze_patientenkopf(patient, synchronisiere_auswahl=False)
-        erkannt = zustand.erkannte_patientendaten
-        widerspruch = bool(
-            erkannt.ausreichend_fuer_vorschlag
-            and (not treffer or treffer[0].widerspruch)
+        abgleich = pruefe_aktiven_patienten(zustand.erkannte_patientendaten, patient)
+        zustand.patientenabgleich_erlaubt = abgleich.zuordnung_erlaubt
+        setze_patientenabgleich_hinweis(
+            f"{abgleich.status}: " + " · ".join(abgleich.gruende),
+            abgleich.farbe,
         )
-        zustand.patientenabgleich_erlaubt = not widerspruch
-        if widerspruch:
-            dokument_patienten_hinweis.text = (
-                "WARNUNG: Der aktive Patient passt nicht zu den Stammdaten des Dokuments."
-            )
-            dokument_patienten_hinweis.classes(add="ced-fehler")
+        if abgleich.zuordnung_erlaubt:
             setze_status(
-                "Patient aktiv · Dokumentzuordnung wegen Abweichung gesperrt",
-                fehler=True,
+                "Patient ausgewählt · Stammdatenabgleich vor Zuordnung beachten"
             )
         else:
-            dokument_patienten_hinweis.classes(remove="ced-fehler")
-            dokument_patienten_hinweis.text = f"Aktiver Patient: {patient.display_name}"
-            setze_status("Patient ausgewählt und aktiviert")
+            setze_status(
+                "Zuordnung gesperrt: " + " · ".join(abgleich.gruende),
+                fehler=True,
+            )
         aktualisiere_ced_bereitschaft()
 
     def wechsle_neuer_patient_formular() -> None:
@@ -2465,7 +2601,7 @@ def zeige_hauptseite() -> None:
         dokumenttyp_ausgabe.value = ""
         ergebnis_ausgabe.value = ""
         ergebnis_auswahl.value = "rohtext"
-        lesen_schalter.text = "Dokument auslesen"
+        lesen_schalter.text = "Dokument analysieren"
         upload.reset()
         aktualisiere_vorschauen()
         if zustand.arbeitsmodus == DATENBANKMODUS:
@@ -2497,7 +2633,7 @@ def zeige_hauptseite() -> None:
         dokumenttyp_ausgabe.value = ""
         ergebnis_ausgabe.value = ""
         ergebnis_auswahl.value = "rohtext"
-        lesen_schalter.text = "Dokument auslesen"
+        lesen_schalter.text = "Dokument analysieren"
         setze_status("Dokument wird importiert und für die Vorschau vorbereitet …")
         try:
             wurzel = Path(zustand.temporaerer_ordner.name)
@@ -2575,7 +2711,7 @@ def zeige_hauptseite() -> None:
                 # abschließend gesetzt. So kann kein vorangegangener Reset während
                 # Upload oder Analyse den nun gültigen Zustand überschreiben.
                 aktualisiere_ced_bereitschaft()
-            lesen_schalter.text = f"Dokument mit {anbieter_name} neu bearbeiten"
+            lesen_schalter.text = f"Mit {anbieter_name} erneut analysieren"
             setze_status(f"{anbieter_name}: Verarbeitung abgeschlossen · Ergebnis ungeprüft")
         except (ConfigurationError, AIProviderError, DokumentAntwortFehler, OSError, ValueError) as fehler:
             # Debugging: Endpunkt, Modell und Secret-Verfügbarkeit prüfen. Es gibt
@@ -2622,10 +2758,7 @@ def zeige_hauptseite() -> None:
             lambda _, schluessel=fachschluessel: oeffne_fachverlauf(schluessel)
         )
     upload.on_upload(uebernehme_datei)
-    neu_schalter.on_click(beginne_neues_dokument)
-    alles_loeschen_schalter.on_click(
-        lambda: setze_leeren_zustand("Alle Dokumente und Ergebnisse wurden gelöscht")
-    )
+    dokument_verwerfen_schalter.on_click(beginne_neues_dokument)
     lesen_schalter.on_click(lese_dokument)
     ergebnis_auswahl.on_value_change(lambda _: aktualisiere_ergebnisanzeige())
     kopieren_schalter.on_click(kopiere_ergebnis)

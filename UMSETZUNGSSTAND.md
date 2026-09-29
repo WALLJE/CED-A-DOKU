@@ -77,9 +77,11 @@ nicht oder nur als Datenmodell vorbereitet:
 
 - Allgemeine Dokumente einschließlich Laborbefunden können inzwischen nach Prüfung
   von Patient, Dokumenttyp und Datum archiviert und in den passenden Fachansichten
-  mit ihrer Kurzfassung wieder angezeigt werden. Fachparser für Labor, Virologie,
-  Mikrobiologie, Calprotectin, Endoskopie, Sonografie sowie MRT/CT fehlen weiterhin;
-  daher entstehen aus diesen Dokumenten noch keine geprüften Einzelwerte.
+  mit ihrer Kurzfassung wieder angezeigt werden. Labor, Virologie, Mikrobiologie und
+  Calprotectin besitzen bereits einen Parser- und Prüfpfad. Fachparser für
+  Endoskopie, Sonografie sowie MRT/CT fehlen weiterhin. Arztbriefe werden
+  anhand expliziter Überschriften abschnittsweise geprüft und unter Weitere Befunde
+  gespeichert; eine automatische Übernahme in Diagnosen oder Therapien erfolgt nicht.
 - Dokumentvergleich für Arztbriefe, Medikamentenpläne und Befunde.
 - Dokumentgestützte, kumulative Diagnose- und Medikationsübernahme. Die aktuelle
   manuelle Pflege ist versioniert, ersetzt aber diesen Importworkflow nicht.
@@ -101,9 +103,10 @@ nicht oder nur als Datenmodell vorbereitet:
 Allgemeine bestätigte Dokumente sind jetzt in den Fachansichten sichtbar, auch wenn
 noch kein Fachparser einzelne Werte erzeugt hat. Ein Labor- beziehungsweise
 Virologiebefund wird unter Labor mit Datum, Dokumenttyp, Kurzfassung und Quelldatei
-angezeigt. Weitere Dokumente werden kontrolliert gruppiert gesammelt. Offen bleibt
-die strukturierte Extraktion und manuelle Einzelwertprüfung für Labor, Virologie,
-Mikrobiologie, Bildgebung, Endoskopie und weitere Dokumentklassen.
+angezeigt. Weitere Dokumente werden kontrolliert gruppiert gesammelt. Labor,
+Virologie, Mikrobiologie und Calprotectin besitzen zusätzlich eine strukturierte
+Extraktion und manuelle Einzelwertprüfung. Offen bleiben entsprechende Fachparser
+für Bildgebung, Endoskopie und weitere Dokumentklassen.
 
 ### Priorität 1 – ersten CED-Workflow fachlich abschließen
 
@@ -146,7 +149,7 @@ dürfen bestätigte Messwerte nie verändern.
 
 ## Prüfstand
 
-Die fachlichen Tests laufen mit `PYTHONPATH=.` vollständig durch (92 Tests). Der
+Die fachlichen Tests laufen mit `PYTHONPATH=.` vollständig durch (101 Tests). Der
 Aufruf `pytest -q` ohne gesetzten Projektpfad kann in der aktuellen Umgebung das
 lokale Paket nicht importieren. Außerdem meldet SQLAlchemy derzeit Warnungen wegen
 der Verwendung von `datetime.utcnow`; die Umstellung auf zeitzonenbewusste

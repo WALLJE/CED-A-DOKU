@@ -2,9 +2,11 @@
 
 from ced_document_ai.services.ced.patient_matching import (
     ErkanntePatientendaten,
+    Patientenabgleich,
     Patiententreffer,
     erkenne_patientendaten,
     ermittle_patiententreffer,
+    pruefe_aktiven_patienten,
 )
 from ced_document_ai.services.ced.questionnaire_parser import (
     STANDARDKATEGORIEN,
@@ -21,7 +23,14 @@ from ced_document_ai.services.ced.storage import (
 from ced_document_ai.services.ced.validation import pruefe_technische_plausibilitaet
 from ced_document_ai.services.ced.document_storage import (
     DokumentSpeicherauftrag,
+    FreigegebenerDokumentbefund,
+    VorhandeneDokumentzuordnung,
+    finde_vorhandene_dokumentzuordnungen,
     speichere_allgemeines_dokument,
+)
+from ced_document_ai.services.ced.letter_parser import (
+    ExtrahierterArztbriefabschnitt,
+    parse_arztbrief,
 )
 from ced_document_ai.services.ced.document_categories import (
     DOKUMENTKLASSEN,
@@ -78,9 +87,11 @@ from ced_document_ai.services.ced.patient_profile import (
 
 __all__ = [
     "ErkanntePatientendaten",
+    "Patientenabgleich",
     "Patiententreffer",
     "erkenne_patientendaten",
     "ermittle_patiententreffer",
+    "pruefe_aktiven_patienten",
     "STANDARDKATEGORIEN",
     "ExtrahierterBefund",
     "erkenne_befunddatum",
@@ -91,7 +102,12 @@ __all__ = [
     "speichere_ced_pruefung",
     "pruefe_technische_plausibilitaet",
     "DokumentSpeicherauftrag",
+    "FreigegebenerDokumentbefund",
+    "VorhandeneDokumentzuordnung",
+    "finde_vorhandene_dokumentzuordnungen",
     "speichere_allgemeines_dokument",
+    "ExtrahierterArztbriefabschnitt",
+    "parse_arztbrief",
     "DOKUMENTKLASSEN",
     "Dokumentklasse",
     "ermittle_dokumentfachgruppe",

@@ -85,8 +85,9 @@ werden. Alle übernommenen Dokumentteile erscheinen sofort als Vorschauen in bis
 Spalten. Mit den Pfeilen lässt sich die Reihenfolge vor der Analyse manuell ändern;
 der Papierkorb entfernt ein einzelnes Teil. Die zusätzliche Standardvorschau im
 Upload-Feld wird ausgeblendet, weil das Bild bereits im sortierbaren Raster sichtbar
-ist. „Alles löschen / neu beginnen“ setzt
-Dokument und KI-Ergebnis vollständig zurück.
+ist. Der eindeutige Schalter **„Dokument verwerfen / neue Eingabe“** setzt Dokument,
+Vorschauen und KI-Ergebnis gemeinsam zurück; einen zweiten gleichbedeutenden
+Neustart-Schalter gibt es nicht mehr.
 
 Bei mehreren Bildern oder Dateien wird jedes Dokumentteil zuerst einzeln und
 vollständig transkribiert. Anschließend prüft die KI anhand sichtbarer
@@ -126,11 +127,19 @@ Patientenverzeichnis. Das Verzeichnis wird nicht an den KI-Anbieter übertragen.
 
 Ein gefundener Patient ist immer nur ein Vorschlag. Die Auswahl im geschützten
 Dropdown aktiviert den Patienten unmittelbar für Patientenübersicht und Verläufe.
-Davon getrennt prüft „Daten zuordnen“, ob das aktuell eingelesene Dokument neue,
-speicherbare Daten für diesen Patienten enthält. Der Schalter ist nur dann aktiv.
+Davon getrennt prüft **„Erkannte Daten dem Patienten zuordnen“** direkt unter dem
+KI-Ergebnis, ob das aktuell analysierte Dokument neue, speicherbare Daten für diesen
+Patienten enthält. Der Schalter ist nur dann aktiv.
 Erkannte Patienten-ID, getrennt beschrifteter Vor- und Nachname sowie Geburtsdatum
 werden gegen den ausgewählten Datensatz geprüft. Bei einem Widerspruch bleibt der
 Patient für bestehende Ansichten aktiv, die Dokumentzuordnung wird jedoch gesperrt.
+Der lokale Abgleich wird als Ampel erklärt: Grün bedeutet Patienten-ID oder die
+Kombination aus Name und Geburtsdatum stimmen überein; Gelb kennzeichnet einen
+passenden, aber einzelnen schwachen Treffer; Rot bedeutet entweder eine konkret
+benannte Abweichung oder vollständig fehlende Dokumentstammdaten. Fehlende Daten sind
+kein behaupteter Widerspruch und dürfen nach bewusster Patientenauswahl zugeordnet
+werden. Ein explizit abweichender Name, eine abweichende ID oder ein abweichendes
+Geburtsdatum sperrt die Zuordnung weiterhin.
 Ohne aktive Patientenauswahl bleiben Patientenübersicht, klinischer Verlauf, Labor,
 Calprotectin, Endoskopie, Sonografie und MRT/CT einheitlich deaktiviert.
 
@@ -162,9 +171,10 @@ allgemeine Dokument- und Textextraktion wird dadurch nicht verändert. Erkannter
 Wert, Einheit, Qualitätsstatus und unveränderte Quellzeile werden nebeneinander
 angezeigt und können vor einer späteren Speicherung geprüft werden.
 
-Die CED-Prüfung wird nach der Patientenauswahl über „Daten zuordnen“ in der linken
-geschützten Steuerung geöffnet. Die Arbeitsansicht belegt nur den Bereich rechts neben
-der weiterhin bedienbaren Seitenleiste. „Dokument einlesen“ sowie die übrigen
+Die CED-Prüfung wird nach der Patientenauswahl über **„Erkannte Daten dem Patienten
+zuordnen“** unmittelbar unter dem KI-Ergebnis geöffnet. Die Arbeitsansicht belegt nur
+den Bereich rechts neben der weiterhin bedienbaren Seitenleiste. „Zur
+Dokumentansicht“ sowie die übrigen
 Patientenansichten können direkt in derselben Navigation geöffnet werden; gesonderte
 Zurück-Schalter sind nicht erforderlich. Die CED-Felder werden unmittelbar extrahiert
 und in der Tabelle angezeigt. Im Kopf stehen der gespeicherte Name und das
@@ -324,9 +334,10 @@ Laborparameter werden ohne eigenen Fachparser nicht als strukturierte Befunde
 geraten oder gespeichert.
 
 Sobald Patient, erkannter Dokumenttyp und ausgelesener Inhalt vorliegen und kein
-Stammdatenwiderspruch besteht, wird „Daten zuordnen“ auch für Laborbefunde und andere
-Nicht-CED-Dokumente aktiv. Die Aktivierung hängt nicht von der CED-spezifischen
-Prüftabelle ab. Nach bereits erfolgter Speicherung bleibt der Schalter gesperrt.
+Stammdatenwiderspruch besteht, wird **„Erkannte Daten dem Patienten zuordnen“** auch
+für Laborbefunde und andere Nicht-CED-Dokumente aktiv. Der Schalter steht direkt
+unter dem KI-Ergebnis; seine Aktivierung hängt nicht von der CED-spezifischen
+Prüftabelle ab. Nach bereits erfolgter Speicherung bleibt er gesperrt.
 
 ### Dokumentarchiv und Befundklassen
 
@@ -347,6 +358,26 @@ automatisch in „Andere Befunde“ umbenannt. Neue Einzelwerte oder medizinisch
 Kategorien werden weiterhin erst nach einem dokumenttypspezifischen Parser und einer
 manuellen Prüfung als `Finding` gespeichert; die reine Archivierung erfindet keine
 Werte.
+
+Die Tabelle **„Zugeordnete Dokumente“** ist standardmäßig eingeklappt. Dadurch bleibt
+der strukturierte Fachverlauf im Vordergrund; Dokumentdatum, Klasse, Kurzfassung und
+Quelldatei können bei Bedarf aufgeklappt werden.
+
+Vor jeder Zuordnung wird zusätzlich geprüft, ob dieselbe vollständige KI-Rohantwort
+bereits archiviert wurde. Ein identisches Dokument beim aktiven Patienten wird als
+Duplikat gesperrt. Ist der identische Inhalt bereits einem anderen Patienten
+zugeordnet, nennt die Fehlermeldung ausdrücklich diesen Fremdpatienten-Konflikt,
+anstatt pauschal einen Stammdatenfehler zu behaupten.
+
+### Arztbriefe prüfen
+
+Arztbriefe werden deterministisch anhand vorhandener Überschriften in Diagnosen,
+Operationen, Anamnese, Therapie/Medikation, Endoskopie, Bildgebung, weitere
+Diagnostik, Sozialanamnese, Familienanamnese und Empfehlungen gegliedert. Es werden
+nur tatsächlich vorhandene Abschnitte angezeigt; unstrukturierter Freitext wird
+nicht als Diagnose oder Therapie geraten. Vor der Speicherung besitzt jeder Abschnitt
+einen eigenen Übernahmeschalter. Bestätigte Abschnitte werden zusammen mit Dokument,
+Rohantwort und Kurzfassung atomar unter **Weitere Befunde** gespeichert.
 
 ### Labor, Virologie und Mikrobiologie prüfen
 

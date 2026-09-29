@@ -4,8 +4,10 @@ from dataclasses import dataclass
 from datetime import date
 
 from ced_document_ai.services.ced.patient_matching import (
+    ErkanntePatientendaten,
     erkenne_patientendaten,
     ermittle_patiententreffer,
+    pruefe_aktiven_patienten,
 )
 
 
@@ -87,3 +89,37 @@ def test_getrennt_beschriftete_namen_werden_ohne_raten_uebernommen() -> None:
     assert erkannt.vorname == "Max"
     assert erkannt.name == "Max Beispiel"
     assert erkannt.ausreichend_fuer_vorschlag
+
+
+def test_aktiver_patient_ohne_dokumentstammdaten_ist_manuell_pruefbar() -> None:
+    patient = BeispielPatient(1, "TEST-001", "Erika Beispiel", date(1980, 3, 12))
+
+    abgleich = pruefe_aktiven_patienten(ErkanntePatientendaten(), patient)
+
+    assert abgleich.farbe == "rot"
+    assert abgleich.zuordnung_erlaubt
+    assert abgleich.status == "Keine Patientendaten erkannt"
+
+
+def test_aktiver_patient_mit_name_allein_ist_unsicher_gelb() -> None:
+    patient = BeispielPatient(1, "TEST-001", "Erika Beispiel", date(1980, 3, 12))
+
+    abgleich = pruefe_aktiven_patienten(
+        ErkanntePatientendaten(name="Erika Beispiel"), patient
+    )
+
+    assert abgleich.farbe == "gelb"
+    assert abgleich.zuordnung_erlaubt
+    assert "Name stimmt überein" in abgleich.gruende
+
+
+def test_abweichender_name_sperrt_mit_konkretem_grund() -> None:
+    patient = BeispielPatient(1, "TEST-001", "Erika Beispiel", date(1980, 3, 12))
+
+    abgleich = pruefe_aktiven_patienten(
+        ErkanntePatientendaten(name="Andere Person"), patient
+    )
+
+    assert abgleich.farbe == "rot"
+    assert not abgleich.zuordnung_erlaubt
+    assert "Name weicht vom aktiven Patienten ab" in abgleich.gruende

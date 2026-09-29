@@ -58,6 +58,10 @@ Dokumenttypspezifische strukturierte Darstellung:
   Diagnostik, Verlauf, Therapie, Medikation und Empfehlungen/weiteres Vorgehen.
   Diagnosen stehen in einem eigenen klar gegliederten Bereich, nie versteckt im
   Fließtext. Haupt- und Nebendiagnosen nur unterscheiden, wenn das Original dies tut.
+  Vorhandene Inhalte unter eindeutigen Überschriften wie Diagnosen, Operationen,
+  Anamnese, Therapie/Medikation, Endoskopie, Bildgebung, Weitere Diagnostik,
+  Sozialanamnese, Familienanamnese und Empfehlungen ausgeben. Fehlende Bereiche
+  vollständig weglassen und Aussagen nicht zwischen Bereichen umdeuten.
 - Laborbefund: nach Möglichkeit Tabelle „Parameter | Ergebnis | Einheit |
   Referenzbereich“. Fehlende Zellen bleiben leer. Nur im Original vorhandene
   Referenzbereiche und Kennzeichnungen übernehmen. Kommentare, Materialangaben,
