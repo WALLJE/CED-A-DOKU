@@ -87,7 +87,10 @@ der Papierkorb entfernt ein einzelnes Teil. Die zusätzliche Standardvorschau im
 Upload-Feld wird ausgeblendet, weil das Bild bereits im sortierbaren Raster sichtbar
 ist. Der eindeutige Schalter **„Dokument verwerfen / neue Eingabe“** setzt Dokument,
 Vorschauen und KI-Ergebnis gemeinsam zurück; einen zweiten gleichbedeutenden
-Neustart-Schalter gibt es nicht mehr.
+Neustart-Schalter gibt es nicht mehr. **„Dokument analysieren“** steht links daneben
+direkt unter dem Originaldokument und wird nach einer abgeschlossenen Verarbeitung
+zu **„Neu analysieren mit …“**. Der erkannte Dokumenttyp bleibt unverändert rechts
+im Bereich „Dokumenterkennung“ sichtbar.
 
 Bei mehreren Bildern oder Dateien wird jedes Dokumentteil zuerst einzeln und
 vollständig transkribiert. Anschließend prüft die KI anhand sichtbarer
@@ -445,8 +448,9 @@ geprüft. Der geschützte CED-Grundpfad ist weitgehend vorhanden. Fehlende
 Standardfelder werden inzwischen als nicht ausgewählte `MISSING`-Zeilen sichtbar
 gemacht. Vorhandene numerische Werte und Einheiten werden zusätzlich durch einen
 getrennten regelbasierten Dienst geprüft, der ausschließlich Hinweise ergänzt und
-keine Werte korrigiert. Als nächstes folgen die gefilterte Längstabelle und danach
-die getrennten KIS-Varianten.
+keine Werte korrigiert. Die bestätigten Befunde besitzen inzwischen zusätzlich eine
+Längstabelle mit Datums-, Kategorie- und Dokumenttypfiltern. Als nächster fachlicher
+Schritt folgen die getrennten KIS-Varianten.
 
 Der vollständige Soll-Ist-Abgleich, die noch offenen Punkte der bisherigen drei
 Iterationen und die neu priorisierte Roadmap stehen in

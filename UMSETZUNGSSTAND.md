@@ -31,7 +31,7 @@ oder weitere Dokumentarten hinzukommen.
 | 3. CED-Reintextparser | weitgehend umgesetzt | Fester Katalog, Synonyme, Quellzeile, Zahlen/Einheiten, `UNREADABLE`, `UNCERTAIN`, `CONFLICT`, sichtbare `MISSING`-Zeilen, technische Wertebereichs- und Einheitenprüfung sowie neue Kategorien als ungeprüfte Vorschläge | Fachlich freizugebende Erweiterungen der bewusst kleinen Regelliste |
 | 4. Temporäre Prüftabelle | teilweise umgesetzt | Editierbare Werte/Kategorien/Einheiten, Quelle, Qualitätsstatus, problematische Werte zuerst, Übernahme-Checkbox, neue und widersprüchliche Kategorien zunächst abgewählt | Bekannte sichere Felder sind standardmäßig zur Übernahme markiert statt einzeln bestätigt; „Auf KI-Wert zurücksetzen“ fehlt; Original und Extraktion stehen nicht nebeneinander; die Qualität ist nicht eigenständig editierbar |
 | 5. Atomare Speicherung | umgesetzt | Pflichtdatum, bewusste Patientenzuordnung, Dokument, Rohantwort, KIS-Text und Befunde in einer Transaktion, Audit-Metadaten, Duplikatwarnung | Revisionshistorie für nachträgliche Befundkorrekturen und optionaler Originaldatei-/Seitenbezug fehlen; Migrationen sind noch nicht allgemein gelöst |
-| 6. Patientenverlauf | teilweise umgesetzt | Dynamische CED-Pivot-Tabelle und getrennte Fach-Pivots, ausschließlich bestätigte Befunde, chronologische Werte | Die geplante Längstabelle sowie Datums-, Kategorie-, Dokumenttyp- und Bestätigungsfilter fehlen |
+| 6. Patientenverlauf | weitgehend umgesetzt | Dynamische CED- und Fach-Pivots sowie filterbare Längstabelle mit Datum, Kategorie und Dokumenttyp; ausschließlich bestätigte Befunde | Fachlich abgestimmte Standardfilter und Export fehlen |
 | 7. Kompakte Übersicht | teilweise umgesetzt | Stammdaten, Alter, Diagnosen, CED-Stammdaten, Therapieverlauf und Werte des letzten bestätigten CED-Befunds | Letzte KIS-Zusammenfassung, letzter Wert plus Veränderung für CRP/Hb/Calprotectin, aktuelle Auffälligkeiten und Wiedervorlagen fehlen |
 
 ## Stand der damaligen Iterationen
@@ -41,10 +41,9 @@ oder weitere Dokumentarten hinzukommen.
 Der funktionale Weg bis zur gespeicherten patientenbezogenen Ansicht ist vorhanden.
 Für den fachlich formulierten Abschluss fehlen vor allem:
 
-1. eine echte Längstabelle mit den vorgesehenen Filtern,
-2. eine ausdrückliche Einzelbestätigung auch der zunächst sicheren Zeilen,
-3. „Auf KI-Wert zurücksetzen“ in der Prüftabelle,
-4. automatisierte Tests der Zugriffsschranke und des Sperrens der Oberfläche.
+1. eine ausdrückliche Einzelbestätigung auch der zunächst sicheren Zeilen,
+2. „Auf KI-Wert zurücksetzen“ in der Prüftabelle,
+3. automatisierte Tests der Zugriffsschranke und des Sperrens der Oberfläche.
 
 ### Iteration 2 – klinische Bedienung: teilweise abgeschlossen
 
@@ -110,9 +109,8 @@ für Bildgebung, Endoskopie und weitere Dokumentklassen.
 
 ### Priorität 1 – ersten CED-Workflow fachlich abschließen
 
-1. Längstabelle samt Datums-, Kategorie- und Dokumenttypfiltern ergänzen.
-2. KIS kompakt/ausführlich getrennt anzeigen, bearbeiten und speichern.
-3. Die noch fehlenden Unit-, Transaktions- und Zugriffstests ergänzen und mit
+1. KIS kompakt/ausführlich getrennt anzeigen, bearbeiten und speichern.
+2. Die noch fehlenden Unit-, Transaktions- und Zugriffstests ergänzen und mit
    anonymisierten realistischen Fragebogenfällen fachlich abnehmen.
 
 ### Unmittelbar nächstes Arbeitspaket
@@ -123,8 +121,10 @@ Katalog und bereits bestätigten dynamischen Kategorien abgeglichen. Neue Parame
 Einheitenabweichungen, unleserliche Werte und Konflikte sind nicht vorausgewählt;
 erst die manuelle Auswahl führt zur atomaren Speicherung. Mehrspaltige
 Laborhistorien werden anhand ihrer ausdrücklich beschrifteten Abnahme- oder
-Messdatumszeile in einzelne datierte Befunde aufgelöst. Als Nächstes folgt die
-patientenbezogene Längstabelle mit Datums-, Kategorie- und Dokumenttypfiltern.
+  Messdatumszeile in einzelne datierte Befunde aufgelöst. Die patientenbezogene
+  Längstabelle mit Datums-, Kategorie- und Dokumenttypfiltern ist ebenfalls umgesetzt.
+  Als Nächstes folgen die getrennt bearbeitbaren kompakten und ausführlichen
+  KIS-Zusammenfassungen.
 
 ### Priorität 2 – longitudinaler klinischer Nutzen
 
@@ -149,7 +149,7 @@ dürfen bestätigte Messwerte nie verändern.
 
 ## Prüfstand
 
-Die fachlichen Tests laufen mit `PYTHONPATH=.` vollständig durch (101 Tests). Der
+Die fachlichen Tests laufen mit `PYTHONPATH=.` vollständig durch (102 Tests). Der
 Aufruf `pytest -q` ohne gesetzten Projektpfad kann in der aktuellen Umgebung das
 lokale Paket nicht importieren. Außerdem meldet SQLAlchemy derzeit Warnungen wegen
 der Verwendung von `datetime.utcnow`; die Umstellung auf zeitzonenbewusste

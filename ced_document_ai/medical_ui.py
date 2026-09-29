@@ -38,6 +38,7 @@ from ced_document_ai.services.ced.patient_matching import (
     pruefe_aktiven_patienten,
 )
 from ced_document_ai.services.ced.patient_overview import (
+    lade_befundliste,
     lade_dokumentenarchiv,
     lade_fachverlauf,
     lade_klinischen_verlauf,
@@ -403,9 +404,17 @@ def zeige_hauptseite() -> None:
                         ui.label(
                             "Auch Einfügen aus der Zwischenablage ist mit Strg+V / Cmd+V möglich."
                         ).classes("upload-hinweis")
-                    dokument_verwerfen_schalter = ui.button(
-                        "Dokument verwerfen / neue Eingabe", icon="delete_sweep"
-                    ).props("outline color=negative").classes("w-full")
+                    # Analyse und Verwerfen beziehen sich beide auf das links
+                    # sichtbare Original. Die Aktionen stehen deshalb gemeinsam
+                    # direkt darunter; der erkannte Dokumenttyp bleibt rechts in
+                    # seiner bisherigen Ergebnisposition.
+                    with ui.row().classes("w-full gap-2 flex-wrap sm:flex-nowrap"):
+                        lesen_schalter = ui.button(
+                            "Dokument analysieren", icon="document_scanner"
+                        ).props("color=teal-8 unelevated").classes("flex-1")
+                        dokument_verwerfen_schalter = ui.button(
+                            "Dokument verwerfen / neue Eingabe", icon="delete_sweep"
+                        ).props("outline color=negative").classes("flex-1")
                 with ui.column().classes("ergebnisspalte flex-1 lg:w-1/2 gap-5"):
                     with ui.card().classes("arbeitskarte w-full p-5"):
                         with ui.row().classes("items-center gap-2"):
@@ -414,10 +423,6 @@ def zeige_hauptseite() -> None:
                         dokumenttyp_ausgabe = ui.input(
                             "Erkannter Dokumenttyp", value=""
                         ).props("outlined readonly").classes("w-full")
-                        lesen_schalter = ui.button(
-                            "Dokument analysieren", icon="document_scanner"
-                        ).props("color=teal-8 unelevated").classes("w-full")
-
                     with ui.card().classes("arbeitskarte w-full p-5"):
                         ui.label("KI-Ergebnis").classes("bereichstitel")
                         ergebnis_auswahl = ui.select(
@@ -842,6 +847,62 @@ def zeige_hauptseite() -> None:
                                     "rowData": [],
                                 }
                             ).classes("verlaufs-tabelle w-full")
+                            with ui.expansion(
+                                "Filterbare Befundliste",
+                                icon="view_list",
+                                value=False,
+                            ).props("header-class='text-teal-900 font-bold'").classes(
+                                "w-full border border-slate-200 rounded-lg mt-3"
+                            ):
+                                ui.label(
+                                    "Die Liste enthält ausschließlich bestätigte Befunde. "
+                                    "Leere Filter zeigen alle verfügbaren Einträge."
+                                ).classes("text-slate-600 px-2")
+                                with ui.row().classes("w-full gap-3 items-end flex-wrap"):
+                                    verlauf_filter_von = ui.input("Datum von").props(
+                                        "type=date outlined dense clearable"
+                                    ).classes("min-w-44")
+                                    verlauf_filter_bis = ui.input("Datum bis").props(
+                                        "type=date outlined dense clearable"
+                                    ).classes("min-w-44")
+                                    verlauf_filter_kategorien = ui.select(
+                                        options=[],
+                                        label="Kategorien",
+                                        multiple=True,
+                                    ).props("outlined dense use-chips clearable").classes(
+                                        "min-w-64 flex-1"
+                                    )
+                                    verlauf_filter_dokumenttypen = ui.select(
+                                        options=[],
+                                        label="Dokumenttypen",
+                                        multiple=True,
+                                    ).props("outlined dense use-chips clearable").classes(
+                                        "min-w-64 flex-1"
+                                    )
+                                    verlauf_filter_anwenden = ui.button(
+                                        "Filter anwenden", icon="filter_alt"
+                                    ).props("color=teal-8 unelevated")
+                                verlauf_liste_hinweis = ui.label("").classes("text-slate-600")
+                                verlauf_liste = ui.aggrid(
+                                    {
+                                        "defaultColDef": {
+                                            "resizable": True,
+                                            "sortable": True,
+                                            "filter": True,
+                                        },
+                                        "columnDefs": [
+                                            {"headerName": "Datum", "field": "datum", "width": 125},
+                                            {"headerName": "Fachgruppe", "field": "fachgruppe", "minWidth": 150},
+                                            {"headerName": "Kategorie", "field": "kategorie", "minWidth": 190},
+                                            {"headerName": "Wert", "field": "wert", "minWidth": 220, "flex": 1},
+                                            {"headerName": "Einheit", "field": "einheit", "width": 120},
+                                            {"headerName": "Qualität", "field": "qualitaet", "minWidth": 150},
+                                            {"headerName": "Dokumenttyp", "field": "dokumenttyp", "minWidth": 180},
+                                            {"headerName": "Quelldatei", "field": "dateiname", "minWidth": 210},
+                                        ],
+                                        "rowData": [],
+                                    }
+                                ).classes("ced-tabellenrahmen w-full")
 
                     # Alle weiteren Fachbereiche verwenden dasselbe dynamische
                     # Tabellenlayout. Lediglich die ausdrücklich erlaubten
@@ -956,7 +1017,7 @@ def zeige_hauptseite() -> None:
         )
         if zustand.seiten:
             neuer_name = "UK-API" if zustand.anbieter == "uk" else "OpenAI"
-            lesen_schalter.text = f"Mit {neuer_name} erneut analysieren"
+            lesen_schalter.text = f"Neu analysieren mit {neuer_name}"
             setze_status(
                 f"Anbieter auf {neuer_name} gewechselt · Dokument bereit zur erneuten Verarbeitung"
             )
@@ -1399,6 +1460,71 @@ def zeige_hauptseite() -> None:
             aktiver_patient_auswahl.value = patient.id
             aktiver_patient_auswahl.update()
 
+    def aktualisiere_verlaufsliste(*, optionen_neu_laden: bool = False) -> None:
+        """Lädt die Längsansicht mit den ausdrücklich gewählten Filtern neu."""
+
+        if zustand.patient_id is None:
+            return
+        try:
+            datum_von = (
+                date.fromisoformat(str(verlauf_filter_von.value))
+                if verlauf_filter_von.value
+                else None
+            )
+            datum_bis = (
+                date.fromisoformat(str(verlauf_filter_bis.value))
+                if verlauf_filter_bis.value
+                else None
+            )
+        except ValueError:
+            setze_status("Datumsfilter bitte im Format JJJJ-MM-TT eingeben.", fehler=True)
+            return
+        if datum_von and datum_bis and datum_von > datum_bis:
+            setze_status("Der Beginn des Datumsfilters liegt nach seinem Ende.", fehler=True)
+            return
+        try:
+            with get_session() as sitzung:
+                if optionen_neu_laden:
+                    alle_zeilen = lade_befundliste(sitzung, zustand.patient_id)
+                    verlauf_filter_kategorien.options = sorted(
+                        {zeile.kategorie for zeile in alle_zeilen}
+                    )
+                    verlauf_filter_dokumenttypen.options = sorted(
+                        {
+                            zeile.dokumenttyp
+                            for zeile in alle_zeilen
+                            if zeile.dokumenttyp
+                        }
+                    )
+                    verlauf_filter_kategorien.update()
+                    verlauf_filter_dokumenttypen.update()
+                zeilen = lade_befundliste(
+                    sitzung,
+                    zustand.patient_id,
+                    datum_von=datum_von,
+                    datum_bis=datum_bis,
+                    kategorien=tuple(verlauf_filter_kategorien.value or ()),
+                    dokumenttypen=tuple(verlauf_filter_dokumenttypen.value or ()),
+                )
+        except (SQLAlchemyError, ValueError) as fehler:
+            setze_status(f"Befundliste konnte nicht geladen werden: {fehler}", fehler=True)
+            return
+        verlauf_liste.options["rowData"] = [
+            {
+                "datum": zeile.datum.strftime("%d.%m.%Y"),
+                "fachgruppe": zeile.fachgruppe,
+                "kategorie": zeile.kategorie,
+                "wert": zeile.wert,
+                "einheit": zeile.einheit or "",
+                "qualitaet": zeile.qualitaet,
+                "dokumenttyp": zeile.dokumenttyp or "nicht klassifiziert",
+                "dateiname": zeile.dateiname,
+            }
+            for zeile in zeilen
+        ]
+        verlauf_liste.update()
+        verlauf_liste_hinweis.text = f"{len(zeilen)} bestätigte Befundzeile(n)"
+
     def oeffne_klinischen_verlauf() -> None:
         """Zeigt alle bestätigten Fragebogenparameter kumulativ über die Zeit."""
         if zustand.arbeitsmodus != DATENBANKMODUS or zustand.patient_id is None:
@@ -1443,6 +1569,14 @@ def zeige_hauptseite() -> None:
             for zeile in verlauf.zeilen
         ]
         verlauf_tabelle.update()
+        # Beim erneuten Öffnen – insbesondere nach einem Patientenwechsel – werden
+        # keine Filter aus einer vorherigen Ansicht übernommen. Das verhindert eine
+        # scheinbar leere Tabelle durch fachlich nicht mehr passende Auswahlwerte.
+        verlauf_filter_von.value = ""
+        verlauf_filter_bis.value = ""
+        verlauf_filter_kategorien.value = []
+        verlauf_filter_dokumenttypen.value = []
+        aktualisiere_verlaufsliste(optionen_neu_laden=True)
         verlauf_hinweis.text = (
             f"{len(verlauf.zeilen)} Parameter über {len(verlauf.daten)} Befundzeitpunkt(e)"
             if verlauf.daten
@@ -2711,7 +2845,7 @@ def zeige_hauptseite() -> None:
                 # abschließend gesetzt. So kann kein vorangegangener Reset während
                 # Upload oder Analyse den nun gültigen Zustand überschreiben.
                 aktualisiere_ced_bereitschaft()
-            lesen_schalter.text = f"Mit {anbieter_name} erneut analysieren"
+            lesen_schalter.text = f"Neu analysieren mit {anbieter_name}"
             setze_status(f"{anbieter_name}: Verarbeitung abgeschlossen · Ergebnis ungeprüft")
         except (ConfigurationError, AIProviderError, DokumentAntwortFehler, OSError, ValueError) as fehler:
             # Debugging: Endpunkt, Modell und Secret-Verfügbarkeit prüfen. Es gibt
@@ -2753,6 +2887,7 @@ def zeige_hauptseite() -> None:
     therapien_speichern.on_click(speichere_therapien_aenderungen)
     therapien_abbrechen.on_click(breche_therapien_bearbeitung_ab)
     verlauf_navigation.on_click(oeffne_klinischen_verlauf)
+    verlauf_filter_anwenden.on_click(lambda: aktualisiere_verlaufsliste())
     for fachschluessel, fachschalter in fachnavigation_schalter.items():
         fachschalter.on_click(
             lambda _, schluessel=fachschluessel: oeffne_fachverlauf(schluessel)

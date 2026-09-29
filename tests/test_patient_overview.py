@@ -17,6 +17,7 @@ from ced_document_ai.database.models import (
 from ced_document_ai.services.ced.patient_overview import (
     berechne_alter,
     lade_klinischen_verlauf,
+    lade_befundliste,
     lade_dokumentenarchiv,
     lade_patientenuebersicht,
 )
@@ -221,3 +222,67 @@ def test_mehrere_werte_am_selben_tag_werden_nicht_ueberschrieben(tmp_path) -> No
         verlauf = lade_klinischen_verlauf(sitzung, patient.id)
 
     assert verlauf.zeilen[0].werte == ((date(2026, 9, 13), "70 kg | 71 kg"),)
+
+
+def test_befundliste_filtert_datum_kategorie_und_dokumenttyp(tmp_path) -> None:
+    fabrik = initialize_database(Settings(database_path=tmp_path / "befundliste.sqlite3"))
+    with fabrik() as sitzung:
+        patient = Patient(external_id="TEST-LISTE", name="Liste Beispiel")
+        labor_typ = DocumentType(name="Laborbefund")
+        brief_typ = DocumentType(name="Arztbrief")
+        crp = FindingCategory(name="CRP", group_name="Labor")
+        diagnose = FindingCategory(name="Diagnosen", group_name="Arztbriefe")
+        sitzung.add_all([patient, labor_typ, brief_typ, crp, diagnose])
+        sitzung.flush()
+        labor = Document(
+            patient_id=patient.id,
+            document_type_id=labor_typ.id,
+            original_name="labor.pdf",
+            confirmed=True,
+        )
+        brief = Document(
+            patient_id=patient.id,
+            document_type_id=brief_typ.id,
+            original_name="brief.pdf",
+            confirmed=True,
+        )
+        sitzung.add_all([labor, brief])
+        sitzung.flush()
+        sitzung.add_all(
+            [
+                Finding(
+                    patient_id=patient.id,
+                    document_id=labor.id,
+                    category_id=crp.id,
+                    finding_date=date(2026, 1, 15),
+                    numeric_value=8.5,
+                    unit="mg/l",
+                    confidence_status=ConfidenceStatus.HIGH_CONFIDENCE,
+                    confirmed_by_user=True,
+                ),
+                Finding(
+                    patient_id=patient.id,
+                    document_id=brief.id,
+                    category_id=diagnose.id,
+                    finding_date=date(2026, 2, 20),
+                    text_value="Bestätigte Diagnose",
+                    confidence_status=ConfidenceStatus.HIGH_CONFIDENCE,
+                    confirmed_by_user=True,
+                ),
+            ]
+        )
+        sitzung.commit()
+
+        zeilen = lade_befundliste(
+            sitzung,
+            patient.id,
+            datum_von=date(2026, 1, 1),
+            datum_bis=date(2026, 1, 31),
+            kategorien=("CRP",),
+            dokumenttypen=("Laborbefund",),
+        )
+
+    assert len(zeilen) == 1
+    assert zeilen[0].kategorie == "CRP"
+    assert zeilen[0].wert == "8.5"
+    assert zeilen[0].dokumenttyp == "Laborbefund"

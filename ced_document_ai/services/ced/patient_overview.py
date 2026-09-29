@@ -106,6 +106,20 @@ class KlinischerVerlauf:
 
 
 @dataclass(frozen=True)
+class Befundlistenzeile:
+    """Ein bestätigter Befund für die filterbare patientenbezogene Längsansicht."""
+
+    datum: date
+    fachgruppe: str
+    kategorie: str
+    wert: str
+    einheit: str | None
+    qualitaet: str
+    dokumenttyp: str | None
+    dateiname: str
+
+
+@dataclass(frozen=True)
 class ArchiviertesDokument:
     """Ein bestätigtes Dokument, das auch ohne einzelne Findings sichtbar bleibt."""
 
@@ -373,6 +387,62 @@ def lade_klinischen_verlauf(sitzung: Session, patient_id: int) -> KlinischerVerl
         for kategorie, werte_nach_datum in sorted(sammlung.items())
     )
     return KlinischerVerlauf(daten=daten, zeilen=zeilen)
+
+
+def lade_befundliste(
+    sitzung: Session,
+    patient_id: int,
+    *,
+    datum_von: date | None = None,
+    datum_bis: date | None = None,
+    kategorien: tuple[str, ...] = (),
+    dokumenttypen: tuple[str, ...] = (),
+) -> tuple[Befundlistenzeile, ...]:
+    """Lädt bestätigte Findings chronologisch und wendet nur explizite Filter an.
+
+    Leere Filter bedeuten bewusst „alle“ und lösen keine Ersatzsuche aus. Die
+    Abfrage liefert niemals unbestätigte Parserwerte. Bei der Fehlersuche sollten
+    lediglich Filter und Trefferzahl protokolliert werden, keine Befundinhalte.
+    """
+
+    if sitzung.get(Patient, patient_id) is None:
+        raise ValueError("Der bestätigte Patient ist nicht mehr vorhanden.")
+    abfrage = (
+        select(Finding, FindingCategory, Document, DocumentType)
+        .join(FindingCategory, Finding.category_id == FindingCategory.id)
+        .join(Document, Finding.document_id == Document.id)
+        .outerjoin(DocumentType, Document.document_type_id == DocumentType.id)
+        .where(
+            Finding.patient_id == patient_id,
+            Finding.confirmed_by_user.is_(True),
+        )
+    )
+    if datum_von is not None:
+        abfrage = abfrage.where(Finding.finding_date >= datum_von)
+    if datum_bis is not None:
+        abfrage = abfrage.where(Finding.finding_date <= datum_bis)
+    if kategorien:
+        abfrage = abfrage.where(FindingCategory.name.in_(kategorien))
+    if dokumenttypen:
+        abfrage = abfrage.where(DocumentType.name.in_(dokumenttypen))
+
+    eintraege = sitzung.execute(
+        abfrage.order_by(Finding.finding_date.desc(), FindingCategory.name, Finding.id)
+    )
+    return tuple(
+        Befundlistenzeile(
+            datum=befund.finding_date,
+            fachgruppe=kategorie.group_name,
+            kategorie=kategorie.name,
+            wert=befund.text_value
+            or (str(befund.numeric_value) if befund.numeric_value is not None else ""),
+            einheit=befund.unit,
+            qualitaet=befund.confidence_status.value,
+            dokumenttyp=dokumenttyp.name if dokumenttyp is not None else None,
+            dateiname=dokument.original_name,
+        )
+        for befund, kategorie, dokument, dokumenttyp in eintraege
+    )
 
 
 def lade_fachverlauf(
