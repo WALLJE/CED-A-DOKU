@@ -1,5 +1,31 @@
 # CED-A-DOKU – KI-gestützte Auswertung medizinischer Dokumente
 
+## Start in GitHub Codespaces
+
+Beim erstmaligen Erstellen eines Codespaces installiert die Dev-Container-
+Konfiguration automatisch alle Pakete aus `requirements.txt`. Danach die Anwendung
+im Projektstamm mit demselben Python-Interpreter starten:
+
+```bash
+python main.py
+```
+
+Erscheint dennoch `ModuleNotFoundError: No module named 'nicegui'`, wurde meistens
+ein anderer Interpreter verwendet oder die automatische Einrichtung ist nicht
+vollständig durchgelaufen. Zur Diagnose und gezielten Installation deshalb im
+Codespaces-Terminal diese Befehle ausführen:
+
+```bash
+which python
+python -m pip --version
+python -m pip install -r requirements.txt
+python -c "import nicegui; print(nicegui.__file__)"
+```
+
+Anschließend erneut `python main.py` verwenden. Der direkte Aufruf eines anderen
+Interpreters wie `/usr/bin/python3 main.py` kann dessen getrennte Paketumgebung
+verwenden und dadurch den Importfehler erneut auslösen.
+
 ## API-Schlüssel eintragen
 
 Die API-Schlüssel werden beim Programmstart mit `python-dotenv` aus einer lokalen

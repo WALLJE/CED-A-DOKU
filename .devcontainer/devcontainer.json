@@ -1,0 +1,12 @@
+{
+  // Codespaces führt diesen Befehl genau einmal nach dem Erstellen des Containers
+  // im Projektverzeichnis aus. Dadurch werden NiceGUI und alle weiteren in
+  // requirements.txt festgelegten Abhängigkeiten mit demselben Python-Interpreter
+  // installiert, der anschließend über `python main.py` verwendet wird.
+  //
+  // Falls die Installation fehlschlägt, zeigt das Codespaces-Erstellungsprotokoll
+  // die vollständige pip-Ausgabe. Zur Diagnose kann derselbe Befehl im Terminal
+  // erneut ausgeführt werden; ein alternativer UI- oder Server-Fallback ist bewusst
+  // nicht konfiguriert.
+  "postCreateCommand": "python -m pip install --upgrade pip && python -m pip install -r requirements.txt"
+}
