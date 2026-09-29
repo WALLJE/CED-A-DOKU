@@ -2,9 +2,12 @@
 
 ## Start in GitHub Codespaces
 
-Beim erstmaligen Erstellen eines Codespaces installiert die Dev-Container-
-Konfiguration automatisch alle Pakete aus `requirements.txt`. Danach die Anwendung
-im Projektstamm mit demselben Python-Interpreter starten:
+Beim erstmaligen Erstellen eines Codespaces verwendet die Dev-Container-Konfiguration
+gezielt Python 3.13 und installiert automatisch alle Pakete aus `requirements.txt`.
+Python 3.14 ist derzeit nicht geeignet: Die von NiceGUI 2.x geladene Abhängigkeit
+`vbuild` verwendet noch die dort entfernte Funktion `pkgutil.find_loader` und bricht
+bereits beim Import ab. Danach die Anwendung im Projektstamm mit demselben
+Python-Interpreter starten:
 
 ```bash
 python main.py
@@ -22,9 +25,15 @@ python -m pip install -r requirements.txt
 python -c "import nicegui; print(nicegui.__file__)"
 ```
 
+Zeigt `python --version` in einem bestehenden Codespace bereits Python 3.14, muss der
+Container nach dieser Änderung über **Codespaces: Rebuild Container** neu gebaut
+werden. Eine erneute Paketinstallation innerhalb der unveränderten Python-3.14-
+Umgebung behebt den `pkgutil.find_loader`-Fehler nicht.
+
 Anschließend erneut `python main.py` verwenden. Der direkte Aufruf eines anderen
-Interpreters wie `/usr/bin/python3 main.py` kann dessen getrennte Paketumgebung
-verwenden und dadurch den Importfehler erneut auslösen.
+Interpreters wie `/usr/bin/python3 main.py` oder eines alten Python-3.14-Pfads kann
+dessen getrennte beziehungsweise inkompatible Paketumgebung verwenden und dadurch
+den Importfehler erneut auslösen.
 
 ## API-Schlüssel eintragen
 
