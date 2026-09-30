@@ -30,6 +30,7 @@ def _auftrag(patient_id: int) -> LaborSpeicherauftrag:
         original_name="virologie.pdf",
         rohe_ki_antwort="Synthetische Rohantwort",
         kis_vorschlag="CMV-PCR negativ.",
+        kis_vorschlag_ausfuehrlich="CMV-PCR im vorliegenden Befund negativ.",
         provider="TEST",
         modell="TESTMODELL",
         befunde=(

@@ -50,6 +50,12 @@ direkt unter dem Originaldokument und wird nach einer abgeschlossenen Verarbeitu
 zu **„Neu analysieren mit …“**. Der erkannte Dokumenttyp bleibt unverändert rechts
 im Bereich „Dokumenterkennung“ sichtbar.
 
+Beim Einfügen aus der Zwischenablage werden Bilddateien sowohl aus den Clipboard-
+Items als auch aus der Dateiliste des Browsers gelesen. Es findet dabei weder ein
+Bildähnlichkeitsvergleich noch eine patientenübergreifende Duplikatunterdrückung
+statt. Liefert das Betriebssystem nur Text oder HTML statt Bildbytes, zeigt die App
+die tatsächlich angebotenen Zwischenablageformate als technischen Hinweis an.
+
 Bei mehreren Bildern oder Dateien wird jedes Dokumentteil zuerst einzeln und
 vollständig transkribiert. Anschließend prüft die KI anhand sichtbarer
 Seitenzahlen, Datumsangaben und inhaltlicher Anschlüsse die wahrscheinliche
@@ -412,7 +418,9 @@ gemacht. Vorhandene numerische Werte und Einheiten werden zusätzlich durch eine
 getrennten regelbasierten Dienst geprüft, der ausschließlich Hinweise ergänzt und
 keine Werte korrigiert. Die bestätigten Befunde besitzen inzwischen zusätzlich eine
 Längstabelle mit Datums-, Kategorie- und Dokumenttypfiltern. Als nächster fachlicher
-Schritt folgen die getrennten KIS-Varianten. Endoskopie und Sonografie besitzen nun
+Schritt sind die getrennten KIS-Varianten umgesetzt: kompakter und ausführlicher
+Vorschlag können separat angezeigt, vor der Freigabe bearbeitet und getrennt
+gespeichert werden. Endoskopie und Sonografie besitzen nun
 ebenfalls einen deterministischen Abschnitts- und Freigabepfad; SES-CD wird für
 Morbus Crohn und UC-EIS für Colitis ulcerosa verwendet, aber niemals aus Freitext
 berechnet.

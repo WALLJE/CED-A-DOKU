@@ -25,8 +25,11 @@ Kein Fieber, CRP 12 mg/l.
 STRUKTURIERTE DARSTELLUNG:
 Diagnosen: Colitis ulcerosa
 
-KIS-VORSCHLAG:
+KIS-VORSCHLAG KOMPAKT:
 Kein Fieber; CRP 12 mg/l.
+
+KIS-VORSCHLAG AUSFÜHRLICH:
+Kein Fieber. CRP 12 mg/l.
 """
 
 
@@ -35,11 +38,12 @@ def test_alle_dokumenttypen_werden_geparst(dokumenttyp: Dokumenttyp) -> None:
     assert parse_dokumentantwort(_antwort(dokumenttyp)).dokumenttyp is dokumenttyp
 
 
-def test_vier_abschnitte_bleiben_getrennt_und_leerzeilen_sind_erlaubt() -> None:
+def test_fuenf_abschnitte_bleiben_getrennt_und_leerzeilen_sind_erlaubt() -> None:
     ergebnis = parse_dokumentantwort("\n\n" + _antwort() + "\n\n")
     assert ergebnis.ausgelesener_inhalt == "Kein Fieber, CRP 12 mg/l."
     assert ergebnis.strukturierte_darstellung == "Diagnosen: Colitis ulcerosa"
     assert ergebnis.kis_vorschlag == "Kein Fieber; CRP 12 mg/l."
+    assert ergebnis.kis_vorschlag_ausfuehrlich == "Kein Fieber. CRP 12 mg/l."
     assert ergebnis.rohe_ki_antwort.startswith("\n\nDOKUMENTTYP:")
 
 
@@ -49,7 +53,8 @@ def test_vier_abschnitte_bleiben_getrennt_und_leerzeilen_sind_erlaubt() -> None:
         ("DOKUMENTTYP", "Pflichtabschnitt fehlt: DOKUMENTTYP"),
         ("AUSGELESENER INHALT", "Pflichtabschnitt fehlt: AUSGELESENER INHALT"),
         ("STRUKTURIERTE DARSTELLUNG", "Pflichtabschnitt fehlt: STRUKTURIERTE DARSTELLUNG"),
-        ("KIS-VORSCHLAG", "Pflichtabschnitt fehlt: KIS-VORSCHLAG"),
+        ("KIS-VORSCHLAG KOMPAKT", "Pflichtabschnitt fehlt: KIS-VORSCHLAG KOMPAKT"),
+        ("KIS-VORSCHLAG AUSFÜHRLICH", "Pflichtabschnitt fehlt: KIS-VORSCHLAG AUSFÜHRLICH"),
     ],
 )
 def test_fehlender_abschnitt_ist_fehler(abschnitt: str, meldung: str) -> None:
@@ -78,7 +83,9 @@ def test_doppelte_und_falsche_reihenfolge_sind_fehler() -> None:
         parse_dokumentantwort(_antwort() + "\nDOKUMENTTYP:\nArztbrief")
     teile = _antwort().split("\n\n")
     with pytest.raises(DokumentAntwortFehler, match="widersprüchlich angeordnet"):
-        parse_dokumentantwort("\n\n".join([teile[0], teile[2], teile[1], teile[3]]))
+        parse_dokumentantwort(
+            "\n\n".join([teile[0], teile[2], teile[1], teile[3], teile[4]])
+        )
 
 
 def test_prompt_enthaelt_vorlagen_und_sicherheitsregeln() -> None:
@@ -157,6 +164,7 @@ def test_einzelbild_erzeugt_alle_ansichten_mit_genau_einer_bildanfrage(
     assert ergebnis.ausgelesener_inhalt == "Kein Fieber, CRP 12 mg/l."
     assert ergebnis.strukturierte_darstellung == "Diagnosen: Colitis ulcerosa"
     assert ergebnis.kis_vorschlag == "Kein Fieber; CRP 12 mg/l."
+    assert ergebnis.kis_vorschlag_ausfuehrlich == "Kein Fieber. CRP 12 mg/l."
 
 
 def test_parserfehler_startet_keine_weitere_anfrage(tmp_path: Path) -> None:

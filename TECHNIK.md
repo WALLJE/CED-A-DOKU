@@ -32,6 +32,7 @@ deterministischer Logik. Fachliche Bedienhinweise stehen weiterhin in der README
 
 Wichtige Zustandsvariablen in `Sitzungszustand` sind `seiten`, `dokumentnamen`,
 `dokumenttyp`, `ausgelesener_inhalt`, `strukturierte_darstellung`, `kis_vorschlag`,
+`kis_vorschlag_ausfuehrlich`,
 `rohe_ki_antwort`, `patient_id`, `patientenabgleich_erlaubt`, `ced_befunde`,
 `labor_befunde`, `arztbrief_abschnitte` und `fachbefund_abschnitte`.
 
@@ -62,7 +63,7 @@ KI wird ausschließlich für diese dokumentbezogenen Aufgaben eingesetzt:
 - Transkription sichtbarer Dokumentseiten,
 - Vorschlag eines Dokumenttyps aus dem festen Katalog,
 - originalnahe strukturierte Darstellung,
-- KIS-Textvorschlag,
+- kompakter und ausführlicher KIS-Textvorschlag,
 - bei mehreren Seiten ein Vorschlag zur logischen Reihenfolge anhand sichtbarer
   Seitenzahlen und inhaltlicher Anschlüsse.
 

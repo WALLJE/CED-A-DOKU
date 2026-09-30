@@ -115,6 +115,7 @@ class Sitzungszustand:
     ausgelesener_inhalt: str = ""
     strukturierte_darstellung: str = ""
     kis_vorschlag: str = ""
+    kis_vorschlag_ausfuehrlich: str = ""
     rohe_ki_antwort: str = ""
     letzter_fehler: str = ""
     # Die Zuordnung wird nur als Datenbank-ID in dieser Browser-Sitzung gehalten.
@@ -416,10 +417,14 @@ def zeige_hauptseite() -> None:
                     with ui.row().classes("w-full gap-2 flex-wrap sm:flex-nowrap"):
                         lesen_schalter = ui.button(
                             "Dokument analysieren", icon="document_scanner"
-                        ).props("color=teal-8 unelevated").classes("flex-1")
+                        ).props("color=teal-8 unelevated no-caps").classes(
+                            "flex-1 h-12 whitespace-nowrap"
+                        )
                         dokument_verwerfen_schalter = ui.button(
                             "Dokument verwerfen / neue Eingabe", icon="delete_sweep"
-                        ).props("outline color=negative").classes("flex-1")
+                        ).props("outline color=negative no-caps").classes(
+                            "flex-1 h-12 whitespace-nowrap"
+                        )
                 with ui.column().classes("ergebnisspalte flex-1 lg:w-1/2 gap-5"):
                     with ui.card().classes("arbeitskarte w-full p-5"):
                         with ui.row().classes("items-center gap-2"):
@@ -434,7 +439,8 @@ def zeige_hauptseite() -> None:
                             {
                                 "rohtext": "Rohtext",
                                 "strukturiert": "Strukturierter, formatierter Text",
-                                "zusammenfassung": "KI-Zusammenfassung",
+                                "kis_kompakt": "KIS-Vorschlag kompakt",
+                                "kis_ausfuehrlich": "KIS-Vorschlag ausführlich",
                             },
                             value="rohtext",
                             label="Darstellung",
@@ -2133,6 +2139,7 @@ def zeige_hauptseite() -> None:
             original_name=" + ".join(zustand.dokumentnamen) or "CED-Fragebogen",
             rohe_ki_antwort=zustand.rohe_ki_antwort,
             kis_vorschlag=zustand.kis_vorschlag,
+            kis_vorschlag_ausfuehrlich=zustand.kis_vorschlag_ausfuehrlich,
             provider=provider_name,
             modell=modell,
             befunde=tuple(freigegebene),
@@ -2576,6 +2583,7 @@ def zeige_hauptseite() -> None:
                             original_name=" + ".join(zustand.dokumentnamen) or "Laborbefund",
                             rohe_ki_antwort=zustand.rohe_ki_antwort,
                             kis_vorschlag=zustand.kis_vorschlag,
+                            kis_vorschlag_ausfuehrlich=zustand.kis_vorschlag_ausfuehrlich,
                             provider=provider_name,
                             modell=modell,
                             befunde=tuple(freigegebene),
@@ -2624,6 +2632,7 @@ def zeige_hauptseite() -> None:
                             original_name=" + ".join(zustand.dokumentnamen) or "Dokument",
                             rohe_ki_antwort=zustand.rohe_ki_antwort,
                             kis_vorschlag=zustand.kis_vorschlag,
+                            kis_vorschlag_ausfuehrlich=zustand.kis_vorschlag_ausfuehrlich,
                             provider=provider_name,
                             modell=modell,
                             befunde=dokumentbefunde,
@@ -2816,13 +2825,27 @@ def zeige_hauptseite() -> None:
         aktualisiere_patientenvorschlaege()
 
     def aktualisiere_ergebnisanzeige() -> None:
-        """Zeigt exakt die gewählte, bereits geprüfte Antwortvariante an."""
+        """Zeigt die gewählte Variante; nur KIS-Vorschläge sind editierbar."""
         varianten = {
             "rohtext": zustand.ausgelesener_inhalt,
             "strukturiert": zustand.strukturierte_darstellung,
-            "zusammenfassung": zustand.kis_vorschlag,
+            "kis_kompakt": zustand.kis_vorschlag,
+            "kis_ausfuehrlich": zustand.kis_vorschlag_ausfuehrlich,
         }
         ergebnis_ausgabe.value = varianten[str(ergebnis_auswahl.value)]
+        if str(ergebnis_auswahl.value).startswith("kis_"):
+            ergebnis_ausgabe.props(remove="readonly")
+        else:
+            ergebnis_ausgabe.props(add="readonly")
+
+    def uebernehme_kis_bearbeitung() -> None:
+        """Hält ausschließlich die sichtbare KIS-Fassung im Sitzungszustand aktuell."""
+
+        auswahl = str(ergebnis_auswahl.value)
+        if auswahl == "kis_kompakt":
+            zustand.kis_vorschlag = str(ergebnis_ausgabe.value or "")
+        elif auswahl == "kis_ausfuehrlich":
+            zustand.kis_vorschlag_ausfuehrlich = str(ergebnis_ausgabe.value or "")
 
     def verschiebe_seite(index: int, richtung: int) -> None:
         """Verschiebt eine sichtbare Vorschau zur manuellen Reihenfolgekorrektur."""
@@ -2879,6 +2902,7 @@ def zeige_hauptseite() -> None:
         zustand.ausgelesener_inhalt = ""
         zustand.strukturierte_darstellung = ""
         zustand.kis_vorschlag = ""
+        zustand.kis_vorschlag_ausfuehrlich = ""
         zustand.rohe_ki_antwort = ""
         zustand.letzter_fehler = ""
         zustand.ergebnis_anbieter = ""
@@ -2911,6 +2935,7 @@ def zeige_hauptseite() -> None:
         zustand.ausgelesener_inhalt = ""
         zustand.strukturierte_darstellung = ""
         zustand.kis_vorschlag = ""
+        zustand.kis_vorschlag_ausfuehrlich = ""
         zustand.rohe_ki_antwort = ""
         zustand.letzter_fehler = ""
         zustand.ergebnis_anbieter = ""
@@ -2956,6 +2981,17 @@ def zeige_hauptseite() -> None:
         ]
         uebernehme_dokumente(dateien)
 
+    def melde_zwischenablageproblem(ereignis: events.GenericEventArguments) -> None:
+        """Erklärt einen fehlenden Bilddatenstrom ohne medizinische Inhalte zu loggen."""
+
+        typen = ", ".join(str(wert) for wert in ereignis.args.get("typen", []))
+        setze_status(
+            "Die Zwischenablage enthielt kein vom Browser bereitgestelltes Bild. "
+            f"Bereitgestellte Formate: {typen or 'keine'}. Bitte den Ausschnitt erneut "
+            "als Bild kopieren oder als PNG/JPG hochladen.",
+            fehler=True,
+        )
+
     async def lese_dokument() -> None:
         """Bearbeitet erhaltene Seiten erneut mit dem gerade gewählten Anbieter.
 
@@ -2986,6 +3022,7 @@ def zeige_hauptseite() -> None:
             zustand.ausgelesener_inhalt = ergebnis.ausgelesener_inhalt
             zustand.strukturierte_darstellung = ergebnis.strukturierte_darstellung
             zustand.kis_vorschlag = ergebnis.kis_vorschlag
+            zustand.kis_vorschlag_ausfuehrlich = ergebnis.kis_vorschlag_ausfuehrlich
             zustand.rohe_ki_antwort = ergebnis.rohe_ki_antwort
             zustand.ergebnis_anbieter = zustand.anbieter
             dokumenttyp_ausgabe.value = zustand.dokumenttyp
@@ -3067,8 +3104,10 @@ def zeige_hauptseite() -> None:
     dokument_verwerfen_schalter.on_click(beginne_neues_dokument)
     lesen_schalter.on_click(lese_dokument)
     ergebnis_auswahl.on_value_change(lambda _: aktualisiere_ergebnisanzeige())
+    ergebnis_ausgabe.on_value_change(lambda _: uebernehme_kis_bearbeitung())
     kopieren_schalter.on_click(kopiere_ergebnis)
     ui.on("abgelegte_dateien", uebernehme_abgelegte_dateien)
+    ui.on("zwischenablage_ohne_bild", melde_zwischenablageproblem)
 
     # Der Browser liest ausschließlich Bildobjekte aus einem echten Paste-Ereignis.
     # Zusätzlich fängt die Seite Datei-Drops außerhalb des sichtbaren Uploaders ab.
@@ -3100,11 +3139,26 @@ def zeige_hauptseite() -> None:
             // AG-Grid-Zellen das Ereignis sonst vor dem Dokument-Handler abfangen
             // können. Zum Debugging MIME-Typen in den Browserwerkzeugen prüfen,
             // niemals Bildinhalt oder Base64-Daten protokollieren.
-            const bilder = [...(event.clipboardData?.items || [])]
-                .filter(eintrag => eintrag.kind === 'file' && eintrag.type.startsWith('image/'))
+            const istBilddatei = datei => datei && (
+                datei.type.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp)$/i.test(datei.name || '')
+            );
+            const ausItems = [...(event.clipboardData?.items || [])]
+                .filter(eintrag => eintrag.kind === 'file')
                 .map(eintrag => eintrag.getAsFile())
-                .filter(datei => datei !== null);
-            if (!bilder.length) return;
+                .filter(istBilddatei);
+            const ausDateien = [...(event.clipboardData?.files || [])].filter(istBilddatei);
+            // Manche Screenshot-Werkzeuge melden einen leeren oder generischen
+            // MIME-Typ und stellen das Bild nur über clipboardData.files bereit.
+            // Objektidentität verhindert, dass derselbe Blob aus beiden Listen
+            // doppelt übernommen wird; Bildähnlichkeit wird ausdrücklich nie geprüft.
+            const bilder = [...new Set([...ausItems, ...ausDateien])];
+            if (!bilder.length) {
+                if (event.target.closest('input, textarea, [contenteditable="true"]')) return;
+                emitEvent('zwischenablage_ohne_bild', {
+                    typen: [...(event.clipboardData?.types || [])],
+                });
+                return;
+            }
             event.preventDefault();
             event.stopPropagation();
             const gelesen = await Promise.all(bilder.map((bild, index) =>

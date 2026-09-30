@@ -109,8 +109,7 @@ für MRT/CT, weitere Bildgebung und weitere Dokumentklassen.
 
 ### Priorität 1 – ersten CED-Workflow fachlich abschließen
 
-1. KIS kompakt/ausführlich getrennt anzeigen, bearbeiten und speichern.
-2. Die noch fehlenden Unit-, Transaktions- und Zugriffstests ergänzen und mit
+1. Die noch fehlenden Unit-, Transaktions- und Zugriffstests ergänzen und mit
    anonymisierten realistischen Fragebogenfällen fachlich abnehmen.
 
 ### Unmittelbar nächstes Arbeitspaket
@@ -123,8 +122,9 @@ erst die manuelle Auswahl führt zur atomaren Speicherung. Mehrspaltige
 Laborhistorien werden anhand ihrer ausdrücklich beschrifteten Abnahme- oder
   Messdatumszeile in einzelne datierte Befunde aufgelöst. Die patientenbezogene
   Längstabelle mit Datums-, Kategorie- und Dokumenttypfiltern ist ebenfalls umgesetzt.
-  Als Nächstes folgen die getrennt bearbeitbaren kompakten und ausführlichen
-  KIS-Zusammenfassungen.
+  Kompakte und ausführliche KIS-Zusammenfassungen werden inzwischen getrennt
+  angezeigt, bearbeitet und gespeichert. Als Nächstes folgt der deterministische
+  Vorbefundvergleich aus bestätigten Werten.
 
 ### Priorität 2 – longitudinaler klinischer Nutzen
 
@@ -148,7 +148,7 @@ dürfen bestätigte Messwerte nie verändern.
 
 ## Prüfstand
 
-Die fachlichen Tests laufen mit `PYTHONPATH=.` vollständig durch (106 Tests). Der
+Die fachlichen Tests laufen mit `PYTHONPATH=.` vollständig durch (107 Tests). Der
 Aufruf `pytest -q` ohne gesetzten Projektpfad kann in der aktuellen Umgebung das
 lokale Paket nicht importieren. Außerdem meldet SQLAlchemy derzeit Warnungen wegen
 der Verwendung von `datetime.utcnow`; die Umstellung auf zeitzonenbewusste

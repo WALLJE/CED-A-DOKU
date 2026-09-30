@@ -59,6 +59,7 @@ class DokumentSpeicherauftrag:
     provider: str
     modell: str
     befunde: tuple["FreigegebenerDokumentbefund", ...] = ()
+    kis_vorschlag_ausfuehrlich: str = ""
 
 
 @dataclass(frozen=True)
@@ -107,7 +108,7 @@ def speichere_allgemeines_dokument(
                 document_id=dokument.id,
                 raw_ai_response=auftrag.rohe_ki_antwort,
                 kis_summary_compact=auftrag.kis_vorschlag,
-                kis_summary_detailed=None,
+                kis_summary_detailed=auftrag.kis_vorschlag_ausfuehrlich or None,
                 model=auftrag.modell,
                 provider=auftrag.provider,
             )
