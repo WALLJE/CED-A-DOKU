@@ -42,8 +42,9 @@ class DokumentErgebnis:
     ausgelesener_inhalt: str
     strukturierte_darstellung: str
     kis_vorschlag: str
+    kis_vorschlag_ausfuehrlich: str
     # Die unveränderte Antwort wird für eine spätere, ausdrücklich bestätigte
-    # Archivierung mitgeführt. Die sichtbaren vier Abschnitte und deren Parserlogik
+    # Archivierung mitgeführt. Die sichtbaren fünf Abschnitte und deren Parserlogik
     # bleiben davon unberührt.
     rohe_ki_antwort: str
 
@@ -79,9 +80,17 @@ Dokumenttypspezifische strukturierte Darstellung:
 - Bildgebender Befund: vorhandene Angaben gliedern in Untersuchung,
   Untersuchungsdatum, Körperregion, Technik, Befund, Beurteilung und Empfehlung.
   Beurteilung nur übernehmen, wenn sie im Dokument enthalten ist.
-- Endoskopie, Sonografie, MRT, CT, Röntgen und Funktionsdiagnostik: die jeweils
-  präzise Dokumentklasse wählen und vorhandene Angaben nach Untersuchung, Datum,
-  Befund, Beurteilung und Empfehlung gliedern. Nichts medizinisch ergänzen.
+- Endoskopie: vorhandene Angaben jeweils in einer eigenen Zeile unter Untersuchung,
+  Befund, Beurteilung, Histologie und Empfehlung ausgeben. Einen im Original
+  ausdrücklich angegebenen SES-CD bei Morbus Crohn als `SES-CD: ...` und einen
+  ausdrücklich angegebenen UC-EIS bei Colitis ulcerosa als `UC-EIS: ...` übernehmen.
+  Scores niemals aus Freitext berechnen oder bei fehlender Angabe ergänzen.
+- Sonografie: vorhandene Angaben jeweils in einer eigenen Zeile unter Untersuchung,
+  Körperregion, Befund, Beurteilung und Empfehlung ausgeben. Keine Messung, Diagnose
+  oder Beurteilung ergänzen.
+- MRT, CT, Röntgen und Funktionsdiagnostik: die jeweils präzise Dokumentklasse wählen
+  und vorhandene Angaben nach Untersuchung, Datum, Befund, Beurteilung und Empfehlung
+  gliedern. Nichts medizinisch ergänzen.
 - CED-Patientenfragebogen: vorhandene Angaben strukturieren nach Stuhlfrequenz,
   Stuhlgang nachts, Blut im Stuhl, Schleim im Stuhl, Bauchschmerzen,
   Bauchschmerzen VAS, Allgemeinbefinden, Allgemeinbefinden Skalenwert, Gewicht,
@@ -107,7 +116,14 @@ Bearbeite das gesamte Dokument strikt in dieser Reihenfolge:
    Abschnitt AUSGELESENER INHALT erscheinen.
 3. Bestimme genau einen der folgenden Dokumenttypen: {', '.join(t.value for t in Dokumenttyp)}.
 4. Strukturiere den ausgelesenen Inhalt passend zu diesem Dokumenttyp.
-5. Erstelle ausschließlich aus dem ausgelesenen Inhalt einen gekürzten KIS-Vorschlag.
+5. Erstelle ausschließlich aus dem ausgelesenen Inhalt einen kompakten und einen
+   ausführlichen KIS-Vorschlag. Beide dürfen keine neue medizinische Aussage enthalten.
+
+Stelle in der STRUKTURIERTEN DARSTELLUNG vor den fachlichen Inhalten vorhandene
+Zuordnungsmerkmale jeweils in einer eigenen beschrifteten Zeile dar: Patienten-ID,
+Vorname, Nachname, Name, Geburtsdatum sowie das passend beschriftete Dokumentdatum
+(zum Beispiel Befunddatum, Entnahmedatum, Untersuchungsdatum oder Berichtsdatum).
+Nur im Original eindeutig vorhandene Angaben übernehmen; nichts ergänzen oder raten.
 
 Stelle in der STRUKTURIERTEN DARSTELLUNG vor den fachlichen Inhalten vorhandene
 Zuordnungsmerkmale jeweils in einer eigenen beschrifteten Zeile dar: Patienten-ID,
@@ -133,7 +149,7 @@ Verbindliche Regeln:
 - Zahlen, Datumsangaben, Einheiten, Medikamentennamen, Diagnosen und Negationen unverändert übernehmen.
 - Insbesondere `kein`, `nicht`, `ohne` und vergleichbare Negationen nicht verändern oder entfernen.
 - Umformulierungen dürfen die medizinische Aussage weder erweitern noch verändern.
-- Der KIS-Vorschlag darf nur durch Auswahl, Ordnung, sprachliche Verdichtung und Kürzung entstehen.
+- Beide KIS-Vorschläge dürfen nur durch Auswahl, Ordnung und sprachliche Verdichtung entstehen.
 
 Antworte ausschließlich in diesem eindeutig trennbaren Reintextformat:
 DOKUMENTTYP:
@@ -145,8 +161,11 @@ AUSGELESENER INHALT:
 STRUKTURIERTE DARSTELLUNG:
 [dokumenttypspezifische Darstellung]
 
-KIS-VORSCHLAG:
-[gekürzter und geordneter Dokumentationstext]
+KIS-VORSCHLAG KOMPAKT:
+[stark gekürzter und geordneter Dokumentationstext]
+
+KIS-VORSCHLAG AUSFÜHRLICH:
+[ausführlicher geordneter Dokumentationstext ohne neue Aussagen]
 """.strip()
 
 
@@ -154,15 +173,16 @@ ABSCHNITTE = (
     "DOKUMENTTYP",
     "AUSGELESENER INHALT",
     "STRUKTURIERTE DARSTELLUNG",
-    "KIS-VORSCHLAG",
+    "KIS-VORSCHLAG KOMPAKT",
+    "KIS-VORSCHLAG AUSFÜHRLICH",
 )
 _UEBERSCHRIFT = re.compile(
-    r"(?m)^\s*(DOKUMENTTYP|AUSGELESENER INHALT|STRUKTURIERTE DARSTELLUNG|KIS-VORSCHLAG)\s*:\s*$"
+    r"(?m)^\s*(DOKUMENTTYP|AUSGELESENER INHALT|STRUKTURIERTE DARSTELLUNG|KIS-VORSCHLAG KOMPAKT|KIS-VORSCHLAG AUSFÜHRLICH)\s*:\s*$"
 )
 
 
 def parse_dokumentantwort(antwort: str) -> DokumentErgebnis:
-    """Parst alle vier Pflichtabschnitte oder meldet den exakten Formatfehler.
+    """Parst alle fünf Pflichtabschnitte oder meldet den exakten Formatfehler.
 
     Debugging-Hinweis: Lokal dürfen Entwickler bei Bedarf ausschließlich
     ``[m.group(1) for m in _UEBERSCHRIFT.finditer(antwort)]`` und die Längen der
@@ -205,7 +225,8 @@ def parse_dokumentantwort(antwort: str) -> DokumentErgebnis:
         dokumenttyp=dokumenttyp,
         ausgelesener_inhalt=inhalte["AUSGELESENER INHALT"],
         strukturierte_darstellung=inhalte["STRUKTURIERTE DARSTELLUNG"],
-        kis_vorschlag=inhalte["KIS-VORSCHLAG"],
+        kis_vorschlag=inhalte["KIS-VORSCHLAG KOMPAKT"],
+        kis_vorschlag_ausfuehrlich=inhalte["KIS-VORSCHLAG AUSFÜHRLICH"],
         rohe_ki_antwort=antwort,
     )
 

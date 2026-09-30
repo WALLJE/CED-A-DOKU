@@ -77,8 +77,8 @@ nicht oder nur als Datenmodell vorbereitet:
 - Allgemeine Dokumente einschließlich Laborbefunden können inzwischen nach Prüfung
   von Patient, Dokumenttyp und Datum archiviert und in den passenden Fachansichten
   mit ihrer Kurzfassung wieder angezeigt werden. Labor, Virologie, Mikrobiologie und
-  Calprotectin besitzen bereits einen Parser- und Prüfpfad. Fachparser für
-  Endoskopie, Sonografie sowie MRT/CT fehlen weiterhin. Arztbriefe werden
+  Calprotectin, Endoskopie und Sonografie besitzen bereits einen Parser- und
+  Prüfpfad. Fachparser für MRT/CT fehlen weiterhin. Arztbriefe werden
   anhand expliziter Überschriften abschnittsweise geprüft und unter Weitere Befunde
   gespeichert; eine automatische Übernahme in Diagnosen oder Therapien erfolgt nicht.
 - Dokumentvergleich für Arztbriefe, Medikamentenpläne und Befunde.
@@ -105,12 +105,11 @@ Virologiebefund wird unter Labor mit Datum, Dokumenttyp, Kurzfassung und Quellda
 angezeigt. Weitere Dokumente werden kontrolliert gruppiert gesammelt. Labor,
 Virologie, Mikrobiologie und Calprotectin besitzen zusätzlich eine strukturierte
 Extraktion und manuelle Einzelwertprüfung. Offen bleiben entsprechende Fachparser
-für Bildgebung, Endoskopie und weitere Dokumentklassen.
+für MRT/CT, weitere Bildgebung und weitere Dokumentklassen.
 
 ### Priorität 1 – ersten CED-Workflow fachlich abschließen
 
-1. KIS kompakt/ausführlich getrennt anzeigen, bearbeiten und speichern.
-2. Die noch fehlenden Unit-, Transaktions- und Zugriffstests ergänzen und mit
+1. Die noch fehlenden Unit-, Transaktions- und Zugriffstests ergänzen und mit
    anonymisierten realistischen Fragebogenfällen fachlich abnehmen.
 
 ### Unmittelbar nächstes Arbeitspaket
@@ -123,8 +122,9 @@ erst die manuelle Auswahl führt zur atomaren Speicherung. Mehrspaltige
 Laborhistorien werden anhand ihrer ausdrücklich beschrifteten Abnahme- oder
   Messdatumszeile in einzelne datierte Befunde aufgelöst. Die patientenbezogene
   Längstabelle mit Datums-, Kategorie- und Dokumenttypfiltern ist ebenfalls umgesetzt.
-  Als Nächstes folgen die getrennt bearbeitbaren kompakten und ausführlichen
-  KIS-Zusammenfassungen.
+  Kompakte und ausführliche KIS-Zusammenfassungen werden inzwischen getrennt
+  angezeigt, bearbeitet und gespeichert. Als Nächstes folgt der deterministische
+  Vorbefundvergleich aus bestätigten Werten.
 
 ### Priorität 2 – longitudinaler klinischer Nutzen
 
@@ -136,10 +136,9 @@ Laborhistorien werden anhand ihrer ausdrücklich beschrifteten Abnahme- oder
 
 ### Priorität 3 – weitere Dokumentarten
 
-Nach dem Labor-/Virologie-/Mikrobiologie-/Calprotectin-Parser sind Endoskopie,
-Sonografie und MRT/CT jeweils als eigener, getesteter Parser- und
-Freigabepfad umzusetzen. Ein allgemeiner Fallbackparser soll dabei nicht eingeführt
-werden; unbekannte Inhalte bleiben sichtbar ungeklärt.
+Nach den Labor-, Endoskopie- und Sonografiepfaden sind MRT/CT jeweils als eigener,
+getesteter Parser- und Freigabepfad umzusetzen. Ein allgemeiner Fallbackparser soll
+dabei nicht eingeführt werden; unbekannte Inhalte bleiben sichtbar ungeklärt.
 
 ### Priorität 4 – Ausbau
 
@@ -149,7 +148,7 @@ dürfen bestätigte Messwerte nie verändern.
 
 ## Prüfstand
 
-Die fachlichen Tests laufen mit `PYTHONPATH=.` vollständig durch (102 Tests). Der
+Die fachlichen Tests laufen mit `PYTHONPATH=.` vollständig durch (107 Tests). Der
 Aufruf `pytest -q` ohne gesetzten Projektpfad kann in der aktuellen Umgebung das
 lokale Paket nicht importieren. Außerdem meldet SQLAlchemy derzeit Warnungen wegen
 der Verwendung von `datetime.utcnow`; die Umstellung auf zeitzonenbewusste

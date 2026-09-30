@@ -37,6 +37,7 @@ def test_allgemeines_dokument_wird_mit_patient_und_datum_archiviert(tmp_path) ->
                 original_name="synthetisch.pdf",
                 rohe_ki_antwort="Synthetische Rohantwort",
                 kis_vorschlag="Synthetischer KIS-Text",
+                kis_vorschlag_ausfuehrlich="Ausführlicher synthetischer KIS-Text",
                 provider="TEST",
                 modell="TESTMODELL",
             ),
@@ -48,6 +49,9 @@ def test_allgemeines_dokument_wird_mit_patient_und_datum_archiviert(tmp_path) ->
         assert dokument.document_date == date(2026, 9, 18)
         assert dokument.confirmed
         assert sitzung.scalar(select(func.count()).select_from(AIResult)) == 1
+        assert sitzung.scalar(select(AIResult.kis_summary_detailed)) == (
+            "Ausführlicher synthetischer KIS-Text"
+        )
         # Ohne Fachparser entstehen absichtlich keine geratenen Labor-Findings.
         assert sitzung.scalar(select(func.count()).select_from(Finding)) == 0
 

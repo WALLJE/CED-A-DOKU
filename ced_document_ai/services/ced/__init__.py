@@ -32,6 +32,10 @@ from ced_document_ai.services.ced.letter_parser import (
     ExtrahierterArztbriefabschnitt,
     parse_arztbrief,
 )
+from ced_document_ai.services.ced.procedure_parser import (
+    ExtrahierterFachabschnitt,
+    parse_fachbefund,
+)
 from ced_document_ai.services.ced.document_categories import (
     DOKUMENTKLASSEN,
     Dokumentklasse,
@@ -110,6 +114,8 @@ __all__ = [
     "speichere_allgemeines_dokument",
     "ExtrahierterArztbriefabschnitt",
     "parse_arztbrief",
+    "ExtrahierterFachabschnitt",
+    "parse_fachbefund",
     "DOKUMENTKLASSEN",
     "Dokumentklasse",
     "ermittle_dokumentfachgruppe",

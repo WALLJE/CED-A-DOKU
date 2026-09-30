@@ -74,6 +74,10 @@ from ced_document_ai.services.ced.letter_parser import (
     ExtrahierterArztbriefabschnitt,
     parse_arztbrief,
 )
+from ced_document_ai.services.ced.procedure_parser import (
+    ExtrahierterFachabschnitt,
+    parse_fachbefund,
+)
 from ced_document_ai.services.ced.laboratory_parser import (
     LABORDOKUMENTTYPEN,
     ExtrahierterLaborwert,
@@ -111,6 +115,7 @@ class Sitzungszustand:
     ausgelesener_inhalt: str = ""
     strukturierte_darstellung: str = ""
     kis_vorschlag: str = ""
+    kis_vorschlag_ausfuehrlich: str = ""
     rohe_ki_antwort: str = ""
     letzter_fehler: str = ""
     # Die Zuordnung wird nur als Datenbank-ID in dieser Browser-Sitzung gehalten.
@@ -124,6 +129,7 @@ class Sitzungszustand:
     ced_befunde: list[ExtrahierterBefund] = field(default_factory=list)
     labor_befunde: list[ExtrahierterLaborwert] = field(default_factory=list)
     arztbrief_abschnitte: list[ExtrahierterArztbriefabschnitt] = field(default_factory=list)
+    fachbefund_abschnitte: list[ExtrahierterFachabschnitt] = field(default_factory=list)
     gespeichertes_dokument_id: int | None = None
     patientenabgleich_erlaubt: bool = False
     duplikate_bestaetigt: bool = False
@@ -411,10 +417,14 @@ def zeige_hauptseite() -> None:
                     with ui.row().classes("w-full gap-2 flex-wrap sm:flex-nowrap"):
                         lesen_schalter = ui.button(
                             "Dokument analysieren", icon="document_scanner"
-                        ).props("color=teal-8 unelevated").classes("flex-1")
+                        ).props("color=teal-8 unelevated no-caps").classes(
+                            "flex-1 h-12 whitespace-nowrap"
+                        )
                         dokument_verwerfen_schalter = ui.button(
                             "Dokument verwerfen / neue Eingabe", icon="delete_sweep"
-                        ).props("outline color=negative").classes("flex-1")
+                        ).props("outline color=negative no-caps").classes(
+                            "flex-1 h-12 whitespace-nowrap"
+                        )
                 with ui.column().classes("ergebnisspalte flex-1 lg:w-1/2 gap-5"):
                     with ui.card().classes("arbeitskarte w-full p-5"):
                         with ui.row().classes("items-center gap-2"):
@@ -429,7 +439,8 @@ def zeige_hauptseite() -> None:
                             {
                                 "rohtext": "Rohtext",
                                 "strukturiert": "Strukturierter, formatierter Text",
-                                "zusammenfassung": "KI-Zusammenfassung",
+                                "kis_kompakt": "KIS-Vorschlag kompakt",
+                                "kis_ausfuehrlich": "KIS-Vorschlag ausführlich",
                             },
                             value="rohtext",
                             label="Darstellung",
@@ -528,6 +539,11 @@ def zeige_hauptseite() -> None:
                                     "stopEditingWhenCellsLoseFocus": True,
                                 }
                             ).classes("ced-tabellenrahmen w-full")
+                            with ui.row().classes("w-full gap-2"):
+                                ced_alle_auswaehlen = ui.button("Alle auswählen")
+                                ced_alle_abwaehlen = ui.button("Alle abwählen")
+                                ced_alle_auswaehlen.props("outline color=teal-8")
+                                ced_alle_abwaehlen.props("outline color=teal-8")
                             ced_speichern = ui.button(
                                 "Geprüfte CED-Daten speichern", icon="save"
                             ).props("color=teal-8 unelevated").classes("w-full")
@@ -585,8 +601,14 @@ def zeige_hauptseite() -> None:
                                     "stopEditingWhenCellsLoseFocus": True,
                                 }
                             ).classes("ced-tabellenrahmen w-full")
+                            with ui.row().classes("w-full gap-2") as labor_auswahlaktionen:
+                                labor_alle_auswaehlen = ui.button("Alle auswählen")
+                                labor_alle_abwaehlen = ui.button("Alle abwählen")
+                                labor_alle_auswaehlen.props("outline color=teal-8")
+                                labor_alle_abwaehlen.props("outline color=teal-8")
                             labor_pruef_hinweis.set_visibility(False)
                             labor_pruef_tabelle.set_visibility(False)
+                            labor_auswahlaktionen.set_visibility(False)
                             arztbrief_pruef_hinweis = ui.label("").classes("text-slate-600")
                             arztbrief_pruef_tabelle = ui.aggrid(
                                 {
@@ -612,8 +634,48 @@ def zeige_hauptseite() -> None:
                                     "rowData": [],
                                 }
                             ).classes("ced-tabellenrahmen w-full")
+                            with ui.row().classes("w-full gap-2") as arztbrief_auswahlaktionen:
+                                arztbrief_alle_auswaehlen = ui.button("Alle auswählen")
+                                arztbrief_alle_abwaehlen = ui.button("Alle abwählen")
+                                arztbrief_alle_auswaehlen.props("outline color=teal-8")
+                                arztbrief_alle_abwaehlen.props("outline color=teal-8")
                             arztbrief_pruef_hinweis.set_visibility(False)
                             arztbrief_pruef_tabelle.set_visibility(False)
+                            arztbrief_auswahlaktionen.set_visibility(False)
+                            fachbefund_pruef_hinweis = ui.label("").classes("text-slate-600")
+                            fachbefund_pruef_tabelle = ui.aggrid(
+                                {
+                                    "defaultColDef": {
+                                        "resizable": True,
+                                        "sortable": True,
+                                        "filter": True,
+                                        "wrapText": True,
+                                        "autoHeight": True,
+                                    },
+                                    "columnDefs": [
+                                        {"headerName": "Bereich", "field": "kategorie", "minWidth": 190},
+                                        {"headerName": "Inhalt", "field": "inhalt", "minWidth": 420, "flex": 1},
+                                        {
+                                            "headerName": "Übernehmen",
+                                            "field": "uebernehmen",
+                                            "editable": True,
+                                            "cellEditor": "agCheckboxCellEditor",
+                                            "cellRenderer": "agCheckboxCellRenderer",
+                                            "width": 135,
+                                        },
+                                        {"headerName": "Prüfhinweis", "field": "pruefhinweis", "minWidth": 300},
+                                    ],
+                                    "rowData": [],
+                                }
+                            ).classes("ced-tabellenrahmen w-full")
+                            with ui.row().classes("w-full gap-2") as fachbefund_auswahlaktionen:
+                                fachbefund_alle_auswaehlen = ui.button("Alle auswählen")
+                                fachbefund_alle_abwaehlen = ui.button("Alle abwählen")
+                                fachbefund_alle_auswaehlen.props("outline color=teal-8")
+                                fachbefund_alle_abwaehlen.props("outline color=teal-8")
+                            fachbefund_pruef_hinweis.set_visibility(False)
+                            fachbefund_pruef_tabelle.set_visibility(False)
+                            fachbefund_auswahlaktionen.set_visibility(False)
                             dokument_pruef_speichern = ui.button(
                                 "Dokument bestätigt zuordnen", icon="save"
                             ).props("color=teal-8 unelevated").classes("w-full")
@@ -996,6 +1058,28 @@ def zeige_hauptseite() -> None:
         dokument_patienten_hinweis.classes(add=f"patientenabgleich-{farbe}")
         dokument_patienten_hinweis.text = text
 
+    async def setze_alle_tabellenzeilen(tabelle: object, wert: bool) -> None:
+        """Setzt sichtbare Übernahmekreuze nach einer ausdrücklichen Sammelaktion.
+
+        Die aktuell im Browser editierten Zeilen werden zuerst zurückgelesen. Damit
+        gehen manuelle Korrekturen nicht verloren. „Alle auswählen“ ist bewusst eine
+        Benutzeraktion und kein automatischer Fallback für unsichere Befunde.
+        """
+
+        try:
+            zeilen = await tabelle.get_client_data()
+        except TimeoutError:
+            setze_status(
+                "Die Prüftabelle konnte nicht gelesen werden. Bitte die letzte Zelle "
+                "verlassen und die Sammelauswahl erneut ausführen.",
+                fehler=True,
+            )
+            return
+        for zeile in zeilen:
+            zeile["uebernehmen"] = wert
+        tabelle.options["rowData"] = zeilen
+        tabelle.update()
+
     def zeige_einlesebereich() -> None:
         """Schließt medizinische Arbeitsansichten, die Seitenleiste bleibt bestehen."""
         ced_dialog.close()
@@ -1027,6 +1111,7 @@ def zeige_hauptseite() -> None:
         zustand.ced_befunde.clear()
         zustand.labor_befunde.clear()
         zustand.arztbrief_abschnitte.clear()
+        zustand.fachbefund_abschnitte.clear()
         zustand.gespeichertes_dokument_id = None
         zustand.duplikate_bestaetigt = False
         ced_tabelle.options["rowData"] = []
@@ -1045,6 +1130,14 @@ def zeige_hauptseite() -> None:
         arztbrief_pruef_tabelle.set_visibility(False)
         arztbrief_pruef_hinweis.text = ""
         arztbrief_pruef_hinweis.set_visibility(False)
+        fachbefund_pruef_tabelle.options["rowData"] = []
+        fachbefund_pruef_tabelle.update()
+        fachbefund_pruef_tabelle.set_visibility(False)
+        fachbefund_pruef_hinweis.text = ""
+        fachbefund_pruef_hinweis.set_visibility(False)
+        labor_auswahlaktionen.set_visibility(False)
+        arztbrief_auswahlaktionen.set_visibility(False)
+        fachbefund_auswahlaktionen.set_visibility(False)
         ced_patientenkopf.text = "Noch kein Patient bestätigt"
         ced_dialog.close()
         dokument_pruefdialog.close()
@@ -2046,6 +2139,7 @@ def zeige_hauptseite() -> None:
             original_name=" + ".join(zustand.dokumentnamen) or "CED-Fragebogen",
             rohe_ki_antwort=zustand.rohe_ki_antwort,
             kis_vorschlag=zustand.kis_vorschlag,
+            kis_vorschlag_ausfuehrlich=zustand.kis_vorschlag_ausfuehrlich,
             provider=provider_name,
             modell=modell,
             befunde=tuple(freigegebene),
@@ -2257,10 +2351,19 @@ def zeige_hauptseite() -> None:
         dokument_pruef_text.value = zustand.strukturierte_darstellung
         ist_laborpfad = zustand.dokumenttyp in LABORDOKUMENTTYPEN
         ist_arztbrief = zustand.dokumenttyp == Dokumenttyp.ARZTBRIEF.value
+        ist_fachbefund = zustand.dokumenttyp in {
+            Dokumenttyp.ENDOSKOPIE.value,
+            Dokumenttyp.SONOGRAFIE.value,
+        }
         labor_pruef_hinweis.set_visibility(ist_laborpfad)
         labor_pruef_tabelle.set_visibility(ist_laborpfad)
+        labor_auswahlaktionen.set_visibility(ist_laborpfad)
         arztbrief_pruef_hinweis.set_visibility(ist_arztbrief)
         arztbrief_pruef_tabelle.set_visibility(ist_arztbrief)
+        arztbrief_auswahlaktionen.set_visibility(ist_arztbrief)
+        fachbefund_pruef_hinweis.set_visibility(ist_fachbefund)
+        fachbefund_pruef_tabelle.set_visibility(ist_fachbefund)
+        fachbefund_auswahlaktionen.set_visibility(ist_fachbefund)
         if ist_laborpfad:
             # Nur die strukturierte Darstellung wird geparst. Ein unbeschrifteter
             # Rohtext wird nicht ersatzweise interpretiert. Bei leerer Tabelle kann
@@ -2356,7 +2459,36 @@ def zeige_hauptseite() -> None:
             zustand.arztbrief_abschnitte.clear()
             arztbrief_pruef_tabelle.options["rowData"] = []
             arztbrief_pruef_tabelle.update()
-        if not ist_laborpfad and not ist_arztbrief:
+        if ist_fachbefund:
+            with get_session() as sitzung:
+                uebersicht = lade_patientenuebersicht(sitzung, zustand.patient_id)
+            zustand.fachbefund_abschnitte = parse_fachbefund(
+                zustand.strukturierte_darstellung,
+                zustand.dokumenttyp,
+                erkrankungstyp=uebersicht.erkrankungstyp,
+            )
+            fachbefund_pruef_tabelle.options["rowData"] = [
+                {
+                    "kategorie": abschnitt.kategorie,
+                    "inhalt": abschnitt.inhalt,
+                    "quelle": abschnitt.quelltext,
+                    "uebernehmen": abschnitt.uebernehmen,
+                    "pruefhinweis": abschnitt.pruefhinweis,
+                }
+                for abschnitt in zustand.fachbefund_abschnitte
+            ]
+            fachbefund_pruef_tabelle.update()
+            fachbefund_pruef_hinweis.text = (
+                f"{len(zustand.fachbefund_abschnitte)} strukturierte(r) Abschnitt(e) erkannt. "
+                "Aktivitätsscores werden nur übernommen, niemals berechnet."
+            )
+            dokument_pruef_speichern.text = "Fachbefund und ausgewählte Abschnitte speichern"
+            dokument_pruef_speichern.enable()
+        else:
+            zustand.fachbefund_abschnitte.clear()
+            fachbefund_pruef_tabelle.options["rowData"] = []
+            fachbefund_pruef_tabelle.update()
+        if not ist_laborpfad and not ist_arztbrief and not ist_fachbefund:
             dokument_pruef_speichern.text = "Dokument bestätigt zuordnen"
             dokument_pruef_speichern.enable()
         ced_dialog.close()
@@ -2451,6 +2583,7 @@ def zeige_hauptseite() -> None:
                             original_name=" + ".join(zustand.dokumentnamen) or "Laborbefund",
                             rohe_ki_antwort=zustand.rohe_ki_antwort,
                             kis_vorschlag=zustand.kis_vorschlag,
+                            kis_vorschlag_ausfuehrlich=zustand.kis_vorschlag_ausfuehrlich,
                             provider=provider_name,
                             modell=modell,
                             befunde=tuple(freigegebene),
@@ -2470,6 +2603,26 @@ def zeige_hauptseite() -> None:
                             for zeile in briefzeilen
                             if zeile.get("uebernehmen")
                         )
+                    elif zustand.dokumenttyp in {
+                        Dokumenttyp.ENDOSKOPIE.value,
+                        Dokumenttyp.SONOGRAFIE.value,
+                    }:
+                        fachzeilen = await fachbefund_pruef_tabelle.get_client_data()
+                        fachgruppe = (
+                            "Endoskopie"
+                            if zustand.dokumenttyp == Dokumenttyp.ENDOSKOPIE.value
+                            else "Sonografie"
+                        )
+                        dokumentbefunde = tuple(
+                            FreigegebenerDokumentbefund(
+                                kategorie=str(zeile.get("kategorie") or "").strip(),
+                                inhalt=str(zeile.get("inhalt") or "").strip(),
+                                quelltext=str(zeile.get("quelle") or "").strip(),
+                                fachgruppe=fachgruppe,
+                            )
+                            for zeile in fachzeilen
+                            if zeile.get("uebernehmen")
+                        )
                     dokument_id = speichere_allgemeines_dokument(
                         sitzung,
                         DokumentSpeicherauftrag(
@@ -2479,6 +2632,7 @@ def zeige_hauptseite() -> None:
                             original_name=" + ".join(zustand.dokumentnamen) or "Dokument",
                             rohe_ki_antwort=zustand.rohe_ki_antwort,
                             kis_vorschlag=zustand.kis_vorschlag,
+                            kis_vorschlag_ausfuehrlich=zustand.kis_vorschlag_ausfuehrlich,
                             provider=provider_name,
                             modell=modell,
                             befunde=dokumentbefunde,
@@ -2508,6 +2662,12 @@ def zeige_hauptseite() -> None:
         elif zustand.dokumenttyp == Dokumenttyp.ARZTBRIEF.value:
             oeffne_fachverlauf("weitere")
             setze_status("Arztbrief und bestätigte Abschnitte gespeichert · Weitere Befunde geöffnet")
+        elif zustand.dokumenttyp == Dokumenttyp.ENDOSKOPIE.value:
+            oeffne_fachverlauf("endoskopie")
+            setze_status("Endoskopiebefund und bestätigte Abschnitte gespeichert")
+        elif zustand.dokumenttyp == Dokumenttyp.SONOGRAFIE.value:
+            oeffne_fachverlauf("sonografie")
+            setze_status("Sonografiebefund und bestätigte Abschnitte gespeichert")
         else:
             setze_status("Dokument wurde dem bestätigten Patienten zugeordnet")
 
@@ -2665,13 +2825,27 @@ def zeige_hauptseite() -> None:
         aktualisiere_patientenvorschlaege()
 
     def aktualisiere_ergebnisanzeige() -> None:
-        """Zeigt exakt die gewählte, bereits geprüfte Antwortvariante an."""
+        """Zeigt die gewählte Variante; nur KIS-Vorschläge sind editierbar."""
         varianten = {
             "rohtext": zustand.ausgelesener_inhalt,
             "strukturiert": zustand.strukturierte_darstellung,
-            "zusammenfassung": zustand.kis_vorschlag,
+            "kis_kompakt": zustand.kis_vorschlag,
+            "kis_ausfuehrlich": zustand.kis_vorschlag_ausfuehrlich,
         }
         ergebnis_ausgabe.value = varianten[str(ergebnis_auswahl.value)]
+        if str(ergebnis_auswahl.value).startswith("kis_"):
+            ergebnis_ausgabe.props(remove="readonly")
+        else:
+            ergebnis_ausgabe.props(add="readonly")
+
+    def uebernehme_kis_bearbeitung() -> None:
+        """Hält ausschließlich die sichtbare KIS-Fassung im Sitzungszustand aktuell."""
+
+        auswahl = str(ergebnis_auswahl.value)
+        if auswahl == "kis_kompakt":
+            zustand.kis_vorschlag = str(ergebnis_ausgabe.value or "")
+        elif auswahl == "kis_ausfuehrlich":
+            zustand.kis_vorschlag_ausfuehrlich = str(ergebnis_ausgabe.value or "")
 
     def verschiebe_seite(index: int, richtung: int) -> None:
         """Verschiebt eine sichtbare Vorschau zur manuellen Reihenfolgekorrektur."""
@@ -2728,6 +2902,7 @@ def zeige_hauptseite() -> None:
         zustand.ausgelesener_inhalt = ""
         zustand.strukturierte_darstellung = ""
         zustand.kis_vorschlag = ""
+        zustand.kis_vorschlag_ausfuehrlich = ""
         zustand.rohe_ki_antwort = ""
         zustand.letzter_fehler = ""
         zustand.ergebnis_anbieter = ""
@@ -2760,6 +2935,7 @@ def zeige_hauptseite() -> None:
         zustand.ausgelesener_inhalt = ""
         zustand.strukturierte_darstellung = ""
         zustand.kis_vorschlag = ""
+        zustand.kis_vorschlag_ausfuehrlich = ""
         zustand.rohe_ki_antwort = ""
         zustand.letzter_fehler = ""
         zustand.ergebnis_anbieter = ""
@@ -2805,6 +2981,17 @@ def zeige_hauptseite() -> None:
         ]
         uebernehme_dokumente(dateien)
 
+    def melde_zwischenablageproblem(ereignis: events.GenericEventArguments) -> None:
+        """Erklärt einen fehlenden Bilddatenstrom ohne medizinische Inhalte zu loggen."""
+
+        typen = ", ".join(str(wert) for wert in ereignis.args.get("typen", []))
+        setze_status(
+            "Die Zwischenablage enthielt kein vom Browser bereitgestelltes Bild. "
+            f"Bereitgestellte Formate: {typen or 'keine'}. Bitte den Ausschnitt erneut "
+            "als Bild kopieren oder als PNG/JPG hochladen.",
+            fehler=True,
+        )
+
     async def lese_dokument() -> None:
         """Bearbeitet erhaltene Seiten erneut mit dem gerade gewählten Anbieter.
 
@@ -2835,6 +3022,7 @@ def zeige_hauptseite() -> None:
             zustand.ausgelesener_inhalt = ergebnis.ausgelesener_inhalt
             zustand.strukturierte_darstellung = ergebnis.strukturierte_darstellung
             zustand.kis_vorschlag = ergebnis.kis_vorschlag
+            zustand.kis_vorschlag_ausfuehrlich = ergebnis.kis_vorschlag_ausfuehrlich
             zustand.rohe_ki_antwort = ergebnis.rohe_ki_antwort
             zustand.ergebnis_anbieter = zustand.anbieter
             dokumenttyp_ausgabe.value = zustand.dokumenttyp
@@ -2873,6 +3061,26 @@ def zeige_hauptseite() -> None:
     neuer_patient_schalter.on_click(wechsle_neuer_patient_formular)
     patient_anlegen.on_click(lege_patient_an)
     ced_speichern.on_click(speichere_gepruefte_ced_daten)
+    ced_alle_auswaehlen.on_click(lambda: setze_alle_tabellenzeilen(ced_tabelle, True))
+    ced_alle_abwaehlen.on_click(lambda: setze_alle_tabellenzeilen(ced_tabelle, False))
+    labor_alle_auswaehlen.on_click(
+        lambda: setze_alle_tabellenzeilen(labor_pruef_tabelle, True)
+    )
+    labor_alle_abwaehlen.on_click(
+        lambda: setze_alle_tabellenzeilen(labor_pruef_tabelle, False)
+    )
+    arztbrief_alle_auswaehlen.on_click(
+        lambda: setze_alle_tabellenzeilen(arztbrief_pruef_tabelle, True)
+    )
+    arztbrief_alle_abwaehlen.on_click(
+        lambda: setze_alle_tabellenzeilen(arztbrief_pruef_tabelle, False)
+    )
+    fachbefund_alle_auswaehlen.on_click(
+        lambda: setze_alle_tabellenzeilen(fachbefund_pruef_tabelle, True)
+    )
+    fachbefund_alle_abwaehlen.on_click(
+        lambda: setze_alle_tabellenzeilen(fachbefund_pruef_tabelle, False)
+    )
     dokument_pruef_speichern.on_click(speichere_allgemeine_dokumentzuordnung)
     ced_navigation.on_click(ordne_daten_patient_zu)
     einlesen_navigation.on_click(zeige_einlesebereich)
@@ -2896,8 +3104,10 @@ def zeige_hauptseite() -> None:
     dokument_verwerfen_schalter.on_click(beginne_neues_dokument)
     lesen_schalter.on_click(lese_dokument)
     ergebnis_auswahl.on_value_change(lambda _: aktualisiere_ergebnisanzeige())
+    ergebnis_ausgabe.on_value_change(lambda _: uebernehme_kis_bearbeitung())
     kopieren_schalter.on_click(kopiere_ergebnis)
     ui.on("abgelegte_dateien", uebernehme_abgelegte_dateien)
+    ui.on("zwischenablage_ohne_bild", melde_zwischenablageproblem)
 
     # Der Browser liest ausschließlich Bildobjekte aus einem echten Paste-Ereignis.
     # Zusätzlich fängt die Seite Datei-Drops außerhalb des sichtbaren Uploaders ab.
@@ -2929,11 +3139,26 @@ def zeige_hauptseite() -> None:
             // AG-Grid-Zellen das Ereignis sonst vor dem Dokument-Handler abfangen
             // können. Zum Debugging MIME-Typen in den Browserwerkzeugen prüfen,
             // niemals Bildinhalt oder Base64-Daten protokollieren.
-            const bilder = [...(event.clipboardData?.items || [])]
-                .filter(eintrag => eintrag.kind === 'file' && eintrag.type.startsWith('image/'))
+            const istBilddatei = datei => datei && (
+                datei.type.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp)$/i.test(datei.name || '')
+            );
+            const ausItems = [...(event.clipboardData?.items || [])]
+                .filter(eintrag => eintrag.kind === 'file')
                 .map(eintrag => eintrag.getAsFile())
-                .filter(datei => datei !== null);
-            if (!bilder.length) return;
+                .filter(istBilddatei);
+            const ausDateien = [...(event.clipboardData?.files || [])].filter(istBilddatei);
+            // Manche Screenshot-Werkzeuge melden einen leeren oder generischen
+            // MIME-Typ und stellen das Bild nur über clipboardData.files bereit.
+            // Objektidentität verhindert, dass derselbe Blob aus beiden Listen
+            // doppelt übernommen wird; Bildähnlichkeit wird ausdrücklich nie geprüft.
+            const bilder = [...new Set([...ausItems, ...ausDateien])];
+            if (!bilder.length) {
+                if (event.target.closest('input, textarea, [contenteditable="true"]')) return;
+                emitEvent('zwischenablage_ohne_bild', {
+                    typen: [...(event.clipboardData?.types || [])],
+                });
+                return;
+            }
             event.preventDefault();
             event.stopPropagation();
             const gelesen = await Promise.all(bilder.map((bild, index) =>
