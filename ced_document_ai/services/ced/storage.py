@@ -50,6 +50,7 @@ class CEDSpeicherauftrag:
     provider: str
     modell: str
     befunde: tuple[FreigegebenerBefund, ...]
+    kis_vorschlag_ausfuehrlich: str = ""
 
 
 def finde_befundduplikate(
@@ -144,6 +145,7 @@ def speichere_ced_pruefung(sitzung: Session, auftrag: CEDSpeicherauftrag) -> int
             patient_id=auftrag.patient_id,
             document_type_id=dokumenttyp.id,
             original_name=auftrag.original_name,
+            document_date=auftrag.befunddatum,
             confirmed=False,
         )
         sitzung.add(dokument)
@@ -154,7 +156,7 @@ def speichere_ced_pruefung(sitzung: Session, auftrag: CEDSpeicherauftrag) -> int
                 document_id=dokument.id,
                 raw_ai_response=auftrag.rohe_ki_antwort,
                 kis_summary_compact=auftrag.kis_vorschlag,
-                kis_summary_detailed=None,
+                kis_summary_detailed=auftrag.kis_vorschlag_ausfuehrlich or None,
                 model=auftrag.modell,
                 provider=auftrag.provider,
             )
