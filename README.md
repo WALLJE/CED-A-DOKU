@@ -1,5 +1,40 @@
 # CED-A-DOKU – KI-gestützte Auswertung medizinischer Dokumente
 
+## Start in GitHub Codespaces
+
+Beim erstmaligen Erstellen eines Codespaces verwendet die Dev-Container-Konfiguration
+gezielt Python 3.13 und installiert automatisch alle Pakete aus `requirements.txt`.
+Python 3.14 ist derzeit nicht geeignet: Die von NiceGUI 2.x geladene Abhängigkeit
+`vbuild` verwendet noch die dort entfernte Funktion `pkgutil.find_loader` und bricht
+bereits beim Import ab. Danach die Anwendung im Projektstamm mit demselben
+Python-Interpreter starten:
+
+```bash
+python main.py
+```
+
+Erscheint dennoch `ModuleNotFoundError: No module named 'nicegui'`, wurde meistens
+ein anderer Interpreter verwendet oder die automatische Einrichtung ist nicht
+vollständig durchgelaufen. Zur Diagnose und gezielten Installation deshalb im
+Codespaces-Terminal diese Befehle ausführen:
+
+```bash
+which python
+python -m pip --version
+python -m pip install -r requirements.txt
+python -c "import nicegui; print(nicegui.__file__)"
+```
+
+Zeigt `python --version` in einem bestehenden Codespace bereits Python 3.14, muss der
+Container nach dieser Änderung über **Codespaces: Rebuild Container** neu gebaut
+werden. Eine erneute Paketinstallation innerhalb der unveränderten Python-3.14-
+Umgebung behebt den `pkgutil.find_loader`-Fehler nicht.
+
+Anschließend erneut `python main.py` verwenden. Der direkte Aufruf eines anderen
+Interpreters wie `/usr/bin/python3 main.py` oder eines alten Python-3.14-Pfads kann
+dessen getrennte beziehungsweise inkompatible Paketumgebung verwenden und dadurch
+den Importfehler erneut auslösen.
+
 ## API-Schlüssel eintragen
 
 Die API-Schlüssel werden beim Programmstart mit `python-dotenv` aus einer lokalen
@@ -23,11 +58,18 @@ Datei namens `.env` geladen. Die Schlüssel gehören **nicht** in eine Python-Da
    ```dotenv
    # Lokale Geheimnisse: Diese Datei niemals an Git übergeben.
    UK_API_KEY=hier_den_uk_api_schluessel_eintragen
-   OPEN_AI_KEY=hier_den_openai_api_schluessel_eintragen
+   OPENAI_API_KEY=hier_den_openai_api_schluessel_eintragen
    ```
 
    Es sind keine Anführungszeichen erforderlich. Für den in `CED_AI_PROVIDER`
    ausgewählten Anbieter muss der entsprechende Schlüssel gesetzt sein.
+
+   Für die OpenAI-Verbindung zusätzlich den Anbieter aktivieren:
+
+   ```dotenv
+   CED_AI_PROVIDER=openai
+   CED_OPENAI_MODEL=gpt-4.1-mini
+   ```
 
 4. Die Browseranwendung aus dem Projektstamm starten:
 
