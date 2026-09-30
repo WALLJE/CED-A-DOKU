@@ -48,7 +48,7 @@ _FACHGRUPPE_NACH_TYP = {
 }
 
 
-def ermittle_dokumentfachgruppe(dokumenttyp: str) -> str:
+def ermittle_dokumentfachgruppe(dokumenttyp: str, *, gespeicherte_fachgruppe: str | None = None) -> str:
     """Ordnet einen gespeicherten Dokumenttyp einer sichtbaren Fachgruppe zu.
 
     Unbekannte, aber bereits gespeicherte Typen behalten ihre konkrete Bezeichnung
@@ -60,4 +60,6 @@ def ermittle_dokumentfachgruppe(dokumenttyp: str) -> str:
     normalisiert = dokumenttyp.strip()
     if not normalisiert:
         raise ValueError("Ein leerer Dokumenttyp kann keiner Fachgruppe zugeordnet werden.")
+    if gespeicherte_fachgruppe:
+        return gespeicherte_fachgruppe
     return _FACHGRUPPE_NACH_TYP.get(normalisiert, "Weitere Befunde")

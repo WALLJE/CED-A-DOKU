@@ -1,39 +1,23 @@
 # CED-A-DOKU – KI-gestützte Auswertung medizinischer Dokumente
 
-## Start in GitHub Codespaces
+## Kontextfreie Texterkennung und medizinische Klassifikation
 
-Beim erstmaligen Erstellen eines Codespaces verwendet die Dev-Container-Konfiguration
-gezielt Python 3.13 und installiert automatisch alle Pakete aus `requirements.txt`.
-Python 3.14 ist derzeit nicht geeignet: Die von NiceGUI 2.x geladene Abhängigkeit
-`vbuild` verwendet noch die dort entfernte Funktion `pkgutil.find_loader` und bricht
-bereits beim Import ab. Danach die Anwendung im Projektstamm mit demselben
-Python-Interpreter starten:
+Vor der Analyse wird ausdrücklich zwischen **„Nur sichtbaren Text auslesen“** und
+**„Medizinisches Dokument analysieren“** gewählt. Die kontextfreie Texterkennung
+klassifiziert nicht, sucht keinen Patienten, erstellt keinen KIS-Text und speichert
+nichts in der CED-Datenbank.
 
-```bash
-python main.py
-```
+Die medizinische Verarbeitung ist zweistufig: Zuerst bleiben Transkription und
+Klassifikationsvorschlag temporär. Danach bestätigt der Benutzer eine vorhandene
+Dokumentklasse oder legt kontrolliert eine neue Klasse mit Fachgruppe, Beschreibung
+und Erkennungsmerkmalen an. Erst anschließend werden strukturierte Darstellung und
+KIS-Texte erzeugt. Es gibt keinen automatischen Rückfall auf „sonstiges medizinisches
+Dokument“.
 
-Erscheint dennoch `ModuleNotFoundError: No module named 'nicegui'`, wurde meistens
-ein anderer Interpreter verwendet oder die automatische Einrichtung ist nicht
-vollständig durchgelaufen. Zur Diagnose und gezielten Installation deshalb im
-Codespaces-Terminal diese Befehle ausführen:
-
-```bash
-which python
-python -m pip --version
-python -m pip install -r requirements.txt
-python -c "import nicegui; print(nicegui.__file__)"
-```
-
-Zeigt `python --version` in einem bestehenden Codespace bereits Python 3.14, muss der
-Container nach dieser Änderung über **Codespaces: Rebuild Container** neu gebaut
-werden. Eine erneute Paketinstallation innerhalb der unveränderten Python-3.14-
-Umgebung behebt den `pkgutil.find_loader`-Fehler nicht.
-
-Anschließend erneut `python main.py` verwenden. Der direkte Aufruf eines anderen
-Interpreters wie `/usr/bin/python3 main.py` oder eines alten Python-3.14-Pfads kann
-dessen getrennte beziehungsweise inkompatible Paketumgebung verwenden und dadurch
-den Importfehler erneut auslösen.
+Neue Klassen werden persistent gespeichert. Optional können ausdrücklich bestätigte,
+patientenfreie Merkmalsbeschreibungen als Lernbeispiele ergänzt werden. Dieses
+„Lernen“ erweitert nur den Klassifikationskatalog; es verändert keine vorhandene
+Definition automatisch und erzeugt keine medizinischen Einzelwerte.
 
 ## API-Schlüssel eintragen
 

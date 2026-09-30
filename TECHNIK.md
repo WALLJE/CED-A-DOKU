@@ -4,6 +4,26 @@ Dieses Dokument richtet sich an Entwicklerinnen und Entwickler. Es beschreibt di
 zentralen Programmteile, Zustände und die Grenze zwischen KI-Verarbeitung und
 deterministischer Logik. Fachliche Bedienhinweise stehen weiterhin in der README.
 
+## Zweistufige Dokumentanalyse und dynamischer Klassenkatalog
+
+`OpenAICompatibleProvider.transcribe_document` liest jedes Bild einzeln und ohne
+Klassifikation. Im neutralen Textmodus endet der Ablauf mit diesem temporären
+`TranskriptionsErgebnis`; Patientensuche und Datenbankspeicherung sind nicht erreichbar.
+
+Im medizinischen Modus lädt `document_type_service.py` aktive Klassen aus
+`document_types` und bestätigte Lernsignale aus `document_type_examples`.
+`classify_transcription` darf daraus nur Vorschläge bilden. Erst die manuelle
+Bestätigung ruft `structure_transcription` auf. Neue Klassen enthalten Fachgruppe,
+Beschreibung, Klassifikationsmerkmale, Aktivstatus und Herkunft. Lernbeispiele werden
+nur nach ausdrücklicher Bestätigung additiv gespeichert; Definitionen werden nie
+automatisch aus einem Dokument umgeschrieben.
+
+Dokumentklasse (`DocumentType`) und Einzelwertkategorie (`FindingCategory`) sind
+strikt getrennt. Eine neue Klasse kann archiviert werden, besitzt aber ohne eigens
+implementierten Fachparser keine strukturierten Findings. Zum Debuggen dürfen Anzahl
+der Klassen, Status und Antwortformat geprüft werden; Transkripte und Patientendaten
+gehören nicht in Logs.
+
 ## Einstieg und Laufzeit
 
 - `main.py` ruft `ced_document_ai.medical_ui.starte_anwendung()` auf.

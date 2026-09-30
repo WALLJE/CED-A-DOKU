@@ -2,6 +2,8 @@
 
 from datetime import date
 
+import pytest
+
 from sqlalchemy import func, select
 
 from ced_document_ai.config.settings import Settings
@@ -119,3 +121,27 @@ def test_exakt_gleiche_rohantwort_findet_bestehende_patientenzuordnung(tmp_path)
         assert [(eintrag.dokument_id, eintrag.patient_id) for eintrag in treffer] == [
             (dokument_id, patient.id)
         ]
+
+
+def test_unbestaetigte_neue_dokumentklasse_wird_nicht_implizit_angelegt(tmp_path) -> None:
+    fabrik = initialize_database(Settings(database_path=tmp_path / "unbestaetigt.sqlite3"))
+    with fabrik() as sitzung:
+        patient = Patient(external_id="TEST-NEU", name="Klasse Beispiel")
+        sitzung.add(patient)
+        sitzung.commit()
+        with pytest.raises(ValueError, match="nicht bestätigt"):
+            speichere_allgemeines_dokument(
+                sitzung,
+                DokumentSpeicherauftrag(
+                    patient_id=patient.id,
+                    dokumenttyp="Von der KI erfundene Klasse",
+                    dokumentdatum=date(2026, 9, 30),
+                    original_name="unbekannt.pdf",
+                    rohe_ki_antwort="Antwort",
+                    kis_vorschlag="Kurz",
+                    provider="TEST",
+                    modell="TEST",
+                ),
+            )
+        assert sitzung.scalar(select(func.count()).select_from(Document)) == 0
+        assert sitzung.scalar(select(func.count()).select_from(FindingCategory)) == 0

@@ -11,6 +11,8 @@ from ced_document_ai.services.ai.document_workflow import (
     FORMATVORGABEN,
     WORKFLOW_PROMPT,
     parse_dokumentantwort,
+    parse_klassifikationsantwort,
+    Klassifikationsstatus,
 )
 from ced_document_ai.services.ai.providers import OpenAICompatibleProvider
 
@@ -70,6 +72,31 @@ def test_fehlender_abschnitt_ist_fehler(abschnitt: str, meldung: str) -> None:
 def test_unbekannter_typ_hat_keinen_fallback() -> None:
     with pytest.raises(DokumentAntwortFehler, match="Unbekannter Dokumenttyp"):
         parse_dokumentantwort(_antwort().replace("Arztbrief", "Entlassschein", 1))
+
+
+def test_unsichere_klassifikation_akzeptiert_nur_katalogklassen() -> None:
+    antwort = """STATUS: UNSICHER
+VORGESCHLAGENE KLASSE: MRT-Befund
+ALTERNATIVEN: CT-Befund|Bildgebender Befund
+BEGRÜNDUNG: Radiologischer Fließtext ohne eindeutige Modalitätsbezeichnung.
+NEUE KLASSE:
+"""
+    ergebnis = parse_klassifikationsantwort(
+        antwort, ("MRT-Befund", "CT-Befund", "Bildgebender Befund")
+    )
+    assert ergebnis.status is Klassifikationsstatus.UNSICHER
+    assert ergebnis.alternativen == ("CT-Befund", "Bildgebender Befund")
+
+
+def test_unbekannte_ki_klasse_wird_nicht_stillschweigend_angelegt() -> None:
+    antwort = """STATUS: EINDEUTIG
+VORGESCHLAGENE KLASSE: Erfundenes Spezialdokument
+ALTERNATIVEN:
+BEGRÜNDUNG: Angebliche Merkmale.
+NEUE KLASSE:
+"""
+    with pytest.raises(DokumentAntwortFehler, match="nicht bestätigte Klassen"):
+        parse_klassifikationsantwort(antwort, ("Arztbrief",))
 
 
 def test_leerer_abschnitt_ist_fehler() -> None:

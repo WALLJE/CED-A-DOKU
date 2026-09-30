@@ -157,7 +157,9 @@ def lade_dokumentenarchiv(
     dokumente: list[ArchiviertesDokument] = []
     erlaubte_gruppen = set(fachgruppen) if fachgruppen is not None else None
     for dokument, dokumenttyp, ki_ergebnis in zeilen:
-        fachgruppe = ermittle_dokumentfachgruppe(dokumenttyp.name)
+        fachgruppe = ermittle_dokumentfachgruppe(
+            dokumenttyp.name, gespeicherte_fachgruppe=dokumenttyp.group_name
+        )
         if erlaubte_gruppen is not None and fachgruppe not in erlaubte_gruppen:
             continue
         dokumente.append(

@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from enum import Enum
+from typing import Sequence
 
 
 class Dokumenttyp(str, Enum):
@@ -38,7 +39,7 @@ class Dokumenttyp(str, Enum):
 class DokumentErgebnis:
     """Unveränderliches Ergebnis genau eines vollständig verarbeiteten Dokuments."""
 
-    dokumenttyp: Dokumenttyp
+    dokumenttyp: Dokumenttyp | str
     ausgelesener_inhalt: str
     strukturierte_darstellung: str
     kis_vorschlag: str
@@ -51,6 +52,34 @@ class DokumentErgebnis:
 
 class DokumentAntwortFehler(ValueError):
     """Konkreter Formatfehler einer KI-Antwort (ohne medizinische Ersatzantwort)."""
+
+
+class Klassifikationsstatus(str, Enum):
+    """Kontrollierte Ergebnisse der noch nicht bestätigten Klassifikation."""
+
+    EINDEUTIG = "EINDEUTIG"
+    UNSICHER = "UNSICHER"
+    MEDIZINISCH_UNKLASSIFIZIERT = "MEDIZINISCH_UNKLASSIFIZIERT"
+    NICHT_MEDIZINISCH = "NICHT_MEDIZINISCH"
+
+
+@dataclass(frozen=True)
+class Klassifikationsvorschlag:
+    """KI-Vorschlag ohne Speicher- oder Zuordnungswirkung."""
+
+    status: Klassifikationsstatus
+    vorgeschlagene_klasse: str | None
+    alternativen: tuple[str, ...]
+    begruendung: str
+    neue_klasse_vorschlag: str | None = None
+
+
+@dataclass(frozen=True)
+class TranskriptionsErgebnis:
+    """Originalnahe Einzeltexte, unabhängig von Patient und Dokumentklasse."""
+
+    einzeltexte: tuple[str, ...]
+    gesamttext: str
 
 
 FORMATVORGABEN = """
@@ -176,7 +205,9 @@ _UEBERSCHRIFT = re.compile(
 )
 
 
-def parse_dokumentantwort(antwort: str) -> DokumentErgebnis:
+def parse_dokumentantwort(
+    antwort: str, *, erlaubter_dokumenttyp: str | None = None
+) -> DokumentErgebnis:
     """Parst alle fünf Pflichtabschnitte oder meldet den exakten Formatfehler.
 
     Debugging-Hinweis: Lokal dürfen Entwickler bei Bedarf ausschließlich
@@ -213,9 +244,12 @@ def parse_dokumentantwort(antwort: str) -> DokumentErgebnis:
 
     typtext = inhalte["DOKUMENTTYP"].strip()
     try:
-        dokumenttyp = Dokumenttyp(typtext)
+        dokumenttyp: Dokumenttyp | str = Dokumenttyp(typtext)
     except ValueError as fehler:
-        raise DokumentAntwortFehler(f"Unbekannter Dokumenttyp: {typtext!r}.") from fehler
+        if erlaubter_dokumenttyp and typtext == erlaubter_dokumenttyp:
+            dokumenttyp = typtext
+        else:
+            raise DokumentAntwortFehler(f"Unbekannter Dokumenttyp: {typtext!r}.") from fehler
     return DokumentErgebnis(
         dokumenttyp=dokumenttyp,
         ausgelesener_inhalt=inhalte["AUSGELESENER INHALT"],
@@ -229,3 +263,87 @@ def parse_dokumentantwort(antwort: str) -> DokumentErgebnis:
 # Englischer Alias erleichtert die anbieterunabhängige Nutzung, ohne eine zweite
 # Parserimplementierung oder abweichende Fehlerbehandlung einzuführen.
 parse_document_response = parse_dokumentantwort
+
+
+_KLASSIFIKATIONSFELDER = (
+    "STATUS", "VORGESCHLAGENE KLASSE", "ALTERNATIVEN", "BEGRÜNDUNG", "NEUE KLASSE",
+)
+
+
+def erstelle_klassifikationsprompt(klassen: Sequence[object], transkript: str) -> str:
+    """Erzeugt den Katalogprompt ohne Patientendaten oder stillen Standardtyp.
+
+    ``klassen`` sind bewusst strukturell gelesen, damit das AI-Modul nicht vom
+    SQLAlchemy-Modell abhängt. Erwartet werden Attribute ``name``, ``beschreibung``,
+    ``merkmale`` und ``beispiele`` aus dem Katalogdienst.
+    """
+
+    katalogzeilen = []
+    for klasse in klassen:
+        beispiele = "; ".join(getattr(klasse, "beispiele", ())[-3:])
+        katalogzeilen.append(
+            f"- {klasse.name}: {klasse.beschreibung or 'keine Beschreibung'}; "
+            f"Merkmale: {klasse.merkmale or 'keine hinterlegt'}"
+            + (f"; bestätigte Beispiele: {beispiele}" if beispiele else "")
+        )
+    return f"""Prüfe ausschließlich anhand des Transkripts, ob es ein medizinisches Dokument ist
+und zu welcher vorhandenen Klasse es gehört. Erfinde keine Inhalte. Bei mehreren
+plausiblen Klassen STATUS UNSICHER verwenden. Wenn medizinisch, aber keine Klasse
+passt, STATUS MEDIZINISCH_UNKLASSIFIZIERT verwenden und einen knappen neuen
+Klassennamen vorschlagen. Nichtmedizinischer Text erhält NICHT_MEDIZINISCH.
+
+Vorhandene Klassen:
+{chr(10).join(katalogzeilen)}
+
+Antworte exakt mit:
+STATUS: [EINDEUTIG|UNSICHER|MEDIZINISCH_UNKLASSIFIZIERT|NICHT_MEDIZINISCH]
+VORGESCHLAGENE KLASSE: [exakter vorhandener Name oder leer]
+ALTERNATIVEN: [vorhandene Namen durch | getrennt oder leer]
+BEGRÜNDUNG: [kurze Begründung nur anhand sichtbarer Dokumentmerkmale]
+NEUE KLASSE: [knapper Vorschlag nur bei MEDIZINISCH_UNKLASSIFIZIERT oder leer]
+
+TRANSKRIPT:
+{transkript}"""
+
+
+def parse_klassifikationsantwort(
+    antwort: str, erlaubte_klassen: Sequence[str]
+) -> Klassifikationsvorschlag:
+    """Parst einen Vorschlag streng; unbekannte Klassennamen werden nicht akzeptiert."""
+
+    werte: dict[str, str] = {}
+    for zeile in (antwort or "").splitlines():
+        for feld in _KLASSIFIKATIONSFELDER:
+            prefix = feld + ":"
+            if zeile.startswith(prefix):
+                if feld in werte:
+                    raise DokumentAntwortFehler(f"Klassifikationsfeld mehrfach vorhanden: {feld}.")
+                werte[feld] = zeile[len(prefix):].strip()
+                break
+    fehlend = [feld for feld in _KLASSIFIKATIONSFELDER if feld not in werte]
+    if fehlend:
+        raise DokumentAntwortFehler("Klassifikationsfelder fehlen: " + ", ".join(fehlend) + ".")
+    try:
+        status = Klassifikationsstatus(werte["STATUS"])
+    except ValueError as fehler:
+        raise DokumentAntwortFehler("Unbekannter Klassifikationsstatus.") from fehler
+    erlaubt = set(erlaubte_klassen)
+    vorschlag = werte["VORGESCHLAGENE KLASSE"] or None
+    alternativen = tuple(w.strip() for w in werte["ALTERNATIVEN"].split("|") if w.strip())
+    unbekannt = ({vorschlag} if vorschlag else set()) | set(alternativen)
+    unbekannt -= erlaubt
+    if unbekannt:
+        raise DokumentAntwortFehler(
+            "Klassifikation enthält nicht bestätigte Klassen: " + ", ".join(sorted(unbekannt))
+        )
+    if status is Klassifikationsstatus.EINDEUTIG and not vorschlag:
+        raise DokumentAntwortFehler("Eine eindeutige Klassifikation benötigt eine vorhandene Klasse.")
+    if not werte["BEGRÜNDUNG"]:
+        raise DokumentAntwortFehler("Die Klassifikationsbegründung fehlt.")
+    return Klassifikationsvorschlag(
+        status=status,
+        vorgeschlagene_klasse=vorschlag,
+        alternativen=alternativen,
+        begruendung=werte["BEGRÜNDUNG"],
+        neue_klasse_vorschlag=werte["NEUE KLASSE"] or None,
+    )

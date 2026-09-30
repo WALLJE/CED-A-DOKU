@@ -41,6 +41,14 @@ from ced_document_ai.services.ced.document_categories import (
     Dokumentklasse,
     ermittle_dokumentfachgruppe,
 )
+from ced_document_ai.services.ced.document_type_service import (
+    Dokumentklassendaten,
+    ERLAUBTE_FACHGRUPPEN,
+    ergaenze_bestaetigtes_beispiel,
+    finde_aehnliche_klassen,
+    lege_dokumentklasse_an,
+    liste_dokumentklassen,
+)
 from ced_document_ai.services.ced.laboratory_parser import (
     LABORDOKUMENTTYPEN,
     ExtrahierterLaborwert,
@@ -119,6 +127,12 @@ __all__ = [
     "DOKUMENTKLASSEN",
     "Dokumentklasse",
     "ermittle_dokumentfachgruppe",
+    "Dokumentklassendaten",
+    "ERLAUBTE_FACHGRUPPEN",
+    "ergaenze_bestaetigtes_beispiel",
+    "finde_aehnliche_klassen",
+    "lege_dokumentklasse_an",
+    "liste_dokumentklassen",
     "LABORDOKUMENTTYPEN",
     "ExtrahierterLaborwert",
     "parse_laborbefund",

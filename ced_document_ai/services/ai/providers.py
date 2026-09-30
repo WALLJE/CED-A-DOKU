@@ -14,8 +14,13 @@ import requests
 from ced_document_ai.config.settings import Settings
 from ced_document_ai.services.ai.document_workflow import (
     DokumentErgebnis,
+    DokumentAntwortFehler,
+    Klassifikationsvorschlag,
+    TranskriptionsErgebnis,
     WORKFLOW_PROMPT,
+    erstelle_klassifikationsprompt,
     parse_dokumentantwort,
+    parse_klassifikationsantwort,
 )
 
 
@@ -39,6 +44,20 @@ class DocumentAI(ABC):
     @abstractmethod
     def process_document(self, document: Sequence[Path]) -> DokumentErgebnis:
         """Verarbeitet alle Dokumentteile zu genau einem gemeinsamen Ergebnis."""
+
+    @abstractmethod
+    def transcribe_document(self, document: Sequence[Path]) -> TranskriptionsErgebnis:
+        """Liest Teile originalnah und ohne Klassifikation einzeln aus."""
+
+    @abstractmethod
+    def classify_transcription(
+        self, transkript: TranskriptionsErgebnis, klassen: Sequence[object]
+    ) -> Klassifikationsvorschlag:
+        """Erzeugt einen noch nicht bestätigten Vorschlag aus dem Katalog."""
+
+    @abstractmethod
+    def structure_transcription(self, transkript: str, dokumenttyp: str) -> DokumentErgebnis:
+        """Strukturiert erst nach der ausdrücklichen Klassenbestätigung."""
 
 
 @dataclass
@@ -167,6 +186,57 @@ class OpenAICompatibleProvider(DocumentAI):
                 (),
             )
         return parse_dokumentantwort(rohantwort)
+
+    def transcribe_document(self, document: Sequence[Path]) -> TranskriptionsErgebnis:
+        """Liest jedes Teil getrennt; es folgt bewusst keine zweite medizinische Anfrage."""
+
+        if not document:
+            raise ValueError("Mindestens eine Dokumentseite ist erforderlich.")
+        auftrag = (
+            "Lies ausschließlich den sichtbar vorhandenen Text originalgetreu aus. "
+            "Nicht klassifizieren, zusammenfassen, interpretieren, korrigieren oder ergänzen. "
+            "Zeichenfolgen, Groß-/Kleinschreibung, Bindestriche und Zeilenumbrüche bewahren. "
+            "Unleserliche Zeichen nicht raten. Gib ausschließlich den sichtbaren Text aus."
+        )
+        einzeltexte = tuple(self._request(auftrag, (teil,)).strip() for teil in document)
+        if not any(einzeltexte):
+            raise AIProviderError("In den Dokumentteilen wurde kein sichtbarer Text erkannt.")
+        return TranskriptionsErgebnis(
+            einzeltexte=einzeltexte,
+            gesamttext="\n\n".join(text for text in einzeltexte if text),
+        )
+
+    def classify_transcription(
+        self, transkript: TranskriptionsErgebnis, klassen: Sequence[object]
+    ) -> Klassifikationsvorschlag:
+        """Klassifiziert gegen den persistenten Katalog, ohne ihn zu verändern."""
+
+        if not klassen:
+            raise ValueError("Für die Klassifikation ist mindestens eine aktive Klasse erforderlich.")
+        antwort = self._request(erstelle_klassifikationsprompt(klassen, transkript.gesamttext), ())
+        return parse_klassifikationsantwort(antwort, [klasse.name for klasse in klassen])
+
+    def structure_transcription(self, transkript: str, dokumenttyp: str) -> DokumentErgebnis:
+        """Erzeugt medizinische Ansichten ausschließlich für die bestätigte Klasse."""
+
+        if not transkript.strip() or not dokumenttyp.strip():
+            raise ValueError("Transkript und bestätigte Dokumentklasse sind verpflichtend.")
+        prompt = (
+            WORKFLOW_PROMPT
+            + "\n\nDie Dokumentklasse wurde vom Benutzer verbindlich als "
+            + repr(dokumenttyp)
+            + " bestätigt. Verwende exakt diese Bezeichnung bei DOKUMENTTYP und "
+            "klassifiziere nicht erneut. Grundlage ist ausschließlich dieses Transkript:\n\n"
+            + transkript
+        )
+        antwort = self._request(prompt, ())
+        ergebnis = parse_dokumentantwort(antwort, erlaubter_dokumenttyp=dokumenttyp)
+        ergebnis_typ = ergebnis.dokumenttyp.value if hasattr(ergebnis.dokumenttyp, "value") else ergebnis.dokumenttyp
+        if ergebnis_typ != dokumenttyp:
+            raise DokumentAntwortFehler(
+                "Die strukturierte Antwort weicht von der bestätigten Dokumentklasse ab."
+            )
+        return ergebnis
 
     # Alias für Aufrufer, die eine explizit benannte Workflow-Methode bevorzugen.
     analyze_workflow = process_document

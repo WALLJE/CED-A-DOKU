@@ -18,6 +18,7 @@ from ced_document_ai.database.models import (
     FindingCategory,
     Patient,
 )
+from ced_document_ai.services.ced.document_categories import DOKUMENTKLASSEN
 
 
 @dataclass(frozen=True)
@@ -91,9 +92,25 @@ def speichere_allgemeines_dokument(
             select(DocumentType).where(DocumentType.name == auftrag.dokumenttyp)
         )
         if dokumenttyp is None:
-            dokumenttyp = DocumentType(name=auftrag.dokumenttyp, prompt_text=None)
-            sitzung.add(dokumenttyp)
-            sitzung.flush()
+            standard = next(
+                (eintrag for eintrag in DOKUMENTKLASSEN if eintrag.dokumenttyp == auftrag.dokumenttyp),
+                None,
+            )
+            if standard is not None:
+                dokumenttyp = DocumentType(
+                    name=standard.dokumenttyp,
+                    display_name=standard.dokumenttyp,
+                    group_name=standard.fachgruppe,
+                    active=True,
+                    user_created=False,
+                )
+                sitzung.add(dokumenttyp)
+                sitzung.flush()
+        if dokumenttyp is None or not dokumenttyp.active:
+            raise ValueError(
+                "Die Dokumentklasse ist nicht bestätigt oder nicht aktiv. "
+                "Bitte die Klasse vor der Archivierung im Klassifikationsdialog bestätigen."
+            )
         dokument = Document(
             patient_id=auftrag.patient_id,
             document_type_id=dokumenttyp.id,
