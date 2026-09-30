@@ -7,6 +7,7 @@ from ced_document_ai.database.database import initialize_database
 from ced_document_ai.database.models import DocumentType, DocumentTypeExample, FindingCategory
 from ced_document_ai.services.ced.document_type_service import (
     ergaenze_bestaetigtes_beispiel,
+    erstelle_patientenfreie_lernmerkmale,
     finde_aehnliche_klassen,
     lege_dokumentklasse_an,
     liste_dokumentklassen,
@@ -69,3 +70,29 @@ def test_klasse_wird_nicht_automatisch_ueberschrieben_oder_doppelt_angelegt(tmp_
         gespeichert = sitzung.scalar(select(DocumentType).where(DocumentType.name == "Spezialbefund"))
         assert gespeichert.group_name == "Weitere Befunde"
 
+
+def test_standardklassen_besitzen_definition_und_merkmale(tmp_path) -> None:
+    fabrik = initialize_database(Settings(database_path=tmp_path / "standard.sqlite3"))
+    with fabrik() as sitzung:
+        klassen = liste_dokumentklassen(sitzung)
+        assert klassen
+        assert all(klasse.beschreibung and klasse.merkmale for klasse in klassen)
+
+
+def test_lernmerkmale_enthalten_ueberschriften_aber_keine_patientenwerte() -> None:
+    merkmale = erstelle_patientenfreie_lernmerkmale(
+        """Patient: Max Beispiel
+Geburtsdatum: 01.02.1980
+Diagnosen: Morbus Crohn
+Anamnese: Bauchschmerzen seit drei Tagen
+Parameter | Ergebnis | Einheit | Referenzbereich
+CRP | 12 | mg/l | < 5
+"""
+    )
+    assert "Diagnosen" in merkmale
+    assert "Anamnese" in merkmale
+    assert "Parameter" in merkmale
+    assert "Max Beispiel" not in merkmale
+    assert "01.02.1980" not in merkmale
+    assert "Morbus Crohn" not in merkmale
+    assert "12" not in merkmale

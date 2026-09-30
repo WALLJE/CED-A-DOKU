@@ -72,6 +72,9 @@ class Klassifikationsvorschlag:
     alternativen: tuple[str, ...]
     begruendung: str
     neue_klasse_vorschlag: str | None = None
+    vorgeschlagene_fachgruppe: str | None = None
+    vorgeschlagene_beschreibung: str | None = None
+    vorgeschlagene_merkmale: str | None = None
 
 
 @dataclass(frozen=True)
@@ -267,6 +270,7 @@ parse_document_response = parse_dokumentantwort
 
 _KLASSIFIKATIONSFELDER = (
     "STATUS", "VORGESCHLAGENE KLASSE", "ALTERNATIVEN", "BEGRÜNDUNG", "NEUE KLASSE",
+    "NEUE FACHGRUPPE", "NEUE BESCHREIBUNG", "NEUE MERKMALE",
 )
 
 
@@ -290,7 +294,10 @@ def erstelle_klassifikationsprompt(klassen: Sequence[object], transkript: str) -
 und zu welcher vorhandenen Klasse es gehört. Erfinde keine Inhalte. Bei mehreren
 plausiblen Klassen STATUS UNSICHER verwenden. Wenn medizinisch, aber keine Klasse
 passt, STATUS MEDIZINISCH_UNKLASSIFIZIERT verwenden und einen knappen neuen
-Klassennamen vorschlagen. Nichtmedizinischer Text erhält NICHT_MEDIZINISCH.
+Klassennamen vorschlagen. Als neue Fachgruppe ist ausschließlich eine der folgenden
+Bezeichnungen erlaubt: CED-Fragebogen, Labor, Calprotectin, Endoskopie, Sonografie,
+MRT, CT, Röntgen, Bildgebung, Pathologie, Funktionsdiagnostik, Arztbriefe, Medikation,
+Weitere Befunde. Nichtmedizinischer Text erhält NICHT_MEDIZINISCH.
 
 Vorhandene Klassen:
 {chr(10).join(katalogzeilen)}
@@ -301,6 +308,9 @@ VORGESCHLAGENE KLASSE: [exakter vorhandener Name oder leer]
 ALTERNATIVEN: [vorhandene Namen durch | getrennt oder leer]
 BEGRÜNDUNG: [kurze Begründung nur anhand sichtbarer Dokumentmerkmale]
 NEUE KLASSE: [knapper Vorschlag nur bei MEDIZINISCH_UNKLASSIFIZIERT oder leer]
+NEUE FACHGRUPPE: [eine fachlich passende vorhandene Obergruppe oder leer]
+NEUE BESCHREIBUNG: [kurze patientenunabhängige Definition oder leer]
+NEUE MERKMALE: [nur allgemeine Überschriften und Strukturmerkmale oder leer]
 
 TRANSKRIPT:
 {transkript}"""
@@ -346,4 +356,7 @@ def parse_klassifikationsantwort(
         alternativen=alternativen,
         begruendung=werte["BEGRÜNDUNG"],
         neue_klasse_vorschlag=werte["NEUE KLASSE"] or None,
+        vorgeschlagene_fachgruppe=werte["NEUE FACHGRUPPE"] or None,
+        vorgeschlagene_beschreibung=werte["NEUE BESCHREIBUNG"] or None,
+        vorgeschlagene_merkmale=werte["NEUE MERKMALE"] or None,
     )

@@ -12,6 +12,7 @@ def test_haeufige_dokumenttypen_haben_eindeutige_fachgruppen() -> None:
     typen = [eintrag.dokumenttyp for eintrag in DOKUMENTKLASSEN]
 
     assert len(typen) == len(set(typen))
+    assert all(eintrag.beschreibung and eintrag.merkmale for eintrag in DOKUMENTKLASSEN)
     assert ermittle_dokumentfachgruppe("Laborbefund") == "Labor"
     assert ermittle_dokumentfachgruppe("Virologischer Befund") == "Labor"
     assert ermittle_dokumentfachgruppe("MRT-Befund") == "MRT"

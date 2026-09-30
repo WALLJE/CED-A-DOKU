@@ -1,23 +1,23 @@
 # CED-A-DOKU – KI-gestützte Auswertung medizinischer Dokumente
 
-## Kontextfreie Texterkennung und medizinische Klassifikation
+## Automatische Texterkennung und Dokumentklassifikation
 
-Vor der Analyse wird ausdrücklich zwischen **„Nur sichtbaren Text auslesen“** und
-**„Medizinisches Dokument analysieren“** gewählt. Die kontextfreie Texterkennung
-klassifiziert nicht, sucht keinen Patienten, erstellt keinen KIS-Text und speichert
-nichts in der CED-Datenbank.
+Für den Benutzer gibt es nur eine Analyseaktion. Die App liest immer zuerst den
+sichtbaren Text aus und entscheidet danach KI-gestützt, ob ein medizinisches Dokument
+vorliegt. Nichtmedizinischer Text bleibt als kopierbarer Rohtext sichtbar und erhält
+keinen Patienten- oder Datenbankbezug.
 
-Die medizinische Verarbeitung ist zweistufig: Zuerst bleiben Transkription und
-Klassifikationsvorschlag temporär. Danach bestätigt der Benutzer eine vorhandene
-Dokumentklasse oder legt kontrolliert eine neue Klasse mit Fachgruppe, Beschreibung
-und Erkennungsmerkmalen an. Erst anschließend werden strukturierte Darstellung und
-KIS-Texte erzeugt. Es gibt keinen automatischen Rückfall auf „sonstiges medizinisches
-Dokument“.
+Eine eindeutig erkannte bestehende Dokumentklasse wird ohne zusätzlichen Dialog
+strukturiert. Nur bei mehreren plausiblen Klassen oder einer neuen Dokumentart fragt
+die App nach. Neue Klassen werden mit vorgeschlagener Fachgruppe, Beschreibung und
+Erkennungsmerkmalen persistent gespeichert. Es gibt keinen stillen Rückfall auf
+„sonstiges medizinisches Dokument“.
 
-Neue Klassen werden persistent gespeichert. Optional können ausdrücklich bestätigte,
-patientenfreie Merkmalsbeschreibungen als Lernbeispiele ergänzt werden. Dieses
-„Lernen“ erweitert nur den Klassifikationskatalog; es verändert keine vorhandene
-Definition automatisch und erzeugt keine medizinischen Einzelwerte.
+Nach der erfolgreichen, weiterhin kontrollierten Patientenzuordnung gewinnt die App
+automatisch patientenfreie Strukturmerkmale wie Überschriften und Tabellenköpfe als
+Lernsignal. Namen, Geburtsdaten, IDs, Messwerte und vollständige Texte werden dafür
+nicht übernommen. Dokumentklassen dienen der Sortierung; medizinische Einzelwerte
+werden weiterhin nur durch einen passenden Fachparser und den Prüfprozess gespeichert.
 
 ## API-Schlüssel eintragen
 
@@ -96,12 +96,12 @@ Bearbeitung. Da die automatische Reihenfolge nur ein Vorschlag sein kann, muss d
 Ergebnis weiterhin medizinisch geprüft werden.
 
 Die Auswahl zwischen Rohtext, strukturierter Darstellung und KI-Zusammenfassung
-startet keine neue Bildanalyse. Bei einem einzelnen Bild erzeugt genau eine
-multimodale Anfrage alle drei Ansichten gemeinsam. Bei mehreren Dokumentteilen wird
-jeder Teil einmal vollständig transkribiert; anschließend erzeugt genau eine weitere
-reine Textanfrage Dokumenttyp, strukturierten Text und KIS-Zusammenfassung aus diesen
-Transkriptionen. Nur der ausdrücklich betätigte Schalter zur erneuten Bearbeitung
-sendet das Dokument nochmals an den gewählten Anbieter.
+startet keine neue Analyse. Jedes Bild wird zunächst originalnah transkribiert. Eine
+zweite Anfrage unterscheidet medizinischen von nichtmedizinischem Inhalt und schlägt
+eine vorhandene Dokumentklasse vor. Nur für medizinische Dokumente mit eindeutiger
+oder bestätigter Klasse erzeugt eine weitere Textanfrage strukturierte Darstellung
+und KIS-Texte. Nur der Schalter zur erneuten Bearbeitung sendet das Dokument nochmals
+an den gewählten Anbieter.
 
 Die `.env` ist in `.gitignore` ausgeschlossen. `.env.example` bleibt dagegen als
 leere, sichere Vorlage versioniert. Bereits außerhalb der Datei gesetzte

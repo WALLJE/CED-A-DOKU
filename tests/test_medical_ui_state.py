@@ -53,3 +53,12 @@ def test_diagnosedetails_verwendet_keine_veraltete_ui_referenz() -> None:
 
     assert "diagnose_details_ausgabe" in quelltext
     assert "diagnose_hinweise_ausgabe" not in quelltext
+
+
+def test_dokumentanalyse_verlangt_keine_vorauswahl_des_modus() -> None:
+    quelltext = inspect.getsource(zeige_hauptseite)
+
+    assert "analysemodus_auswahl" not in quelltext
+    assert "transcribe_document" in quelltext
+    assert "classify_transcription" in quelltext
+    assert "Klassifikationsstatus.EINDEUTIG" in quelltext

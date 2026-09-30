@@ -39,8 +39,9 @@ from ced_document_ai.services.ai.document_workflow import (
 )
 from ced_document_ai.services.ced.document_type_service import (
     ERLAUBTE_FACHGRUPPEN,
-    finde_aehnliche_klassen,
     ergaenze_bestaetigtes_beispiel,
+    erstelle_patientenfreie_lernmerkmale,
+    finde_aehnliche_klassen,
     lege_dokumentklasse_an,
     liste_dokumentklassen,
 )
@@ -433,9 +434,6 @@ def zeige_hauptseite() -> None:
                     # sichtbare Original. Die Aktionen stehen deshalb gemeinsam
                     # direkt darunter; der erkannte Dokumenttyp bleibt rechts in
                     # seiner bisherigen Ergebnisposition.
-                    analysemodus_auswahl = ui.select(
-                        [TEXTMODUS, MEDIZINMODUS], value=TEXTMODUS, label="Analysemodus"
-                    ).props("outlined dense").classes("w-full")
                     with ui.row().classes("w-full gap-2 flex-wrap sm:flex-nowrap"):
                         lesen_schalter = ui.button(
                             "Dokument analysieren", icon="document_scanner"
@@ -495,29 +493,27 @@ def zeige_hauptseite() -> None:
                             klassifikations_klasse = ui.select(
                                 {}, label="Vorhandene Dokumentklasse"
                             ).props("outlined").classes("w-full")
-                            lernbeispiel_speichern = ui.checkbox(
-                                "Bestätigte Merkmale als Lernbeispiel dieser Klasse speichern",
-                                value=False,
-                            )
-                            lernbeispiel_text = ui.textarea(
-                                "Patientenfreie Merkmalsbeschreibung des Beispiels"
-                            ).props("outlined").classes("w-full")
-                            neue_klasse_name = ui.input("Neue Dokumentklasse").props(
-                                "outlined"
-                            ).classes("w-full")
-                            neue_klasse_gruppe = ui.select(
-                                list(ERLAUBTE_FACHGRUPPEN), label="Fachgruppe"
-                            ).props("outlined").classes("w-full")
-                            neue_klasse_beschreibung = ui.textarea(
-                                "Beschreibung der Dokumentklasse"
-                            ).props("outlined").classes("w-full")
-                            neue_klasse_merkmale = ui.textarea(
-                                "Erkennbare Merkmale dieser Klasse"
-                            ).props("outlined").classes("w-full")
-                            neue_klasse_beispiel = ui.textarea(
-                                "Bestätigte Merkmale dieses Beispieldokuments"
-                            ).props("outlined").classes("w-full")
-                            aehnliche_klassen_hinweis = ui.label("").classes("text-amber-800")
+                            with ui.expansion(
+                                "Keine passende Klasse? Neue Dokumentklasse anlegen",
+                                icon="add_circle_outline",
+                            ).classes("w-full"):
+                                neue_klasse_name = ui.input("Neue Dokumentklasse").props(
+                                    "outlined"
+                                ).classes("w-full")
+                                neue_klasse_gruppe = ui.select(
+                                    list(ERLAUBTE_FACHGRUPPEN), label="Fachgruppe"
+                                ).props("outlined").classes("w-full")
+                                neue_klasse_beschreibung = ui.textarea(
+                                    "Beschreibung der Dokumentklasse"
+                                ).props("outlined").classes("w-full")
+                                with ui.expansion("Details bearbeiten", icon="tune").classes("w-full"):
+                                    neue_klasse_merkmale = ui.textarea(
+                                        "Erkennbare Merkmale dieser Klasse"
+                                    ).props("outlined").classes("w-full")
+                                aehnliche_klassen_hinweis = ui.label("").classes("text-amber-800")
+                                neue_klasse_anlegen = ui.button(
+                                    "Neue Klasse übernehmen", icon="add"
+                                ).props("color=teal-8 outline no-caps").classes("w-full")
                             with ui.row().classes("w-full justify-end gap-2"):
                                 ui.button(
                                     "Nur Text verwenden",
@@ -528,9 +524,6 @@ def zeige_hauptseite() -> None:
                                 klasse_bestaetigen = ui.button(
                                     "Bestehende Klasse bestätigen", icon="check"
                                 ).props("color=teal-8 no-caps")
-                                neue_klasse_anlegen = ui.button(
-                                    "Neue Klasse dauerhaft anlegen", icon="add"
-                                ).props("color=teal-8 outline no-caps")
 
                     # Die Arbeitsansicht bleibt rechts neben der Navigation. Der
                     # Einlesebereich bleibt im Hintergrund unverändert erhalten und
@@ -2129,6 +2122,34 @@ def zeige_hauptseite() -> None:
         fachverlauf_dialog.close()
         ced_dialog.open()
 
+    def lerne_aus_gespeichertem_dokument(dokument_id: int) -> None:
+        """Ergänzt nach erfolgreicher Speicherung ein datensparsames Lernsignal.
+
+        Die erfolgreiche Patientenzuordnung ist bereits die fachliche Bestätigung;
+        eine weitere Checkbox wäre redundant. Gespeichert werden ausschließlich
+        konservativ erkannte Überschriften, niemals Werte oder vollständiger Text.
+        Bleibt kein sicheres Strukturmerkmal, wird bewusst nichts ergänzt.
+        """
+
+        merkmale = erstelle_patientenfreie_lernmerkmale(
+            zustand.strukturierte_darstellung
+        )
+        if not zustand.dokumenttyp or not merkmale:
+            return
+        try:
+            with get_session() as sitzung:
+                ergaenze_bestaetigtes_beispiel(
+                    sitzung,
+                    dokumenttyp_name=zustand.dokumenttyp,
+                    beispielmerkmale=merkmale,
+                    dokument_id=dokument_id,
+                )
+        except (SQLAlchemyError, ValueError):
+            # Das Dokument ist bereits atomar gespeichert. Ein optionales Lernsignal
+            # darf diesen Erfolg nicht zurückrollen. Zum Debuggen nur Exception-Typ
+            # und Klassen-ID prüfen, niemals Merkmale oder Patientendaten loggen.
+            return
+
     async def speichere_gepruefte_ced_daten() -> None:
         """Liest den sichtbaren Tabellenstand und speichert nur markierte Zeilen.
 
@@ -2253,6 +2274,7 @@ def zeige_hauptseite() -> None:
             setze_status(fehlermeldung, fehler=True)
             return
         zustand.gespeichertes_dokument_id = dokument_id
+        lerne_aus_gespeichertem_dokument(dokument_id)
         zustand.ced_befunde.clear()
         zustand.duplikate_bestaetigt = False
         ced_tabelle.options["rowData"] = []
@@ -2747,6 +2769,7 @@ def zeige_hauptseite() -> None:
             setze_status(f"Dokument konnte nicht zugeordnet werden: {fehler}", fehler=True)
             return
         zustand.gespeichertes_dokument_id = dokument_id
+        lerne_aus_gespeichertem_dokument(dokument_id)
         dokument_pruefdialog.close()
         ced_navigation.disable()
         if zustand.dokumenttyp in LABORDOKUMENTTYPEN:
@@ -3096,26 +3119,9 @@ def zeige_hauptseite() -> None:
             fehler=True,
         )
 
-    def aktualisiere_analysemodus() -> None:
-        """Leert medizinische Ergebnisse beim bewussten Wechsel in den Textservice."""
-
-        zustand.analysemodus = str(analysemodus_auswahl.value or TEXTMODUS)
-        if zustand.analysemodus == TEXTMODUS:
-            zustand.dokumenttyp = ""
-            zustand.strukturierte_darstellung = ""
-            zustand.kis_vorschlag = ""
-            zustand.kis_vorschlag_ausfuehrlich = ""
-            zustand.rohe_ki_antwort = ""
-            zustand.klassifikation_bestaetigt = False
-            dokumenttyp_ausgabe.value = ""
-            ced_navigation.set_visibility(False)
-        aktualisiere_ergebnisanzeige()
-
     def verwende_nur_text() -> None:
-        """Übernimmt die vorhandene Transkription bewusst in den neutralen Modus."""
+        """Behält bei einer unsicheren Klassifikation ausschließlich den Rohtext."""
 
-        analysemodus_auswahl.value = TEXTMODUS
-        zustand.analysemodus = TEXTMODUS
         zustand.dokumenttyp = ""
         zustand.strukturierte_darstellung = ""
         zustand.kis_vorschlag = ""
@@ -3161,7 +3167,7 @@ def zeige_hauptseite() -> None:
                 aktualisiere_patientenvorschlaege()
                 aktualisiere_ced_bereitschaft()
             lesen_schalter.text = f"Neu analysieren mit {anbieter_name}"
-            setze_status("Dokumentklasse bestätigt · medizinisches Ergebnis ungeprüft")
+            setze_status("Dokumentklasse zugeordnet · medizinisches Ergebnis ungeprüft")
         except (AIProviderError, DokumentAntwortFehler, ValueError) as fehler:
             setze_status(f"Strukturierung fehlgeschlagen: {fehler}", fehler=True)
         finally:
@@ -3172,17 +3178,6 @@ def zeige_hauptseite() -> None:
         if not klasse:
             setze_status("Bitte eine vorhandene Dokumentklasse auswählen.", fehler=True)
             return
-        if lernbeispiel_speichern.value:
-            try:
-                with get_session() as sitzung:
-                    ergaenze_bestaetigtes_beispiel(
-                        sitzung,
-                        dokumenttyp_name=klasse,
-                        beispielmerkmale=str(lernbeispiel_text.value or ""),
-                    )
-            except (ValueError, SQLAlchemyError) as fehler:
-                setze_status(f"Lernbeispiel nicht gespeichert: {fehler}", fehler=True)
-                return
         await strukturiere_bestaetigte_klasse(klasse)
 
     async def bestaetige_neue_klasse() -> None:
@@ -3203,7 +3198,7 @@ def zeige_hauptseite() -> None:
                     fachgruppe=str(neue_klasse_gruppe.value or ""),
                     beschreibung=str(neue_klasse_beschreibung.value or ""),
                     klassifikationsmerkmale=str(neue_klasse_merkmale.value or ""),
-                    beispielmerkmale=str(neue_klasse_beispiel.value or ""),
+                    beispielmerkmale=str(neue_klasse_merkmale.value or ""),
                 )
         except (ValueError, SQLAlchemyError) as fehler:
             setze_status(f"Neue Dokumentklasse nicht angelegt: {fehler}", fehler=True)
@@ -3233,9 +3228,9 @@ def zeige_hauptseite() -> None:
                 if zustand.anbieter == "uk"
                 else CloudAPIProvider(einstellungen)
             )
-            # Jeder Modus beginnt mit derselben originalnahen Transkription. Der
-            # neutrale Service endet hier; im medizinischen Modus folgt lediglich
-            # ein Katalogvorschlag und ausdrücklich noch keine Strukturierung.
+            # Jede Analyse beginnt mit derselben originalnahen Transkription. Erst
+            # danach entscheidet der Katalogvorschlag, ob medizinische Strukturierung
+            # sinnvoll ist; der Benutzer muss keinen Modus vorab festlegen.
             transkript = await run.io_bound(
                 ki_anbieter.transcribe_document, list(zustand.seiten)
             )
@@ -3243,22 +3238,30 @@ def zeige_hauptseite() -> None:
             zustand.ausgelesener_inhalt = transkript.gesamttext
             zustand.ergebnis_anbieter = zustand.anbieter
             aktualisiere_ergebnisanzeige()
-            if zustand.analysemodus == TEXTMODUS:
-                zustand.dokumenttyp = ""
-                dokumenttyp_ausgabe.value = ""
-                lesen_schalter.text = f"Neu auslesen mit {anbieter_name}"
-                setze_status(
-                    "Kontextfreie Texterkennung abgeschlossen · keine Patientenzuordnung "
-                    "und keine Speicherung in der CED-Datenbank"
-                )
-                return
-
             with get_session() as sitzung:
                 klassen = liste_dokumentklassen(sitzung)
             vorschlag = await run.io_bound(
                 ki_anbieter.classify_transcription, transkript, klassen
             )
             zustand.klassifikationsvorschlag = vorschlag
+            if vorschlag.status is Klassifikationsstatus.NICHT_MEDIZINISCH:
+                zustand.dokumenttyp = ""
+                dokumenttyp_ausgabe.value = ""
+                lesen_schalter.text = f"Neu auslesen mit {anbieter_name}"
+                setze_status(
+                    "Text ausgelesen · kein medizinisches Dokument erkannt; "
+                    "keine Patientenzuordnung oder Datenbankspeicherung"
+                )
+                return
+            if (
+                vorschlag.status is Klassifikationsstatus.EINDEUTIG
+                and vorschlag.vorgeschlagene_klasse
+            ):
+                # Eine eindeutige vorhandene Klasse benötigt keine zusätzliche
+                # Bestätigung. Patient, Datum und Befundwerte bleiben unverändert
+                # im nachgelagerten Prüf- und Speicherprozess kontrolliert.
+                await strukturiere_bestaetigte_klasse(vorschlag.vorgeschlagene_klasse)
+                return
             klassenoptionen = {klasse.name: klasse.anzeigename for klasse in klassen}
             klassifikations_klasse.options = klassenoptionen
             klassifikations_klasse.value = vorschlag.vorgeschlagene_klasse
@@ -3268,11 +3271,13 @@ def zeige_hauptseite() -> None:
                 "Bitte eine bestehende Klasse bestätigen oder eine neue Klasse kontrolliert anlegen."
             )
             neue_klasse_name.value = vorschlag.neue_klasse_vorschlag or ""
-            # Das erste Lernsignal muss vom Benutzer formuliert beziehungsweise
-            # bestätigt werden. Der vollständige Patiententext wird nicht vorbefüllt.
-            neue_klasse_beispiel.value = vorschlag.begruendung
-            lernbeispiel_text.value = vorschlag.begruendung
-            lernbeispiel_speichern.value = False
+            neue_klasse_gruppe.value = (
+                vorschlag.vorgeschlagene_fachgruppe
+                if vorschlag.vorgeschlagene_fachgruppe in ERLAUBTE_FACHGRUPPEN
+                else None
+            )
+            neue_klasse_beschreibung.value = vorschlag.vorgeschlagene_beschreibung or ""
+            neue_klasse_merkmale.value = vorschlag.vorgeschlagene_merkmale or ""
             klassifikations_dialog.open()
             lesen_schalter.text = f"Neu analysieren mit {anbieter_name}"
             setze_status("Transkription abgeschlossen · Dokumentklasse muss bestätigt werden")
@@ -3296,7 +3301,6 @@ def zeige_hauptseite() -> None:
         setze_status("Angezeigten Text in die Zwischenablage kopiert")
 
     anbieter_auswahl.on_value_change(lambda _: aktualisiere_anbieter())
-    analysemodus_auswahl.on_value_change(lambda _: aktualisiere_analysemodus())
     klasse_bestaetigen.on_click(bestaetige_vorhandene_klasse)
     neue_klasse_anlegen.on_click(bestaetige_neue_klasse)
     datenbank_schalter.text = "CED-Datenbank aktivieren"

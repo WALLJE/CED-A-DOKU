@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from difflib import SequenceMatcher
+import re
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -41,9 +42,13 @@ class Dokumentklassendaten:
 def stelle_standardklassen_sicher(sitzung: Session) -> None:
     """Legt fehlende Standardklassen an, ohne bestehende Definitionen zu ändern."""
 
-    vorhandene = set(sitzung.scalars(select(DocumentType.name)))
+    vorhandene = {
+        dokumenttyp.name: dokumenttyp
+        for dokumenttyp in sitzung.scalars(select(DocumentType))
+    }
     for standard in DOKUMENTKLASSEN:
-        if standard.dokumenttyp not in vorhandene:
+        dokumenttyp = vorhandene.get(standard.dokumenttyp)
+        if dokumenttyp is None:
             sitzung.add(DocumentType(
                 name=standard.dokumenttyp,
                 display_name=standard.dokumenttyp,
@@ -51,9 +56,21 @@ def stelle_standardklassen_sicher(sitzung: Session) -> None:
                 active=True,
                 user_created=False,
                 prompt_text=None,
-                description=None,
-                classification_hints=None,
+                description=standard.beschreibung,
+                classification_hints=standard.merkmale,
             ))
+        else:
+            # Bestehende individuelle Definitionen werden nicht überschrieben.
+            # Lediglich historisch leere Standardfelder erhalten die kontrollierte
+            # Projektdefinition, damit der Klassifikator nicht nur Namen sieht.
+            if not dokumenttyp.display_name:
+                dokumenttyp.display_name = standard.dokumenttyp
+            if not dokumenttyp.group_name:
+                dokumenttyp.group_name = standard.fachgruppe
+            if not dokumenttyp.description:
+                dokumenttyp.description = standard.beschreibung
+            if not dokumenttyp.classification_hints:
+                dokumenttyp.classification_hints = standard.merkmale
     sitzung.commit()
 
 
@@ -187,3 +204,42 @@ def ergaenze_bestaetigtes_beispiel(
         details="Benutzerbestätigtes Klassifikationsbeispiel ergänzt",
     ))
     sitzung.commit()
+
+
+_SENSIBLE_UEBERSCHRIFTEN = {
+    "patient", "patienten-id", "name", "vorname", "nachname", "geburtsdatum",
+    "adresse", "anschrift", "telefon", "versichertennummer", "fallnummer",
+}
+
+
+def erstelle_patientenfreie_lernmerkmale(text: str) -> str:
+    """Gewinnt ausschließlich strukturelle Überschriften aus bestätigtem Text.
+
+    Der Dienst speichert absichtlich keine Werte hinter einem Doppelpunkt und keine
+    vollständigen Sätze. Damit werden Namen, Datumsangaben, Messwerte und Diagnosen
+    nicht als Trainingsbeispiel dupliziert. Ergibt die konservative Extraktion kein
+    Merkmal, wird leer zurückgegeben; es gibt keinen Freitext-Fallback.
+    """
+
+    merkmale: list[str] = []
+    for rohe_zeile in (text or "").splitlines():
+        zeile = rohe_zeile.strip().strip("|#*- ")
+        if not zeile:
+            continue
+        kandidaten: list[str] = []
+        if ":" in zeile:
+            kandidaten.append(zeile.split(":", 1)[0].strip())
+        elif "|" in rohe_zeile:
+            kandidaten.extend(zelle.strip() for zelle in rohe_zeile.split("|") if zelle.strip())
+        elif len(zeile) <= 40 and not re.search(r"\d", zeile):
+            kandidaten.append(zeile)
+        for kandidat in kandidaten:
+            normalisiert = kandidat.casefold().strip()
+            if (
+                2 <= len(kandidat) <= 60
+                and normalisiert not in _SENSIBLE_UEBERSCHRIFTEN
+                and not re.search(r"\d|@", kandidat)
+                and kandidat not in merkmale
+            ):
+                merkmale.append(kandidat)
+    return "; ".join(merkmale[:12])

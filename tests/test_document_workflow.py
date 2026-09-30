@@ -80,6 +80,9 @@ VORGESCHLAGENE KLASSE: MRT-Befund
 ALTERNATIVEN: CT-Befund|Bildgebender Befund
 BEGRÜNDUNG: Radiologischer Fließtext ohne eindeutige Modalitätsbezeichnung.
 NEUE KLASSE:
+NEUE FACHGRUPPE:
+NEUE BESCHREIBUNG:
+NEUE MERKMALE:
 """
     ergebnis = parse_klassifikationsantwort(
         antwort, ("MRT-Befund", "CT-Befund", "Bildgebender Befund")
@@ -94,9 +97,31 @@ VORGESCHLAGENE KLASSE: Erfundenes Spezialdokument
 ALTERNATIVEN:
 BEGRÜNDUNG: Angebliche Merkmale.
 NEUE KLASSE:
+NEUE FACHGRUPPE:
+NEUE BESCHREIBUNG:
+NEUE MERKMALE:
 """
     with pytest.raises(DokumentAntwortFehler, match="nicht bestätigte Klassen"):
         parse_klassifikationsantwort(antwort, ("Arztbrief",))
+
+
+def test_neue_klasse_enthaelt_vorschlag_fuer_definition_und_fachgruppe() -> None:
+    antwort = """STATUS: MEDIZINISCH_UNKLASSIFIZIERT
+VORGESCHLAGENE KLASSE:
+ALTERNATIVEN: Funktionsdiagnostischer Befund
+BEGRÜNDUNG: Strukturierter medizinischer Messbericht ohne passende Spezialklasse.
+NEUE KLASSE: Gefäßdiagnostischer Befund
+NEUE FACHGRUPPE: Funktionsdiagnostik
+NEUE BESCHREIBUNG: Bericht einer vaskulären Funktionsuntersuchung.
+NEUE MERKMALE: Untersuchung; Gefäßregion; Messverfahren; Beurteilung
+"""
+    ergebnis = parse_klassifikationsantwort(
+        antwort, ("Funktionsdiagnostischer Befund",)
+    )
+    assert ergebnis.status is Klassifikationsstatus.MEDIZINISCH_UNKLASSIFIZIERT
+    assert ergebnis.neue_klasse_vorschlag == "Gefäßdiagnostischer Befund"
+    assert ergebnis.vorgeschlagene_fachgruppe == "Funktionsdiagnostik"
+    assert ergebnis.vorgeschlagene_merkmale.startswith("Untersuchung")
 
 
 def test_leerer_abschnitt_ist_fehler() -> None:

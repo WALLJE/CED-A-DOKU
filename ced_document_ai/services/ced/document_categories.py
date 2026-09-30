@@ -17,6 +17,8 @@ class Dokumentklasse:
 
     dokumenttyp: str
     fachgruppe: str
+    beschreibung: str
+    merkmale: str
 
 
 # Häufige Dokumentklassen werden ausdrücklich hinterlegt. Eine neue, von einem
@@ -24,22 +26,22 @@ class Dokumentklasse:
 # der Datenbank erhalten und erscheint unter „Weitere Befunde“. So wird sie nicht
 # vorschnell zur unspezifischen Klasse „Andere Befunde“ umbenannt.
 DOKUMENTKLASSEN: tuple[Dokumentklasse, ...] = (
-    Dokumentklasse("CED-Patientenfragebogen", "CED-Fragebogen"),
-    Dokumentklasse("Laborbefund", "Labor"),
-    Dokumentklasse("Virologischer Befund", "Labor"),
-    Dokumentklasse("Mikrobiologischer Befund", "Labor"),
-    Dokumentklasse("Calprotectin-Befund", "Calprotectin"),
-    Dokumentklasse("Endoskopiebefund", "Endoskopie"),
-    Dokumentklasse("Sonografiebefund", "Sonografie"),
-    Dokumentklasse("MRT-Befund", "MRT"),
-    Dokumentklasse("CT-Befund", "CT"),
-    Dokumentklasse("Röntgenbefund", "Röntgen"),
-    Dokumentklasse("Pathologiebefund", "Pathologie"),
-    Dokumentklasse("Funktionsdiagnostischer Befund", "Funktionsdiagnostik"),
-    Dokumentklasse("Arztbrief", "Arztbriefe"),
-    Dokumentklasse("Medikamentenplan", "Medikation"),
-    Dokumentklasse("Bildgebender Befund", "Bildgebung"),
-    Dokumentklasse("sonstiges medizinisches Dokument", "Weitere Befunde"),
+    Dokumentklasse("CED-Patientenfragebogen", "CED-Fragebogen", "Strukturierter CED-Fragebogen.", "Stuhlfrequenz; Bauchschmerzen; Allgemeinbefinden; Gewicht"),
+    Dokumentklasse("Laborbefund", "Labor", "Allgemeiner medizinischer Laborbefund.", "Parameter; Ergebnis; Einheit; Referenzbereich"),
+    Dokumentklasse("Virologischer Befund", "Labor", "Virologische Laboruntersuchung.", "PCR; Viruslast; Virusnachweis; Material; Nachweisgrenze"),
+    Dokumentklasse("Mikrobiologischer Befund", "Labor", "Mikrobiologischer Erregerbefund.", "Material; Erreger; Kultur; Resistenz; Antibiogramm"),
+    Dokumentklasse("Calprotectin-Befund", "Calprotectin", "Fäkaler Calprotectin-Laborbefund.", "Calprotectin; Stuhlprobe; Ergebnis; Einheit; Referenzbereich"),
+    Dokumentklasse("Endoskopiebefund", "Endoskopie", "Bericht einer gastrointestinalen Endoskopie.", "Endoskopie; Schleimhaut; Histologie; SES-CD; CDEIS; UCEIS"),
+    Dokumentklasse("Sonografiebefund", "Sonografie", "Sonografischer Untersuchungsbericht.", "Sonografie; Körperregion; Messung; Befund; Beurteilung"),
+    Dokumentklasse("MRT-Befund", "MRT", "Magnetresonanztomografischer Befund.", "MRT; MR; Sequenz; Körperregion; Befund; Beurteilung"),
+    Dokumentklasse("CT-Befund", "CT", "Computertomografischer Befund.", "CT; Kontrastmittel; Körperregion; Befund; Beurteilung"),
+    Dokumentklasse("Röntgenbefund", "Röntgen", "Konventioneller radiologischer Befund.", "Röntgen; Projektion; Körperregion; Befund; Beurteilung"),
+    Dokumentklasse("Pathologiebefund", "Pathologie", "Histologischer oder pathologischer Bericht.", "Material; Makroskopie; Mikroskopie; Histologie; Beurteilung"),
+    Dokumentklasse("Funktionsdiagnostischer Befund", "Funktionsdiagnostik", "Bericht einer medizinischen Funktionsmessung.", "Untersuchung; Messverfahren; Messwerte; Befund; Beurteilung"),
+    Dokumentklasse("Arztbrief", "Arztbriefe", "Ärztlicher Bericht oder Entlassbrief.", "Diagnosen; Anamnese; Verlauf; Therapie; Empfehlung"),
+    Dokumentklasse("Medikamentenplan", "Medikation", "Plan der aktuellen Medikation.", "Präparat; Wirkstoff; Stärke; Dosis; Einnahmeschema"),
+    Dokumentklasse("Bildgebender Befund", "Bildgebung", "Bildgebender Befund ohne eindeutige Modalität.", "Untersuchung; Körperregion; Technik; Befund; Beurteilung"),
+    Dokumentklasse("sonstiges medizinisches Dokument", "Weitere Befunde", "Medizinisches Dokument ohne präzisere Klasse.", "medizinischer Kontext; keine passendere aktive Dokumentklasse"),
 )
 
 _FACHGRUPPE_NACH_TYP = {

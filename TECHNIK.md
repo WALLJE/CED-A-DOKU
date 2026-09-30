@@ -7,16 +7,21 @@ deterministischer Logik. Fachliche Bedienhinweise stehen weiterhin in der README
 ## Zweistufige Dokumentanalyse und dynamischer Klassenkatalog
 
 `OpenAICompatibleProvider.transcribe_document` liest jedes Bild einzeln und ohne
-Klassifikation. Im neutralen Textmodus endet der Ablauf mit diesem temporären
-`TranskriptionsErgebnis`; Patientensuche und Datenbankspeicherung sind nicht erreichbar.
+Klassifikation. Danach klassifiziert die App automatisch. Bei nichtmedizinischem
+Inhalt endet der Ablauf mit dem temporären `TranskriptionsErgebnis`; Patientensuche
+und Datenbankspeicherung sind nicht erreichbar.
 
-Im medizinischen Modus lädt `document_type_service.py` aktive Klassen aus
+Bei medizinischem Inhalt lädt `document_type_service.py` aktive Klassen aus
 `document_types` und bestätigte Lernsignale aus `document_type_examples`.
-`classify_transcription` darf daraus nur Vorschläge bilden. Erst die manuelle
-Bestätigung ruft `structure_transcription` auf. Neue Klassen enthalten Fachgruppe,
-Beschreibung, Klassifikationsmerkmale, Aktivstatus und Herkunft. Lernbeispiele werden
-nur nach ausdrücklicher Bestätigung additiv gespeichert; Definitionen werden nie
-automatisch aus einem Dokument umgeschrieben.
+`classify_transcription` darf daraus nur Vorschläge bilden. Eine eindeutige bestehende
+Klasse startet `structure_transcription` automatisch; nur unsichere oder unbekannte
+Klassen erfordern eine Auswahl. Neue Klassen enthalten Fachgruppe, Beschreibung,
+Klassifikationsmerkmale, Aktivstatus und Herkunft.
+
+Nach einer erfolgreich gespeicherten Patientenzuordnung extrahiert
+`erstelle_patientenfreie_lernmerkmale` ausschließlich Überschriften und Tabellenköpfe.
+Dieses Lernsignal wird additiv gespeichert. Definitionen werden nie automatisch
+umgeschrieben; bei fehlenden sicheren Merkmalen gibt es keinen Freitext-Fallback.
 
 Dokumentklasse (`DocumentType`) und Einzelwertkategorie (`FindingCategory`) sind
 strikt getrennt. Eine neue Klasse kann archiviert werden, besitzt aber ohne eigens
