@@ -1,6 +1,5 @@
 """Tests der ausschließlich explizit erzeugten synthetischen Verlaufsdaten."""
 
-import pytest
 from sqlalchemy import func, select
 
 from ced_document_ai.config.settings import Settings
@@ -48,9 +47,42 @@ def test_demo_seeder_fuellt_patientenprofil_und_alle_fachverlaeufe(tmp_path) -> 
         assert sitzung.scalar(select(func.count()).select_from(Finding)) == 180
 
 
-def test_demo_seeder_verhindert_doppelte_testpatienten(tmp_path) -> None:
+def test_demo_seeder_ist_bei_vollstaendigem_bestand_idempotent(tmp_path) -> None:
     fabrik = initialize_database(Settings(database_path=tmp_path / "doppelt.sqlite3"))
     with fabrik() as sitzung:
-        erzeuge_demo_daten(sitzung)
-        with pytest.raises(ValueError, match="DEMO-Patienten-ID"):
-            erzeuge_demo_daten(sitzung)
+        assert erzeuge_demo_daten(sitzung) == 5
+        assert erzeuge_demo_daten(sitzung) == 0
+        assert sitzung.scalar(select(func.count()).select_from(Patient)) == 5
+        assert sitzung.scalar(select(func.count()).select_from(Finding)) == 180
+
+
+def test_demo_seeder_ergaenzt_fehlende_faelle_ohne_bestand_zu_aendern(tmp_path) -> None:
+    fabrik = initialize_database(Settings(database_path=tmp_path / "teilbestand.sqlite3"))
+    with fabrik() as sitzung:
+        vorhandener_patient = Patient(
+            external_id="DEMO-003",
+            first_name="Bewusst",
+            last_name="Vorhanden",
+            name="Vorhanden, Bewusst",
+        )
+        sitzung.add(vorhandener_patient)
+        sitzung.commit()
+        vorhandene_id = vorhandener_patient.id
+
+        assert erzeuge_demo_daten(sitzung) == 4
+        demo_patienten = list(
+            sitzung.scalars(
+                select(Patient)
+                .where(Patient.external_id.like("DEMO-%"))
+                .order_by(Patient.external_id)
+            )
+        )
+
+        assert [patient.external_id for patient in demo_patienten] == [
+            f"DEMO-{nummer:03d}" for nummer in range(1, 6)
+        ]
+        unveraendert = next(
+            patient for patient in demo_patienten if patient.external_id == "DEMO-003"
+        )
+        assert unveraendert.id == vorhandene_id
+        assert unveraendert.display_name == "Vorhanden, Bewusst"

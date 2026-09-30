@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from enum import Enum
+from typing import Sequence
 
 
 class Dokumenttyp(str, Enum):
@@ -19,8 +20,18 @@ class Dokumenttyp(str, Enum):
     CED_FRAGEBOGEN = "CED-Patientenfragebogen"
     ARZTBRIEF = "Arztbrief"
     LABORBEFUND = "Laborbefund"
+    VIROLOGIE = "Virologischer Befund"
+    MIKROBIOLOGIE = "Mikrobiologischer Befund"
+    CALPROTECTIN = "Calprotectin-Befund"
     MEDIKAMENTENPLAN = "Medikamentenplan"
     BILDGEBENDER_BEFUND = "Bildgebender Befund"
+    ENDOSKOPIE = "Endoskopiebefund"
+    SONOGRAFIE = "Sonografiebefund"
+    MRT = "MRT-Befund"
+    CT = "CT-Befund"
+    ROENTGEN = "Röntgenbefund"
+    PATHOLOGIE = "Pathologiebefund"
+    FUNKTIONSDIAGNOSTIK = "Funktionsdiagnostischer Befund"
     SONSTIGES = "sonstiges medizinisches Dokument"
 
 
@@ -28,12 +39,13 @@ class Dokumenttyp(str, Enum):
 class DokumentErgebnis:
     """Unveränderliches Ergebnis genau eines vollständig verarbeiteten Dokuments."""
 
-    dokumenttyp: Dokumenttyp
+    dokumenttyp: Dokumenttyp | str
     ausgelesener_inhalt: str
     strukturierte_darstellung: str
     kis_vorschlag: str
+    kis_vorschlag_ausfuehrlich: str
     # Die unveränderte Antwort wird für eine spätere, ausdrücklich bestätigte
-    # Archivierung mitgeführt. Die sichtbaren vier Abschnitte und deren Parserlogik
+    # Archivierung mitgeführt. Die sichtbaren fünf Abschnitte und deren Parserlogik
     # bleiben davon unberührt.
     rohe_ki_antwort: str
 
@@ -42,22 +54,76 @@ class DokumentAntwortFehler(ValueError):
     """Konkreter Formatfehler einer KI-Antwort (ohne medizinische Ersatzantwort)."""
 
 
+class Klassifikationsstatus(str, Enum):
+    """Kontrollierte Ergebnisse der noch nicht bestätigten Klassifikation."""
+
+    EINDEUTIG = "EINDEUTIG"
+    UNSICHER = "UNSICHER"
+    MEDIZINISCH_UNKLASSIFIZIERT = "MEDIZINISCH_UNKLASSIFIZIERT"
+    NICHT_MEDIZINISCH = "NICHT_MEDIZINISCH"
+
+
+@dataclass(frozen=True)
+class Klassifikationsvorschlag:
+    """KI-Vorschlag ohne Speicher- oder Zuordnungswirkung."""
+
+    status: Klassifikationsstatus
+    vorgeschlagene_klasse: str | None
+    alternativen: tuple[str, ...]
+    begruendung: str
+    neue_klasse_vorschlag: str | None = None
+    vorgeschlagene_fachgruppe: str | None = None
+    vorgeschlagene_beschreibung: str | None = None
+    vorgeschlagene_merkmale: str | None = None
+
+
+@dataclass(frozen=True)
+class TranskriptionsErgebnis:
+    """Originalnahe Einzeltexte, unabhängig von Patient und Dokumentklasse."""
+
+    einzeltexte: tuple[str, ...]
+    gesamttext: str
+
+
 FORMATVORGABEN = """
 Dokumenttypspezifische strukturierte Darstellung:
 - Arztbrief: Nur vorhandene Bereiche aus Diagnosen, Anamnese, klinische Befunde,
   Diagnostik, Verlauf, Therapie, Medikation und Empfehlungen/weiteres Vorgehen.
   Diagnosen stehen in einem eigenen klar gegliederten Bereich, nie versteckt im
   Fließtext. Haupt- und Nebendiagnosen nur unterscheiden, wenn das Original dies tut.
+  Vorhandene Inhalte unter eindeutigen Überschriften wie Diagnosen, Operationen,
+  Anamnese, Therapie/Medikation, Endoskopie, Bildgebung, Weitere Diagnostik,
+  Sozialanamnese, Familienanamnese und Empfehlungen ausgeben. Fehlende Bereiche
+  vollständig weglassen und Aussagen nicht zwischen Bereichen umdeuten.
 - Laborbefund: nach Möglichkeit Tabelle „Parameter | Ergebnis | Einheit |
   Referenzbereich“. Fehlende Zellen bleiben leer. Nur im Original vorhandene
   Referenzbereiche und Kennzeichnungen übernehmen. Kommentare, Materialangaben,
   Probenhinweise und technische Hinweise getrennt unterhalb der Tabelle ausgeben.
+  Enthält das Original mehrere Messzeitpunkte als Spalten, diese nicht verdichten:
+  für jeden vorhandenen Messwert eine eigene Zeile „Datum | Parameter | Ergebnis |
+  Einheit | Referenzbereich“ ausgeben. Leere historische Zellen nicht als Messwert
+  ausgeben und auffällige Zeichen wie Pfeile oder Sternchen unverändert erhalten.
+- Virologischer, mikrobiologischer oder Calprotectin-Befund: wie Laborbefund
+  strukturieren, die präzisere Dokumentklasse aber beibehalten. Pathologiebefunde
+  nach Material, Makroskopie, Mikroskopie und Beurteilung gliedern, soweit vorhanden.
 - Medikamentenplan: nach Möglichkeit Tabelle „Medikament/Wirkstoff | Stärke |
   Dosis | Einnahmeschema | Indikation | Bemerkung“. Handelsname und Wirkstoff nicht
   gegenseitig ergänzen; Freitext und Bedarfsmedikation nur wie im Original kennzeichnen.
 - Bildgebender Befund: vorhandene Angaben gliedern in Untersuchung,
   Untersuchungsdatum, Körperregion, Technik, Befund, Beurteilung und Empfehlung.
   Beurteilung nur übernehmen, wenn sie im Dokument enthalten ist.
+- Endoskopie: vorhandene Angaben jeweils in einer eigenen Zeile unter Untersuchung,
+  Befund, Beurteilung, Histologie und Empfehlung ausgeben. Einen im Original
+  ausdrücklich angegebenen SES-CD bei Morbus Crohn als `SES-CD: ...`, einen
+  ausdrücklich angegebenen CDEIS als `CDEIS: ...` und einen
+  ausdrücklich angegebenen UC-EIS bei Colitis ulcerosa als `UC-EIS: ...` übernehmen.
+  Scores niemals aus Freitext berechnen oder bei fehlender Angabe ergänzen.
+- Sonografie: vorhandene Angaben jeweils in einer eigenen Zeile unter Untersuchung,
+  Körperregion, Befund, Beurteilung und Empfehlung ausgeben. Keine Messung, Diagnose
+  oder Beurteilung ergänzen.
+- MRT, CT, Röntgen und Funktionsdiagnostik: die jeweils präzise Dokumentklasse wählen
+  und vorhandene Angaben nach Untersuchung, Datum, Befund, Beurteilung und Empfehlung
+  gliedern. Nichts medizinisch ergänzen.
 - CED-Patientenfragebogen: vorhandene Angaben strukturieren nach Stuhlfrequenz,
   Stuhlgang nachts, Blut im Stuhl, Schleim im Stuhl, Bauchschmerzen,
   Bauchschmerzen VAS, Allgemeinbefinden, Allgemeinbefinden Skalenwert, Gewicht,
@@ -83,7 +149,14 @@ Bearbeite das gesamte Dokument strikt in dieser Reihenfolge:
    Abschnitt AUSGELESENER INHALT erscheinen.
 3. Bestimme genau einen der folgenden Dokumenttypen: {', '.join(t.value for t in Dokumenttyp)}.
 4. Strukturiere den ausgelesenen Inhalt passend zu diesem Dokumenttyp.
-5. Erstelle ausschließlich aus dem ausgelesenen Inhalt einen gekürzten KIS-Vorschlag.
+5. Erstelle ausschließlich aus dem ausgelesenen Inhalt einen kompakten und einen
+   ausführlichen KIS-Vorschlag. Beide dürfen keine neue medizinische Aussage enthalten.
+
+Stelle in der STRUKTURIERTEN DARSTELLUNG vor den fachlichen Inhalten vorhandene
+Zuordnungsmerkmale jeweils in einer eigenen beschrifteten Zeile dar: Patienten-ID,
+Vorname, Nachname, Name, Geburtsdatum sowie das passend beschriftete Dokumentdatum
+(zum Beispiel Befunddatum, Entnahmedatum, Untersuchungsdatum oder Berichtsdatum).
+Nur im Original eindeutig vorhandene Angaben übernehmen; nichts ergänzen oder raten.
 
 {FORMATVORGABEN}
 
@@ -103,7 +176,7 @@ Verbindliche Regeln:
 - Zahlen, Datumsangaben, Einheiten, Medikamentennamen, Diagnosen und Negationen unverändert übernehmen.
 - Insbesondere `kein`, `nicht`, `ohne` und vergleichbare Negationen nicht verändern oder entfernen.
 - Umformulierungen dürfen die medizinische Aussage weder erweitern noch verändern.
-- Der KIS-Vorschlag darf nur durch Auswahl, Ordnung, sprachliche Verdichtung und Kürzung entstehen.
+- Beide KIS-Vorschläge dürfen nur durch Auswahl, Ordnung und sprachliche Verdichtung entstehen.
 
 Antworte ausschließlich in diesem eindeutig trennbaren Reintextformat:
 DOKUMENTTYP:
@@ -115,8 +188,11 @@ AUSGELESENER INHALT:
 STRUKTURIERTE DARSTELLUNG:
 [dokumenttypspezifische Darstellung]
 
-KIS-VORSCHLAG:
-[gekürzter und geordneter Dokumentationstext]
+KIS-VORSCHLAG KOMPAKT:
+[stark gekürzter und geordneter Dokumentationstext]
+
+KIS-VORSCHLAG AUSFÜHRLICH:
+[ausführlicher geordneter Dokumentationstext ohne neue Aussagen]
 """.strip()
 
 
@@ -124,15 +200,18 @@ ABSCHNITTE = (
     "DOKUMENTTYP",
     "AUSGELESENER INHALT",
     "STRUKTURIERTE DARSTELLUNG",
-    "KIS-VORSCHLAG",
+    "KIS-VORSCHLAG KOMPAKT",
+    "KIS-VORSCHLAG AUSFÜHRLICH",
 )
 _UEBERSCHRIFT = re.compile(
-    r"(?m)^\s*(DOKUMENTTYP|AUSGELESENER INHALT|STRUKTURIERTE DARSTELLUNG|KIS-VORSCHLAG)\s*:\s*$"
+    r"(?m)^\s*(DOKUMENTTYP|AUSGELESENER INHALT|STRUKTURIERTE DARSTELLUNG|KIS-VORSCHLAG KOMPAKT|KIS-VORSCHLAG AUSFÜHRLICH)\s*:\s*$"
 )
 
 
-def parse_dokumentantwort(antwort: str) -> DokumentErgebnis:
-    """Parst alle vier Pflichtabschnitte oder meldet den exakten Formatfehler.
+def parse_dokumentantwort(
+    antwort: str, *, erlaubter_dokumenttyp: str | None = None
+) -> DokumentErgebnis:
+    """Parst alle fünf Pflichtabschnitte oder meldet den exakten Formatfehler.
 
     Debugging-Hinweis: Lokal dürfen Entwickler bei Bedarf ausschließlich
     ``[m.group(1) for m in _UEBERSCHRIFT.finditer(antwort)]`` und die Längen der
@@ -168,14 +247,18 @@ def parse_dokumentantwort(antwort: str) -> DokumentErgebnis:
 
     typtext = inhalte["DOKUMENTTYP"].strip()
     try:
-        dokumenttyp = Dokumenttyp(typtext)
+        dokumenttyp: Dokumenttyp | str = Dokumenttyp(typtext)
     except ValueError as fehler:
-        raise DokumentAntwortFehler(f"Unbekannter Dokumenttyp: {typtext!r}.") from fehler
+        if erlaubter_dokumenttyp and typtext == erlaubter_dokumenttyp:
+            dokumenttyp = typtext
+        else:
+            raise DokumentAntwortFehler(f"Unbekannter Dokumenttyp: {typtext!r}.") from fehler
     return DokumentErgebnis(
         dokumenttyp=dokumenttyp,
         ausgelesener_inhalt=inhalte["AUSGELESENER INHALT"],
         strukturierte_darstellung=inhalte["STRUKTURIERTE DARSTELLUNG"],
-        kis_vorschlag=inhalte["KIS-VORSCHLAG"],
+        kis_vorschlag=inhalte["KIS-VORSCHLAG KOMPAKT"],
+        kis_vorschlag_ausfuehrlich=inhalte["KIS-VORSCHLAG AUSFÜHRLICH"],
         rohe_ki_antwort=antwort,
     )
 
@@ -183,3 +266,97 @@ def parse_dokumentantwort(antwort: str) -> DokumentErgebnis:
 # Englischer Alias erleichtert die anbieterunabhängige Nutzung, ohne eine zweite
 # Parserimplementierung oder abweichende Fehlerbehandlung einzuführen.
 parse_document_response = parse_dokumentantwort
+
+
+_KLASSIFIKATIONSFELDER = (
+    "STATUS", "VORGESCHLAGENE KLASSE", "ALTERNATIVEN", "BEGRÜNDUNG", "NEUE KLASSE",
+    "NEUE FACHGRUPPE", "NEUE BESCHREIBUNG", "NEUE MERKMALE",
+)
+
+
+def erstelle_klassifikationsprompt(klassen: Sequence[object], transkript: str) -> str:
+    """Erzeugt den Katalogprompt ohne Patientendaten oder stillen Standardtyp.
+
+    ``klassen`` sind bewusst strukturell gelesen, damit das AI-Modul nicht vom
+    SQLAlchemy-Modell abhängt. Erwartet werden Attribute ``name``, ``beschreibung``,
+    ``merkmale`` und ``beispiele`` aus dem Katalogdienst.
+    """
+
+    katalogzeilen = []
+    for klasse in klassen:
+        beispiele = "; ".join(getattr(klasse, "beispiele", ())[-3:])
+        katalogzeilen.append(
+            f"- {klasse.name}: {klasse.beschreibung or 'keine Beschreibung'}; "
+            f"Merkmale: {klasse.merkmale or 'keine hinterlegt'}"
+            + (f"; bestätigte Beispiele: {beispiele}" if beispiele else "")
+        )
+    return f"""Prüfe ausschließlich anhand des Transkripts, ob es ein medizinisches Dokument ist
+und zu welcher vorhandenen Klasse es gehört. Erfinde keine Inhalte. Bei mehreren
+plausiblen Klassen STATUS UNSICHER verwenden. Wenn medizinisch, aber keine Klasse
+passt, STATUS MEDIZINISCH_UNKLASSIFIZIERT verwenden und einen knappen neuen
+Klassennamen vorschlagen. Als neue Fachgruppe ist ausschließlich eine der folgenden
+Bezeichnungen erlaubt: CED-Fragebogen, Labor, Calprotectin, Endoskopie, Sonografie,
+MRT, CT, Röntgen, Bildgebung, Pathologie, Funktionsdiagnostik, Arztbriefe, Medikation,
+Weitere Befunde. Nichtmedizinischer Text erhält NICHT_MEDIZINISCH.
+
+Vorhandene Klassen:
+{chr(10).join(katalogzeilen)}
+
+Antworte exakt mit:
+STATUS: [EINDEUTIG|UNSICHER|MEDIZINISCH_UNKLASSIFIZIERT|NICHT_MEDIZINISCH]
+VORGESCHLAGENE KLASSE: [exakter vorhandener Name oder leer]
+ALTERNATIVEN: [vorhandene Namen durch | getrennt oder leer]
+BEGRÜNDUNG: [kurze Begründung nur anhand sichtbarer Dokumentmerkmale]
+NEUE KLASSE: [knapper Vorschlag nur bei MEDIZINISCH_UNKLASSIFIZIERT oder leer]
+NEUE FACHGRUPPE: [eine fachlich passende vorhandene Obergruppe oder leer]
+NEUE BESCHREIBUNG: [kurze patientenunabhängige Definition oder leer]
+NEUE MERKMALE: [nur allgemeine Überschriften und Strukturmerkmale oder leer]
+
+TRANSKRIPT:
+{transkript}"""
+
+
+def parse_klassifikationsantwort(
+    antwort: str, erlaubte_klassen: Sequence[str]
+) -> Klassifikationsvorschlag:
+    """Parst einen Vorschlag streng; unbekannte Klassennamen werden nicht akzeptiert."""
+
+    werte: dict[str, str] = {}
+    for zeile in (antwort or "").splitlines():
+        for feld in _KLASSIFIKATIONSFELDER:
+            prefix = feld + ":"
+            if zeile.startswith(prefix):
+                if feld in werte:
+                    raise DokumentAntwortFehler(f"Klassifikationsfeld mehrfach vorhanden: {feld}.")
+                werte[feld] = zeile[len(prefix):].strip()
+                break
+    fehlend = [feld for feld in _KLASSIFIKATIONSFELDER if feld not in werte]
+    if fehlend:
+        raise DokumentAntwortFehler("Klassifikationsfelder fehlen: " + ", ".join(fehlend) + ".")
+    try:
+        status = Klassifikationsstatus(werte["STATUS"])
+    except ValueError as fehler:
+        raise DokumentAntwortFehler("Unbekannter Klassifikationsstatus.") from fehler
+    erlaubt = set(erlaubte_klassen)
+    vorschlag = werte["VORGESCHLAGENE KLASSE"] or None
+    alternativen = tuple(w.strip() for w in werte["ALTERNATIVEN"].split("|") if w.strip())
+    unbekannt = ({vorschlag} if vorschlag else set()) | set(alternativen)
+    unbekannt -= erlaubt
+    if unbekannt:
+        raise DokumentAntwortFehler(
+            "Klassifikation enthält nicht bestätigte Klassen: " + ", ".join(sorted(unbekannt))
+        )
+    if status is Klassifikationsstatus.EINDEUTIG and not vorschlag:
+        raise DokumentAntwortFehler("Eine eindeutige Klassifikation benötigt eine vorhandene Klasse.")
+    if not werte["BEGRÜNDUNG"]:
+        raise DokumentAntwortFehler("Die Klassifikationsbegründung fehlt.")
+    return Klassifikationsvorschlag(
+        status=status,
+        vorgeschlagene_klasse=vorschlag,
+        alternativen=alternativen,
+        begruendung=werte["BEGRÜNDUNG"],
+        neue_klasse_vorschlag=werte["NEUE KLASSE"] or None,
+        vorgeschlagene_fachgruppe=werte["NEUE FACHGRUPPE"] or None,
+        vorgeschlagene_beschreibung=werte["NEUE BESCHREIBUNG"] or None,
+        vorgeschlagene_merkmale=werte["NEUE MERKMALE"] or None,
+    )

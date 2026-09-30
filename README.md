@@ -1,5 +1,24 @@
 # CED-A-DOKU – KI-gestützte Auswertung medizinischer Dokumente
 
+## Automatische Texterkennung und Dokumentklassifikation
+
+Für den Benutzer gibt es nur eine Analyseaktion. Die App liest immer zuerst den
+sichtbaren Text aus und entscheidet danach KI-gestützt, ob ein medizinisches Dokument
+vorliegt. Nichtmedizinischer Text bleibt als kopierbarer Rohtext sichtbar und erhält
+keinen Patienten- oder Datenbankbezug.
+
+Eine eindeutig erkannte bestehende Dokumentklasse wird ohne zusätzlichen Dialog
+strukturiert. Nur bei mehreren plausiblen Klassen oder einer neuen Dokumentart fragt
+die App nach. Neue Klassen werden mit vorgeschlagener Fachgruppe, Beschreibung und
+Erkennungsmerkmalen persistent gespeichert. Es gibt keinen stillen Rückfall auf
+„sonstiges medizinisches Dokument“.
+
+Nach der erfolgreichen, weiterhin kontrollierten Patientenzuordnung gewinnt die App
+automatisch patientenfreie Strukturmerkmale wie Überschriften und Tabellenköpfe als
+Lernsignal. Namen, Geburtsdaten, IDs, Messwerte und vollständige Texte werden dafür
+nicht übernommen. Dokumentklassen dienen der Sortierung; medizinische Einzelwerte
+werden weiterhin nur durch einen passenden Fachparser und den Prüfprozess gespeichert.
+
 ## API-Schlüssel eintragen
 
 Die API-Schlüssel werden beim Programmstart mit `python-dotenv` aus einer lokalen
@@ -43,8 +62,20 @@ werden. Alle übernommenen Dokumentteile erscheinen sofort als Vorschauen in bis
 Spalten. Mit den Pfeilen lässt sich die Reihenfolge vor der Analyse manuell ändern;
 der Papierkorb entfernt ein einzelnes Teil. Die zusätzliche Standardvorschau im
 Upload-Feld wird ausgeblendet, weil das Bild bereits im sortierbaren Raster sichtbar
-ist. „Alles löschen / neu beginnen“ setzt
-Dokument und KI-Ergebnis vollständig zurück.
+ist. Der eindeutige Schalter **„Dokument verwerfen / neue Eingabe“** setzt Dokument,
+Vorschauen und KI-Ergebnis gemeinsam zurück; einen zweiten gleichbedeutenden
+Neustart-Schalter gibt es nicht mehr. **„Dokument analysieren“** steht links daneben
+direkt unter dem Originaldokument und wird nach einer abgeschlossenen Verarbeitung
+zu **„Neu analysieren mit …“**. Der erkannte Dokumenttyp bleibt unverändert rechts
+im Bereich „Dokumenterkennung“ sichtbar.
+
+Beim Einfügen aus der Zwischenablage werden Bilddateien sowohl aus den Clipboard-
+Items und – falls dort kein Bild vorliegt – aus der Dateiliste des Browsers gelesen.
+Damit übernimmt Chromium denselben Screenshot nicht doppelt, wenn es ihn parallel
+über beide Schnittstellen als verschiedene Dateiobjekte meldet. Es findet weder ein
+Bildähnlichkeitsvergleich noch eine patientenübergreifende Duplikatunterdrückung
+statt. Liefert das Betriebssystem nur Text oder HTML statt Bildbytes, zeigt die App
+die tatsächlich angebotenen Zwischenablageformate als technischen Hinweis an.
 
 Bei mehreren Bildern oder Dateien wird jedes Dokumentteil zuerst einzeln und
 vollständig transkribiert. Anschließend prüft die KI anhand sichtbarer
@@ -58,12 +89,12 @@ Bearbeitung. Da die automatische Reihenfolge nur ein Vorschlag sein kann, muss d
 Ergebnis weiterhin medizinisch geprüft werden.
 
 Die Auswahl zwischen Rohtext, strukturierter Darstellung und KI-Zusammenfassung
-startet keine neue Bildanalyse. Bei einem einzelnen Bild erzeugt genau eine
-multimodale Anfrage alle drei Ansichten gemeinsam. Bei mehreren Dokumentteilen wird
-jeder Teil einmal vollständig transkribiert; anschließend erzeugt genau eine weitere
-reine Textanfrage Dokumenttyp, strukturierten Text und KIS-Zusammenfassung aus diesen
-Transkriptionen. Nur der ausdrücklich betätigte Schalter zur erneuten Bearbeitung
-sendet das Dokument nochmals an den gewählten Anbieter.
+startet keine neue Analyse. Jedes Bild wird zunächst originalnah transkribiert. Eine
+zweite Anfrage unterscheidet medizinischen von nichtmedizinischem Inhalt und schlägt
+eine vorhandene Dokumentklasse vor. Nur für medizinische Dokumente mit eindeutiger
+oder bestätigter Klasse erzeugt eine weitere Textanfrage strukturierte Darstellung
+und KIS-Texte. Nur der Schalter zur erneuten Bearbeitung sendet das Dokument nochmals
+an den gewählten Anbieter.
 
 Die `.env` ist in `.gitignore` ausgeschlossen. `.env.example` bleibt dagegen als
 leere, sichere Vorlage versioniert. Bereits außerhalb der Datei gesetzte
@@ -84,11 +115,19 @@ Patientenverzeichnis. Das Verzeichnis wird nicht an den KI-Anbieter übertragen.
 
 Ein gefundener Patient ist immer nur ein Vorschlag. Die Auswahl im geschützten
 Dropdown aktiviert den Patienten unmittelbar für Patientenübersicht und Verläufe.
-Davon getrennt prüft „Daten zuordnen“, ob das aktuell eingelesene Dokument neue,
-speicherbare Daten für diesen Patienten enthält. Der Schalter ist nur dann aktiv.
+Davon getrennt prüft **„Erkannte Daten dem Patienten zuordnen“** direkt unter dem
+KI-Ergebnis, ob das aktuell analysierte Dokument neue, speicherbare Daten für diesen
+Patienten enthält. Der Schalter ist nur dann aktiv.
 Erkannte Patienten-ID, getrennt beschrifteter Vor- und Nachname sowie Geburtsdatum
 werden gegen den ausgewählten Datensatz geprüft. Bei einem Widerspruch bleibt der
 Patient für bestehende Ansichten aktiv, die Dokumentzuordnung wird jedoch gesperrt.
+Der lokale Abgleich wird als Ampel erklärt: Grün bedeutet Patienten-ID oder die
+Kombination aus Name und Geburtsdatum stimmen überein; Gelb kennzeichnet einen
+passenden, aber einzelnen schwachen Treffer; Rot bedeutet entweder eine konkret
+benannte Abweichung oder vollständig fehlende Dokumentstammdaten. Fehlende Daten sind
+kein behaupteter Widerspruch und dürfen nach bewusster Patientenauswahl zugeordnet
+werden. Ein explizit abweichender Name, eine abweichende ID oder ein abweichendes
+Geburtsdatum sperrt die Zuordnung weiterhin.
 Ohne aktive Patientenauswahl bleiben Patientenübersicht, klinischer Verlauf, Labor,
 Calprotectin, Endoskopie, Sonografie und MRT/CT einheitlich deaktiviert.
 
@@ -120,9 +159,10 @@ allgemeine Dokument- und Textextraktion wird dadurch nicht verändert. Erkannter
 Wert, Einheit, Qualitätsstatus und unveränderte Quellzeile werden nebeneinander
 angezeigt und können vor einer späteren Speicherung geprüft werden.
 
-Die CED-Prüfung wird nach der Patientenauswahl über „Daten zuordnen“ in der linken
-geschützten Steuerung geöffnet. Die Arbeitsansicht belegt nur den Bereich rechts neben
-der weiterhin bedienbaren Seitenleiste. „Dokument einlesen“ sowie die übrigen
+Die CED-Prüfung wird nach der Patientenauswahl über **„Erkannte Daten dem Patienten
+zuordnen“** unmittelbar unter dem KI-Ergebnis geöffnet. Die Arbeitsansicht belegt nur
+den Bereich rechts neben der weiterhin bedienbaren Seitenleiste. „Zur
+Dokumentansicht“ sowie die übrigen
 Patientenansichten können direkt in derselben Navigation geöffnet werden; gesonderte
 Zurück-Schalter sind nicht erforderlich. Die CED-Felder werden unmittelbar extrahiert
 und in der Tabelle angezeigt. Im Kopf stehen der gespeicherte Name und das
@@ -186,8 +226,11 @@ der Seitenleiste angeboten. Die Dropdownauswahl aktiviert den Patienten ohne wei
 Klick, sodass die Patientenübersicht auch ohne Dokument geöffnet werden kann. „Daten
 zuordnen“ gehört ausschließlich zum getrennten Dokumentimport. Unter dem am unteren Rand
 angeordneten Schalter „Datenbankmodus beenden“ bleibt Name und Geburtsdatum des
-aktiven Patienten sichtbar. Beim Dokumentwechsel wird diese Zuordnung aus
-Sicherheitsgründen aufgehoben und muss erneut bestätigt werden.
+aktiven Patienten sichtbar. Beim Dokumentwechsel wird die bewusste Dropdownauswahl
+beibehalten. Name und Geburtsdatum des aktiven
+Patienten stehen auch im Kopf des Einlesebereichs. Nach der Dokumentanalyse werden
+erkannte Stammdaten erneut mit dem aktiven Patienten abgeglichen. Ein Widerspruch
+hebt die Auswahl nicht auf, sperrt aber weiterhin die Übernahme dieses Dokuments.
 
 Neue Patienten werden mit getrennten Feldern für Nachname und Vorname gespeichert
 und in allen neuen Ansichten einheitlich als „Nachname, Vorname“ angezeigt. Die alte
@@ -220,7 +263,8 @@ Laboransicht dargestellt.
 
 Auch die kompakte Tabelle des letzten CED-Befunds besitzt nun einen begrenzten
 Scrollbereich und kann den Patientenbildschirm nicht mehr unbegrenzt verbreitern oder
-verlängern. Erstdiagnose und Befallsmuster starten als schreibgeschützte Formfelder.
+verlängern. Erstdiagnose, „Symptome seit“, Details zur Diagnose und Befallsmuster
+starten als schreibgeschützte Formfelder.
 Über „Stammdaten bearbeiten“ können fehlende oder zu korrigierende Angaben bewusst
 freigegeben und gespeichert werden. Jede Speicherung legt eine neue bestätigte
 Version mit der Quelle „MANUELL“ und einem Audit-Eintrag an; ältere Versionen bleiben
@@ -229,15 +273,127 @@ nicht erneut versioniert. Die automatische Übernahme solcher Stammdaten aus
 Dokumenten bleibt einem späteren, ebenfalls bestätigungspflichtigen Schritt
 vorbehalten.
 
-Hauptdiagnose, Nebendiagnosen sowie medikamentöser und chirurgischer Therapieverlauf
-können über „Diagnosen und Therapien bearbeiten“ geändert werden. Frühere Diagnosen
-werden als ersetzt markiert, Therapietexte als neue Versionen gespeichert und die
-gesamte Änderung wird ohne medizinische Inhalte im Audit protokolliert.
+Unter dem Befallsmuster stehen acht häufige extraintestinale Manifestationen als
+deutlich sichtbare Mehrfachauswahl zur Verfügung: Arthritis/Arthralgie,
+Sakroiliitis/ankylosierende Spondylitis, Uveitis, Episkleritis, Erythema nodosum,
+Pyoderma gangraenosum, primär sklerosierende Cholangitis und aphthöse Stomatitis.
+Gesetzte Kreuze und zusätzliche manuelle EIM werden versioniert gespeichert. Die
+Liste ist ein Eingabekatalog und keine automatische Diagnose oder Interpretation.
+Gesetzte EIM werden auch in der schreibgeschützten Patientenübersicht farblich
+hervorgehoben.
+
+Das Befallsmuster wird nicht mehr als freier Code eingegeben. Für Morbus Crohn werden
+Lokalisation (L1–L3), ein zusätzlicher oberer GI-Befall (L4), Verhalten (B1–B3) und
+ein perianaler Zusatz (`p`) ausdrücklich abgefragt; B2 ist als stenosierend und B3
+als penetrierend/fistulierend beschriftet. Für Colitis ulcerosa wird die Ausdehnung
+E1–E3 ausgewählt. Erst aus der vollständigen, manuell bestätigten Auswahl wird der
+sichtbare Code gebildet. Unvollständige Angaben werden nicht geraten.
+
+Hauptdiagnose und Nebendiagnosen besitzen einen eigenen Schalter „Diagnosen
+bearbeiten“. Das Feld „Details zur Diagnose“ steht davon getrennt bei Erstdiagnose
+und „Symptome seit“ in den CED-Stammdaten. Es nimmt ergänzende bestätigte Angaben
+auf, ohne daraus automatisch weitere strukturierte Diagnosen zu erzeugen. Frühere
+Diagnosen werden bei einer Speicherung als ersetzt markiert.
+Medikamentöser und chirurgischer Therapieverlauf werden davon getrennt über
+„Therapien bearbeiten“ freigegeben. Nur geänderte ausgefüllte Therapiefelder werden
+als neue Version gespeichert. Beide Vorgänge erhalten getrennte Audit-Einträge ohne
+medizinische Inhalte; leere Felder löschen keine frühere Angabe.
 
 > **Debugging-Hinweis:** Bleibt die Übersicht trotz gespeicherter CED-Werte leer,
 > zunächst prüfen, ob `confirmed_by_user` gesetzt ist und `patient_id` mit dem oben
 > bestätigten Patienten übereinstimmt. In Debug-Ausgaben nur IDs und Trefferanzahlen,
 > niemals Namen, Diagnosen oder Befundwerte verwenden.
+
+## Zuordnung weiterer Dokumenttypen
+
+Auch Laborbefunde, Arztbriefe, Medikamentenpläne, bildgebende Befunde und sonstige
+medizinische Dokumente können nach dem Einlesen einem Patienten zugeordnet werden.
+Die strukturierte Darstellung führt vorhandene Patientenmerkmale und passend
+beschriftete Dokumentdaten gesondert auf. Lokal werden Patienten-ID, Name und
+Geburtsdatum gegen den Bestand geprüft. Bereits ein einzelnes passendes Merkmal darf
+einen klar als unsicher gekennzeichneten Vorschlag erzeugen; die Zuordnung erfolgt
+aber niemals automatisch.
+
+Vor der Speicherung zeigt eine Prüfansicht den aktiven Patienten, Dokumenttyp,
+erkanntes Datum und die strukturierten Informationen. Das Datum muss bestätigt oder
+manuell ergänzt werden. Widersprüchliche Stammdaten sperren die Zuordnung. Allgemeine
+Dokumente werden mit Rohantwort und KIS-Text archiviert; Fachwerte wie einzelne
+Laborparameter werden ohne eigenen Fachparser nicht als strukturierte Befunde
+geraten oder gespeichert.
+
+Sobald Patient, erkannter Dokumenttyp und ausgelesener Inhalt vorliegen und kein
+Stammdatenwiderspruch besteht, wird **„Erkannte Daten dem Patienten zuordnen“** auch
+für Laborbefunde und andere Nicht-CED-Dokumente aktiv. Der Schalter steht direkt
+unter dem KI-Ergebnis; seine Aktivierung hängt nicht von der CED-spezifischen
+Prüftabelle ab. Nach bereits erfolgter Speicherung bleibt er gesperrt.
+
+### Dokumentarchiv und Befundklassen
+
+Bestätigt zugeordnete Dokumente bleiben nun auch ohne eigenen Fachparser in der
+Patientenansicht auffindbar. Die Fachansichten zeigen unterhalb strukturierter
+Einzelwerte zusätzlich Dokumentdatum, Befundklasse, Dokumenttyp, gespeicherte
+KI-Kurzfassung und Quelldatei. Ein als `Laborbefund` erkanntes virologisches Dokument
+erscheint deshalb unter **Labor**, auch wenn noch keine einzelnen Virusparameter als
+bestätigte Befunde gespeichert wurden.
+
+Der kontrollierte Katalog unterscheidet derzeit CED-Fragebogen, allgemeines Labor,
+Virologie, Mikrobiologie, Calprotectin, Endoskopie, Sonografie, MRT, CT, Röntgen,
+Pathologie, Funktionsdiagnostik, Arztbriefe, Medikamentenpläne und sonstige
+medizinische Dokumente. Arztbriefe, Pathologie, Funktionsdiagnostik, Medikation und
+nicht anderweitig zuordenbare präzise Dokumenttypen erscheinen unter **Weitere
+Befunde**. Eine unbekannte präzise Bezeichnung bleibt erhalten und wird nicht
+automatisch in „Andere Befunde“ umbenannt. Neue Einzelwerte oder medizinische
+Kategorien werden weiterhin erst nach einem dokumenttypspezifischen Parser und einer
+manuellen Prüfung als `Finding` gespeichert; die reine Archivierung erfindet keine
+Werte.
+
+Die Tabelle **„Zugeordnete Dokumente“** ist standardmäßig eingeklappt. Dadurch bleibt
+der strukturierte Fachverlauf im Vordergrund; Dokumentdatum, Klasse, Kurzfassung und
+Quelldatei können bei Bedarf aufgeklappt werden.
+
+Vor jeder Zuordnung wird zusätzlich geprüft, ob dieselbe vollständige KI-Rohantwort
+bereits archiviert wurde. Ein identisches Dokument beim aktiven Patienten wird als
+Duplikat gesperrt. Ist der identische Inhalt bereits einem anderen Patienten
+zugeordnet, nennt die Fehlermeldung ausdrücklich diesen Fremdpatienten-Konflikt,
+anstatt pauschal einen Stammdatenfehler zu behaupten.
+
+### Arztbriefe prüfen
+
+Arztbriefe werden deterministisch anhand vorhandener Überschriften in Diagnosen,
+Operationen, Anamnese, Therapie/Medikation, Endoskopie, Bildgebung, weitere
+Diagnostik, Sozialanamnese, Familienanamnese und Empfehlungen gegliedert. Es werden
+nur tatsächlich vorhandene Abschnitte angezeigt; unstrukturierter Freitext wird
+nicht als Diagnose oder Therapie geraten. Vor der Speicherung besitzt jeder Abschnitt
+einen eigenen Übernahmeschalter. Bestätigte Abschnitte werden zusammen mit Dokument,
+Rohantwort und Kurzfassung atomar unter **Weitere Befunde** gespeichert.
+
+### Labor, Virologie und Mikrobiologie prüfen
+
+Für `Laborbefund`, `Virologischer Befund`, `Mikrobiologischer Befund` und
+`Calprotectin-Befund` wird vor der Speicherung eine editierbare Prüftabelle erzeugt.
+Der deterministische Parser verarbeitet ausschließlich klar beschriftete Tabellen-
+oder `Parameter: Wert`-Zeilen aus der strukturierten Darstellung. Angezeigt werden
+Parameter, Ergebnis, Einheit, Referenzbereich, Quellzeile, Qualitätsstatus und ein
+Übernahmeschalter. Werte und Einheiten werden nicht umgerechnet oder medizinisch
+interpretiert.
+
+Mehrspaltige Laborverläufe werden ebenfalls unterstützt. Enthält eine Tabelle eine
+explizit beschriftete Zeile `Abnahmedatum`, `Entnahmedatum`, `Befunddatum` oder
+`Messdatum`, wird jede nicht leere Messzelle als eigener Wert mit genau diesem Datum
+in der Prüftabelle angezeigt. Alternativ verarbeitet der Parser das normalisierte
+Langformat `Datum | Parameter | Ergebnis | Einheit | Referenzbereich`. Historische
+Messspalten werden dadurch nicht als widersprüchliche Doppelwerte behandelt. Das
+jüngste ausdrücklich erkannte Messdatum wird lediglich als sichtbarer Vorschlag für
+das Dokumentdatum eingesetzt und kann vor der Speicherung korrigiert werden.
+
+Der Parser gleicht Parameter zuerst mit dem festen Anfangskatalog und anschließend
+mit bereits bestätigten Kategorien der lokalen Datenbank ab. Ein neuer eindeutig
+beschrifteter Parameter bleibt zunächst ausgeschaltet und als **Neue Kategorie ·
+prüfen** markiert. Erst ein bewusst gesetzter Übernahmeschalter legt ihn zusammen mit
+dem bestätigten Dokument atomar an. Fehlende beziehungsweise abweichende Einheiten,
+unleserliche Werte und widersprüchliche Doppelangaben sind ebenfalls nicht
+vorausgewählt. Nach erfolgreicher Speicherung öffnet die App direkt den Labor- oder
+Calprotectin-Verlauf.
 
 ## Synthetische Demo-Daten
 
@@ -251,25 +407,52 @@ PYTHONPATH=. python scripts/seed_demo_data.py
 ```
 
 Der Seeder läuft niemals automatisch und verwendet ausschließlich die reservierten
-Patienten-IDs `DEMO-001` bis `DEMO-005`. Existiert bereits eine davon, bricht er mit
-einer verständlichen Meldung ab, statt Datensätze zu überschreiben oder doppelt
-anzulegen. Die Werte sind medizinisch frei erfunden und dürfen nicht als fachliche
-Referenz verwendet werden. Zum Entfernen der Testdaten kann – solange garantiert
-keine realen Daten enthalten sind – die lokale Entwicklungsdatenbank gelöscht werden.
+Patienten-IDs `DEMO-001` bis `DEMO-005`. Er kann gefahrlos erneut ausgeführt werden:
+Er ergänzt nur fehlende IDs und verändert bereits vorhandene Demofälle nicht. Sind
+alle fünf vorhanden, meldet er dies ohne Fehler. Ein vorhandener, aber unvollständiger
+Demofall wird bewusst nicht automatisch repariert oder überschrieben. Die Werte sind
+medizinisch frei erfunden und dürfen nicht als fachliche Referenz verwendet werden.
+Zum Entfernen der Testdaten kann – solange garantiert keine realen Daten enthalten
+sind – die lokale Entwicklungsdatenbank gelöscht werden.
+
+Die Testfälle liegen **nicht im Git-Repository**, sondern ausschließlich in der lokal
+erzeugten SQLite-Datei unter `data/ced_document_ai.sqlite3` beziehungsweise am mit
+`CED_DATABASE_PATH` gesetzten Ort. Der Ordner `data/` ist absichtlich von Git
+ausgeschlossen, damit weder echte noch synthetische Patientendaten durch `git pull`
+übertragen werden. Ein neuer oder neu aufgebauter Codespace besitzt deshalb zunächst
+keine Demo-Patienten. In diesem Fall den obigen Seeder einmal im Projektordner
+ausführen. Seine Abschlussmeldung nennt den tatsächlich verwendeten absoluten
+Datenbankpfad; die App muss mit demselben `CED_DATABASE_PATH` gestartet werden. Ist
+das Dropdown leer, zeigt die Oberfläche ebenfalls diesen ausdrücklichen Hinweis an,
+statt stillschweigend eine zweite Datenbank oder Testpatienten anzulegen.
 
 ## Verbleibende Entwicklungsschritte
 
-1. **Dokumentbasierte Fachparser:** Als nächster Importtyp ist der Laborbefund
-   umzusetzen. Neue eindeutig beschriftete Laborparameter sollen wie CED-Kategorien
-   prüfpflichtig vorgeschlagen werden können. Danach folgen Endoskopie-, Sonografie-
-   und Schnittbilddokumente mit eigenen Bestätigungsregeln.
-2. **Stammdatenmigration prüfen:** Altdaten mit ungetrenntem Gesamtnamen benötigen
-   eine manuelle Prüfmaske; eine automatische Zerlegung ist absichtlich ausgeschlossen.
-3. **Dokumentquellen für Falländerungen:** Der Diagnose- und Therapieeditor
-   versioniert und auditiert Änderungen; als nächstes fehlt die optionale Verknüpfung
-   jeder manuellen Änderung mit einem konkreten Quelldokument.
-4. **Calprotectin-Grafik:** Zusätzlich zur jetzt aktiven Tabelle ist die geplante
-   skalierbare Zeitgrafik mit Datum auf der X- und Messwert auf der Y-Achse umzusetzen.
-5. **Berechtigungen und Betrieb:** Vor realen Patientendaten sind Benutzerkonten,
-   Rollen, Sitzungsablauf, verschlüsselte Datensicherung und ein Lösch-/Exportkonzept
-   festzulegen und technisch abzusichern.
+Eine programmiertechnische Übersicht über Module, Sitzungszustand, Datenfluss und
+die Abgrenzung zwischen KI, regelbasierter Verarbeitung und manueller Freigabe steht
+in [`TECHNIK.md`](TECHNIK.md).
+
+Der frühere Arbeitsplan wurde am 18. September 2026 erneut gegen Quellcode und Tests
+geprüft. Der geschützte CED-Grundpfad ist weitgehend vorhanden. Fehlende
+Standardfelder werden inzwischen als nicht ausgewählte `MISSING`-Zeilen sichtbar
+gemacht. Vorhandene numerische Werte und Einheiten werden zusätzlich durch einen
+getrennten regelbasierten Dienst geprüft, der ausschließlich Hinweise ergänzt und
+keine Werte korrigiert. Die bestätigten Befunde besitzen inzwischen zusätzlich eine
+Längstabelle mit Datums-, Kategorie- und Dokumenttypfiltern. Als nächster fachlicher
+Schritt sind die getrennten KIS-Varianten umgesetzt: kompakter und ausführlicher
+Vorschlag können separat angezeigt, vor der Freigabe bearbeitet und getrennt
+gespeichert werden. Endoskopie und Sonografie besitzen nun
+ebenfalls einen deterministischen Abschnitts- und Freigabepfad; SES-CD wird für
+Morbus Crohn und UC-EIS für Colitis ulcerosa verwendet, aber niemals aus Freitext
+berechnet.
+
+In den CED-Stammdaten werden Morbus-Crohn-Parameter und die Colitis-Ausdehnung nur
+für den jeweils ausgewählten Erkrankungstyp eingeblendet. Auch der Speicherdienst
+weist widersprüchliche Kombinationen ab. Der endoskopische Parser übernimmt neben
+SES-CD und UC-EIS auch einen ausdrücklich dokumentierten CDEIS; keiner dieser Scores
+wird aus beschreibendem Befundtext berechnet.
+
+Der vollständige Soll-Ist-Abgleich, die noch offenen Punkte der bisherigen drei
+Iterationen und die neu priorisierte Roadmap stehen in
+[`UMSETZUNGSSTAND.md`](UMSETZUNGSSTAND.md). Der umfassende fachliche Zielkatalog
+bleibt unverändert in [`projektplan.md`](projektplan.md) erhalten.

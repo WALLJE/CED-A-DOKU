@@ -24,28 +24,48 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from ced_document_ai.config.settings import ConfigurationError, Settings
 from ced_document_ai.database.database import get_session, initialize_database
-from ced_document_ai.database.models import ConfidenceStatus, Patient
+from ced_document_ai.database.models import ConfidenceStatus, FindingCategory, Patient
 from ced_document_ai.services.ai.providers import (
     AIProviderError,
     CloudAPIProvider,
     LocalAPIProvider,
 )
-from ced_document_ai.services.ai.document_workflow import DokumentAntwortFehler, Dokumenttyp
+from ced_document_ai.services.ai.document_workflow import (
+    DokumentAntwortFehler,
+    Dokumenttyp,
+    Klassifikationsstatus,
+    Klassifikationsvorschlag,
+    TranskriptionsErgebnis,
+)
+from ced_document_ai.services.ced.document_type_service import (
+    ERLAUBTE_FACHGRUPPEN,
+    ergaenze_bestaetigtes_beispiel,
+    erstelle_patientenfreie_lernmerkmale,
+    finde_aehnliche_klassen,
+    lege_dokumentklasse_an,
+    liste_dokumentklassen,
+)
 from ced_document_ai.services.ced.patient_matching import (
     ErkanntePatientendaten,
     erkenne_patientendaten,
     ermittle_patiententreffer,
+    pruefe_aktiven_patienten,
 )
 from ced_document_ai.services.ced.patient_overview import (
+    lade_befundliste,
+    lade_dokumentenarchiv,
     lade_fachverlauf,
     lade_klinischen_verlauf,
     lade_patientenuebersicht,
 )
 from ced_document_ai.services.ced.patient_profile import (
+    DiagnosenEingabe,
+    EIM_OPTIONEN,
     ManuelleCEDStammdaten,
-    PatientenfallEingabe,
+    TherapienEingabe,
+    speichere_diagnosen,
     speichere_manuelle_stammdaten,
-    speichere_patientenfall,
+    speichere_therapien,
 )
 from ced_document_ai.services.ced.questionnaire_parser import (
     ExtrahierterBefund,
@@ -58,6 +78,31 @@ from ced_document_ai.services.ced.storage import (
     finde_befundduplikate,
     speichere_ced_pruefung,
 )
+from ced_document_ai.services.ced.document_storage import (
+    DokumentSpeicherauftrag,
+    FreigegebenerDokumentbefund,
+    finde_vorhandene_dokumentzuordnungen,
+    speichere_allgemeines_dokument,
+)
+from ced_document_ai.services.ced.letter_parser import (
+    ExtrahierterArztbriefabschnitt,
+    parse_arztbrief,
+)
+from ced_document_ai.services.ced.procedure_parser import (
+    ExtrahierterFachabschnitt,
+    parse_fachbefund,
+)
+from ced_document_ai.services.ced.laboratory_parser import (
+    LABORDOKUMENTTYPEN,
+    ExtrahierterLaborwert,
+    parse_laborbefund,
+)
+from ced_document_ai.services.ced.laboratory_storage import (
+    FreigegebenerLaborwert,
+    LaborSpeicherauftrag,
+    speichere_laborpruefung,
+)
+from ced_document_ai.services.ced.validation import pruefe_technische_plausibilitaet
 from ced_document_ai.services.documents.converter import (
     DocumentConversionError,
     DocumentConverter,
@@ -84,7 +129,11 @@ class Sitzungszustand:
     ausgelesener_inhalt: str = ""
     strukturierte_darstellung: str = ""
     kis_vorschlag: str = ""
+    kis_vorschlag_ausfuehrlich: str = ""
     rohe_ki_antwort: str = ""
+    transkription: TranskriptionsErgebnis | None = None
+    klassifikationsvorschlag: Klassifikationsvorschlag | None = None
+    klassifikation_bestaetigt: bool = False
     letzter_fehler: str = ""
     # Die Zuordnung wird nur als Datenbank-ID in dieser Browser-Sitzung gehalten.
     # Ein erkannter Vorschlag setzt diesen Wert niemals automatisch.
@@ -95,6 +144,9 @@ class Sitzungszustand:
     # CED-Befunde bleiben bis zu einer späteren ausdrücklichen Freigabe rein
     # temporär. Dieser Umsetzungsschritt schreibt noch keinen Befund in SQLite.
     ced_befunde: list[ExtrahierterBefund] = field(default_factory=list)
+    labor_befunde: list[ExtrahierterLaborwert] = field(default_factory=list)
+    arztbrief_abschnitte: list[ExtrahierterArztbriefabschnitt] = field(default_factory=list)
+    fachbefund_abschnitte: list[ExtrahierterFachabschnitt] = field(default_factory=list)
     gespeichertes_dokument_id: int | None = None
     patientenabgleich_erlaubt: bool = False
     duplikate_bestaetigt: bool = False
@@ -105,6 +157,25 @@ class Sitzungszustand:
     temporaerer_ordner: tempfile.TemporaryDirectory[str] = field(
         default_factory=lambda: tempfile.TemporaryDirectory(prefix="ced_nicegui_")
     )
+
+    @property
+    def datenzuordnung_moeglich(self) -> bool:
+        """Prüft ausschließlich den technischen Zustand des Zuordnungsschalters.
+
+        Maßgeblich ist der tatsächlich vorhandene ausgelesene Inhalt. Die
+        strukturierte Darstellung ist zwar Teil jeder gültigen KI-Antwort, darf den
+        Schalter aber nicht zusätzlich blockieren, nachdem Dokumenttyp, Rohtext und
+        Patient bereits sichtbar vorhanden sind. Ein bestätigter Stammdatenkonflikt
+        oder ein bereits gespeichertes Dokument sperrt die Zuordnung weiterhin.
+        """
+        return bool(
+            self.arbeitsmodus == DATENBANKMODUS
+            and self.patient_id is not None
+            and self.dokumenttyp
+            and self.ausgelesener_inhalt.strip()
+            and self.patientenabgleich_erlaubt
+            and self.gespeichertes_dokument_id is None
+        )
 
 
 def _bildadresse(dateipfad: Path) -> str:
@@ -183,6 +254,21 @@ def zeige_hauptseite() -> None:
             border: 2px solid #dc2626; border-radius: 10px; padding: 12px 14px;
             font-weight: 700; width: 100%; }
           .ced-ausgeschlossen { color: #b91c1c !important; }
+          .patientenabgleich-gruen { color: #166534 !important; background: #dcfce7;
+            border: 1px solid #16a34a; border-radius: 10px; padding: 10px 12px;
+            font-weight: 700; width: 100%; }
+          .patientenabgleich-gelb { color: #854d0e !important; background: #fef9c3;
+            border: 1px solid #ca8a04; border-radius: 10px; padding: 10px 12px;
+            font-weight: 700; width: 100%; }
+          .patientenabgleich-rot { color: #991b1b !important; background: #fee2e2;
+            border: 1px solid #dc2626; border-radius: 10px; padding: 10px 12px;
+            font-weight: 700; width: 100%; }
+          /* Gesetzte EIM bleiben auch im schreibgeschützten Zustand deutlich
+             erkennbar. Falls Quasar seine internen Klassennamen ändert, im Browser
+             ausschließlich den Checkbox-Zustand prüfen, keine Patientendaten loggen. */
+          .eim-option:has(.q-checkbox__inner--truthy) { background: #ccfbf1;
+            border: 1px solid #0f766e; border-radius: 8px; padding: 3px 7px;
+            font-weight: 700; color: #115e59; }
         </style>
     """)
 
@@ -227,11 +313,8 @@ def zeige_hauptseite() -> None:
                 "Patient anlegen", icon="person_add"
             ).props("color=teal-8").classes("w-full")
         neuer_patient_formular.set_visibility(False)
-        ced_navigation = ui.button(
-            "Daten zuordnen", icon="fact_check"
-        ).props("outline color=teal-8").classes("w-full mt-3")
         einlesen_navigation = ui.button(
-            "Dokument einlesen", icon="document_scanner"
+            "Zur Dokumentansicht", icon="document_scanner"
         ).props("outline color=teal-8").classes("w-full mt-2")
         patientenansicht_navigation = ui.button(
             "Patientenübersicht", icon="person"
@@ -248,6 +331,7 @@ def zeige_hauptseite() -> None:
                 ("endoskopie", "Endoskopie", "video_camera_front"),
                 ("sonografie", "Sonografie", "ultrasound"),
                 ("schnittbild", "MRT / CT", "radiology"),
+                ("weitere", "Weitere Befunde", "folder_special"),
             ):
                 fachnavigation_schalter[schluessel] = ui.button(
                     titel, icon=symbol
@@ -259,8 +343,6 @@ def zeige_hauptseite() -> None:
         aktiver_patient_auswahl.set_visibility(False)
         dokument_patienten_hinweis.set_visibility(False)
         neuer_patient_schalter.set_visibility(False)
-        ced_navigation.set_visibility(False)
-        ced_navigation.disable()
         einlesen_navigation.set_visibility(False)
         patientenansicht_navigation.set_visibility(False)
         patientenansicht_navigation.disable()
@@ -310,7 +392,9 @@ def zeige_hauptseite() -> None:
             hauptueberschrift = ui.label("Auslesen von Dokumenten").classes(
                 "text-3xl font-bold"
             )
-            ui.label("Assistierte Auslesung medizinischer Dokumente").classes(
+            hauptuntertitel = ui.label(
+                "Assistierte Auslesung medizinischer Dokumente"
+            ).classes(
                 "text-teal-50"
             )
 
@@ -343,13 +427,21 @@ def zeige_hauptseite() -> None:
                         ui.label(
                             "Auch Einfügen aus der Zwischenablage ist mit Strg+V / Cmd+V möglich."
                         ).classes("upload-hinweis")
-                    with ui.row().classes("w-full gap-2"):
-                        neu_schalter = ui.button(
-                            "Neues Dokument einlesen", icon="note_add"
-                        ).props("outline color=teal-8")
-                        alles_loeschen_schalter = ui.button(
-                            "Alles löschen / neu beginnen", icon="delete_sweep"
-                        ).props("outline color=negative")
+                    # Analyse und Verwerfen beziehen sich beide auf das links
+                    # sichtbare Original. Die Aktionen stehen deshalb gemeinsam
+                    # direkt darunter; der erkannte Dokumenttyp bleibt rechts in
+                    # seiner bisherigen Ergebnisposition.
+                    with ui.row().classes("w-full gap-2 flex-wrap sm:flex-nowrap"):
+                        lesen_schalter = ui.button(
+                            "Dokument analysieren", icon="document_scanner"
+                        ).props("color=teal-8 unelevated no-caps").classes(
+                            "flex-1 h-12 whitespace-nowrap"
+                        )
+                        dokument_verwerfen_schalter = ui.button(
+                            "Dokument verwerfen / neue Eingabe", icon="delete_sweep"
+                        ).props("outline color=negative no-caps").classes(
+                            "flex-1 h-12 whitespace-nowrap"
+                        )
                 with ui.column().classes("ergebnisspalte flex-1 lg:w-1/2 gap-5"):
                     with ui.card().classes("arbeitskarte w-full p-5"):
                         with ui.row().classes("items-center gap-2"):
@@ -358,17 +450,14 @@ def zeige_hauptseite() -> None:
                         dokumenttyp_ausgabe = ui.input(
                             "Erkannter Dokumenttyp", value=""
                         ).props("outlined readonly").classes("w-full")
-                        lesen_schalter = ui.button(
-                            "Dokument auslesen", icon="document_scanner"
-                        ).props("color=teal-8 unelevated").classes("w-full")
-
                     with ui.card().classes("arbeitskarte w-full p-5"):
                         ui.label("KI-Ergebnis").classes("bereichstitel")
                         ergebnis_auswahl = ui.select(
                             {
                                 "rohtext": "Rohtext",
                                 "strukturiert": "Strukturierter, formatierter Text",
-                                "zusammenfassung": "KI-Zusammenfassung",
+                                "kis_kompakt": "KIS-Vorschlag kompakt",
+                                "kis_ausfuehrlich": "KIS-Vorschlag ausführlich",
                             },
                             value="rohtext",
                             label="Darstellung",
@@ -379,6 +468,59 @@ def zeige_hauptseite() -> None:
                         kopieren_schalter = ui.button(
                             "Angezeigten Text kopieren", icon="content_copy"
                         ).props("color=teal-8 unelevated").classes("w-full")
+                        # Die Zuordnung ist fachlich der nächste Schritt nach der
+                        # Dokumentanalyse. Sie steht deshalb direkt unter dem
+                        # Ergebnis und nicht zwischen administrativen Funktionen.
+                        ced_navigation = ui.button(
+                            "Erkannte Daten dem Patienten zuordnen", icon="fact_check"
+                        ).props("color=teal-8 unelevated").classes("w-full")
+                        ced_navigation.set_visibility(False)
+                        ced_navigation.disable()
+
+                    # Eine unsichere Klassifikation ist ein regulärer Prüfzustand.
+                    # Original und Transkript bleiben sichtbar; erst dieser Dialog
+                    # erlaubt die medizinische Strukturierung. Es gibt keinen stillen
+                    # Rückfall auf „sonstiges medizinisches Dokument“.
+                    with ui.dialog() as klassifikations_dialog:
+                        with ui.card().classes("w-full max-w-3xl p-6 gap-4"):
+                            ui.label("Dokumentklasse bestätigen").classes(
+                                "text-xl font-bold text-teal-900"
+                            )
+                            klassifikations_hinweis = ui.label("").classes("text-slate-700")
+                            klassifikations_klasse = ui.select(
+                                {}, label="Vorhandene Dokumentklasse"
+                            ).props("outlined").classes("w-full")
+                            with ui.expansion(
+                                "Keine passende Klasse? Neue Dokumentklasse anlegen",
+                                icon="add_circle_outline",
+                            ).classes("w-full"):
+                                neue_klasse_name = ui.input("Neue Dokumentklasse").props(
+                                    "outlined"
+                                ).classes("w-full")
+                                neue_klasse_gruppe = ui.select(
+                                    list(ERLAUBTE_FACHGRUPPEN), label="Fachgruppe"
+                                ).props("outlined").classes("w-full")
+                                neue_klasse_beschreibung = ui.textarea(
+                                    "Beschreibung der Dokumentklasse"
+                                ).props("outlined").classes("w-full")
+                                with ui.expansion("Details bearbeiten", icon="tune").classes("w-full"):
+                                    neue_klasse_merkmale = ui.textarea(
+                                        "Erkennbare Merkmale dieser Klasse"
+                                    ).props("outlined").classes("w-full")
+                                aehnliche_klassen_hinweis = ui.label("").classes("text-amber-800")
+                                neue_klasse_anlegen = ui.button(
+                                    "Neue Klasse übernehmen", icon="add"
+                                ).props("color=teal-8 outline no-caps").classes("w-full")
+                            with ui.row().classes("w-full justify-end gap-2"):
+                                ui.button(
+                                    "Nur Text verwenden",
+                                    on_click=lambda: verwende_nur_text(),
+                                ).props(
+                                    "flat no-caps"
+                                )
+                                klasse_bestaetigen = ui.button(
+                                    "Bestehende Klasse bestätigen", icon="check"
+                                ).props("color=teal-8 no-caps")
 
                     # Die Arbeitsansicht bleibt rechts neben der Navigation. Der
                     # Einlesebereich bleibt im Hintergrund unverändert erhalten und
@@ -442,6 +584,11 @@ def zeige_hauptseite() -> None:
                                             "width": 135,
                                         },
                                         {
+                                            "headerName": "Prüfhinweis",
+                                            "field": "pruefhinweis",
+                                            "minWidth": 280,
+                                        },
+                                        {
                                             "headerName": "Quelle",
                                             "field": "quelle",
                                             "minWidth": 260,
@@ -454,10 +601,146 @@ def zeige_hauptseite() -> None:
                                     "stopEditingWhenCellsLoseFocus": True,
                                 }
                             ).classes("ced-tabellenrahmen w-full")
+                            with ui.row().classes("w-full gap-2"):
+                                ced_alle_auswaehlen = ui.button("Alle auswählen")
+                                ced_alle_abwaehlen = ui.button("Alle abwählen")
+                                ced_alle_auswaehlen.props("outline color=teal-8")
+                                ced_alle_abwaehlen.props("outline color=teal-8")
                             ced_speichern = ui.button(
                                 "Geprüfte CED-Daten speichern", icon="save"
                             ).props("color=teal-8 unelevated").classes("w-full")
                             ced_speichern.disable()
+
+                    # Nicht-CED-Dokumente erhalten vor der Archivierung eine
+                    # ausdrückliche Patienten- und Datumsprüfung. Für Labor,
+                    # Virologie, Mikrobiologie und Calprotectin erscheint zusätzlich
+                    # die Fachwerttabelle; andere Dokumentklassen bleiben beim
+                    # sicheren Archivpfad ohne erfundene Einzelwerte.
+                    with ui.dialog().props("maximized seamless").classes(
+                        "ced-pruefdialog"
+                    ) as dokument_pruefdialog:
+                        with ui.card().classes("ced-pruefseite p-6 md:p-8 gap-4"):
+                            ui.label("Dokumentzuordnung prüfen").classes(
+                                "text-2xl font-bold text-teal-900"
+                            )
+                            dokument_pruef_patient = ui.label("").classes("text-slate-600")
+                            dokument_pruef_typ = ui.input("Dokumenttyp").props(
+                                "outlined dense readonly"
+                            ).classes("w-full")
+                            dokument_pruef_datum = ui.input("Dokumentdatum").props(
+                                "outlined dense type=date"
+                            ).classes("w-full")
+                            dokument_pruef_text = ui.textarea(
+                                "Erkannte Informationen zur manuellen Prüfung"
+                            ).props("outlined readonly").classes("ergebnistext w-full")
+                            labor_pruef_hinweis = ui.label("").classes("text-slate-600")
+                            labor_pruef_tabelle = ui.aggrid(
+                                {
+                                    "defaultColDef": {
+                                        "resizable": True,
+                                        "sortable": True,
+                                        "filter": True,
+                                    },
+                                    "columnDefs": [
+                                        {"headerName": "Status", "field": "status", "width": 145},
+                                        {"headerName": "Befunddatum", "field": "datum", "editable": True, "width": 145},
+                                        {"headerName": "Parameter", "field": "kategorie", "editable": True, "minWidth": 180},
+                                        {"headerName": "Ergebnis", "field": "wert", "editable": True, "minWidth": 150},
+                                        {"headerName": "Einheit", "field": "einheit", "editable": True, "width": 125},
+                                        {"headerName": "Referenz", "field": "referenz", "minWidth": 150},
+                                        {
+                                            "headerName": "Übernehmen",
+                                            "field": "uebernehmen",
+                                            "editable": True,
+                                            "cellEditor": "agCheckboxCellEditor",
+                                            "cellRenderer": "agCheckboxCellRenderer",
+                                            "width": 135,
+                                        },
+                                        {"headerName": "Prüfhinweis", "field": "pruefhinweis", "minWidth": 280},
+                                        {"headerName": "Quelle", "field": "quelle", "minWidth": 260},
+                                    ],
+                                    "rowData": [],
+                                    "stopEditingWhenCellsLoseFocus": True,
+                                }
+                            ).classes("ced-tabellenrahmen w-full")
+                            with ui.row().classes("w-full gap-2") as labor_auswahlaktionen:
+                                labor_alle_auswaehlen = ui.button("Alle auswählen")
+                                labor_alle_abwaehlen = ui.button("Alle abwählen")
+                                labor_alle_auswaehlen.props("outline color=teal-8")
+                                labor_alle_abwaehlen.props("outline color=teal-8")
+                            labor_pruef_hinweis.set_visibility(False)
+                            labor_pruef_tabelle.set_visibility(False)
+                            labor_auswahlaktionen.set_visibility(False)
+                            arztbrief_pruef_hinweis = ui.label("").classes("text-slate-600")
+                            arztbrief_pruef_tabelle = ui.aggrid(
+                                {
+                                    "defaultColDef": {
+                                        "resizable": True,
+                                        "sortable": True,
+                                        "filter": True,
+                                        "wrapText": True,
+                                        "autoHeight": True,
+                                    },
+                                    "columnDefs": [
+                                        {"headerName": "Bereich", "field": "kategorie", "minWidth": 180},
+                                        {"headerName": "Extrahierter Inhalt", "field": "inhalt", "minWidth": 520, "flex": 1},
+                                        {
+                                            "headerName": "Übernehmen",
+                                            "field": "uebernehmen",
+                                            "editable": True,
+                                            "cellEditor": "agCheckboxCellEditor",
+                                            "cellRenderer": "agCheckboxCellRenderer",
+                                            "width": 135,
+                                        },
+                                    ],
+                                    "rowData": [],
+                                }
+                            ).classes("ced-tabellenrahmen w-full")
+                            with ui.row().classes("w-full gap-2") as arztbrief_auswahlaktionen:
+                                arztbrief_alle_auswaehlen = ui.button("Alle auswählen")
+                                arztbrief_alle_abwaehlen = ui.button("Alle abwählen")
+                                arztbrief_alle_auswaehlen.props("outline color=teal-8")
+                                arztbrief_alle_abwaehlen.props("outline color=teal-8")
+                            arztbrief_pruef_hinweis.set_visibility(False)
+                            arztbrief_pruef_tabelle.set_visibility(False)
+                            arztbrief_auswahlaktionen.set_visibility(False)
+                            fachbefund_pruef_hinweis = ui.label("").classes("text-slate-600")
+                            fachbefund_pruef_tabelle = ui.aggrid(
+                                {
+                                    "defaultColDef": {
+                                        "resizable": True,
+                                        "sortable": True,
+                                        "filter": True,
+                                        "wrapText": True,
+                                        "autoHeight": True,
+                                    },
+                                    "columnDefs": [
+                                        {"headerName": "Bereich", "field": "kategorie", "minWidth": 190},
+                                        {"headerName": "Inhalt", "field": "inhalt", "minWidth": 420, "flex": 1},
+                                        {
+                                            "headerName": "Übernehmen",
+                                            "field": "uebernehmen",
+                                            "editable": True,
+                                            "cellEditor": "agCheckboxCellEditor",
+                                            "cellRenderer": "agCheckboxCellRenderer",
+                                            "width": 135,
+                                        },
+                                        {"headerName": "Prüfhinweis", "field": "pruefhinweis", "minWidth": 300},
+                                    ],
+                                    "rowData": [],
+                                }
+                            ).classes("ced-tabellenrahmen w-full")
+                            with ui.row().classes("w-full gap-2") as fachbefund_auswahlaktionen:
+                                fachbefund_alle_auswaehlen = ui.button("Alle auswählen")
+                                fachbefund_alle_abwaehlen = ui.button("Alle abwählen")
+                                fachbefund_alle_auswaehlen.props("outline color=teal-8")
+                                fachbefund_alle_abwaehlen.props("outline color=teal-8")
+                            fachbefund_pruef_hinweis.set_visibility(False)
+                            fachbefund_pruef_tabelle.set_visibility(False)
+                            fachbefund_auswahlaktionen.set_visibility(False)
+                            dokument_pruef_speichern = ui.button(
+                                "Dokument bestätigt zuordnen", icon="save"
+                            ).props("color=teal-8 unelevated").classes("w-full")
 
                     # Die erste Patientenansicht ist bewusst eine kompakte lesende
                     # Übersicht. Noch nicht strukturierte Bereiche bleiben sichtbar
@@ -490,6 +773,40 @@ def zeige_hauptseite() -> None:
                                         "Nebendiagnosen",
                                         placeholder="eine Diagnose pro Zeile",
                                     ).props("outlined dense readonly").classes("w-full")
+                                    with ui.row().classes("w-full gap-2 flex-wrap"):
+                                        diagnosen_bearbeiten = ui.button(
+                                            "Diagnosen bearbeiten", icon="edit"
+                                        ).props("outline color=teal-8")
+                                        diagnosen_speichern = ui.button(
+                                            "Diagnosen speichern", icon="save"
+                                        ).props("color=teal-8")
+                                        diagnosen_abbrechen = ui.button(
+                                            "Abbrechen", icon="close"
+                                        ).props("flat color=grey-7")
+                                    diagnosen_speichern.set_visibility(False)
+                                    diagnosen_abbrechen.set_visibility(False)
+                                    ui.separator().classes("my-3")
+                                    ui.label("Therapieverlauf").classes("bereichstitel")
+                                    therapie_medikamentoes_ausgabe = ui.textarea(
+                                        "Medikamentös",
+                                        placeholder="noch kein bestätigter Verlauf",
+                                    ).props("outlined dense readonly").classes("w-full")
+                                    therapie_chirurgisch_ausgabe = ui.textarea(
+                                        "Chirurgisch",
+                                        placeholder="noch kein bestätigter Verlauf",
+                                    ).props("outlined dense readonly").classes("w-full")
+                                    with ui.row().classes("w-full gap-2 flex-wrap"):
+                                        therapien_bearbeiten = ui.button(
+                                            "Therapien bearbeiten", icon="edit"
+                                        ).props("outline color=teal-8")
+                                        therapien_speichern = ui.button(
+                                            "Therapien speichern", icon="save"
+                                        ).props("color=teal-8")
+                                        therapien_abbrechen = ui.button(
+                                            "Abbrechen", icon="close"
+                                        ).props("flat color=grey-7")
+                                    therapien_speichern.set_visibility(False)
+                                    therapien_abbrechen.set_visibility(False)
                                 with ui.card().classes("arbeitskarte flex-1 p-5"):
                                     ui.label("CED-Stammdaten").classes("bereichstitel")
                                     # Erst der bewusste Bearbeitungsschalter gibt die
@@ -500,10 +817,79 @@ def zeige_hauptseite() -> None:
                                         value="",
                                         placeholder="noch nicht hinterlegt",
                                     ).props("outlined dense readonly type=date").classes("w-full")
-                                    befallsmuster_ausgabe = ui.input(
-                                        "Befallsmuster",
+                                    symptome_seit_ausgabe = ui.input(
+                                        "Symptome seit",
                                         value="",
-                                        placeholder="noch nicht hinterlegt",
+                                    ).props("outlined dense readonly type=date").classes("w-full")
+                                    diagnose_details_ausgabe = ui.textarea(
+                                        "Details zur Diagnose",
+                                        placeholder="ergänzende bestätigte Details",
+                                    ).props("outlined dense readonly").classes("w-full")
+                                    erkrankungstyp_ausgabe = ui.select(
+                                        # NiceGUI 2.x akzeptiert an dieser Stelle nur
+                                        # Listen oder Zuordnungen. Ein Tupel wird wie
+                                        # eine Zuordnung behandelt und führt bereits
+                                        # beim Seitenaufbau zu ``tuple.keys()``. Diese
+                                        # Liste daher nicht wieder in ein Tupel ändern;
+                                        # bei einem Startfehler zuerst den Typ der an
+                                        # ``options`` übergebenen Werte prüfen.
+                                        ["Morbus Crohn", "Colitis ulcerosa"],
+                                        label="CED-Erkrankungstyp",
+                                    ).props("outlined dense disable").classes("w-full")
+                                    with ui.column().classes("w-full gap-2") as mc_felder:
+                                        mc_lokalisation_ausgabe = ui.select(
+                                            {
+                                                "L1": "L1 · Ileum",
+                                                "L2": "L2 · Kolon",
+                                                "L3": "L3 · Ileokolon",
+                                            },
+                                            label="Morbus Crohn: Lokalisation",
+                                        ).props("outlined dense disable").classes("w-full")
+                                        mc_oberer_gi_ausgabe = ui.checkbox(
+                                            "L4 · oberer Gastrointestinaltrakt zusätzlich betroffen"
+                                        ).props("color=teal-8 disable").classes("font-medium")
+                                        mc_verhalten_ausgabe = ui.select(
+                                            {
+                                                "B1": "B1 · nicht stenosierend, nicht penetrierend",
+                                                "B2": "B2 · stenosierend",
+                                                "B3": "B3 · penetrierend / fistulierend",
+                                            },
+                                            label="Morbus Crohn: Verhalten",
+                                        ).props("outlined dense disable").classes("w-full")
+                                        mc_perianal_ausgabe = ui.checkbox(
+                                            "p · perianales Fistelleiden zusätzlich"
+                                        ).props("color=teal-8 disable").classes("font-medium")
+                                    with ui.column().classes("w-full gap-2") as cu_felder:
+                                        cu_ausdehnung_ausgabe = ui.select(
+                                            {
+                                                "E1": "E1 · Proktitis",
+                                                "E2": "E2 · linksseitige Colitis",
+                                                "E3": "E3 · ausgedehnte Colitis",
+                                            },
+                                            label="Colitis ulcerosa: Ausdehnung",
+                                        ).props("outlined dense disable").classes("w-full")
+                                    mc_felder.set_visibility(False)
+                                    cu_felder.set_visibility(False)
+                                    befallsmuster_ausgabe = ui.input(
+                                        "Codiertes Befallsmuster",
+                                        value="",
+                                        placeholder="wird aus den bestätigten Parametern gebildet",
+                                    ).props("outlined dense readonly").classes("w-full")
+                                    ui.label("Extraintestinale Manifestationen (EIM)").classes(
+                                        "font-semibold text-slate-700 mt-2"
+                                    )
+                                    eim_checkboxen: dict[str, object] = {}
+                                    with ui.element("div").classes(
+                                        "grid grid-cols-1 md:grid-cols-2 gap-1 w-full"
+                                    ):
+                                        for eim_option in EIM_OPTIONEN:
+                                            checkbox = ui.checkbox(eim_option).props(
+                                                "color=teal-8 disable"
+                                            ).classes("eim-option font-medium")
+                                            eim_checkboxen[eim_option] = checkbox
+                                    eim_weitere_ausgabe = ui.textarea(
+                                        "Weitere EIM",
+                                        placeholder="weitere bestätigte Manifestationen",
                                     ).props("outlined dense readonly").classes("w-full")
                                     with ui.row().classes("w-full gap-2 flex-wrap"):
                                         stammdaten_bearbeiten = ui.button(
@@ -517,32 +903,6 @@ def zeige_hauptseite() -> None:
                                         ).props("flat color=grey-7")
                                     stammdaten_speichern.set_visibility(False)
                                     stammdaten_abbrechen.set_visibility(False)
-
-                            with ui.row().classes(
-                                "w-full gap-4 items-stretch flex-wrap lg:flex-nowrap"
-                            ):
-                                with ui.card().classes("arbeitskarte w-full p-5"):
-                                    ui.label("Therapieverlauf").classes("bereichstitel")
-                                    therapie_medikamentoes_ausgabe = ui.textarea(
-                                        "Medikamentös",
-                                        placeholder="noch kein bestätigter Verlauf",
-                                    ).props("outlined dense readonly").classes("w-full")
-                                    therapie_chirurgisch_ausgabe = ui.textarea(
-                                        "Chirurgisch",
-                                        placeholder="noch kein bestätigter Verlauf",
-                                    ).props("outlined dense readonly").classes("w-full")
-                                    with ui.row().classes("w-full gap-2 flex-wrap"):
-                                        patientenfall_bearbeiten = ui.button(
-                                            "Diagnosen und Therapien bearbeiten", icon="edit"
-                                        ).props("outline color=teal-8")
-                                        patientenfall_speichern = ui.button(
-                                            "Änderungen speichern", icon="save"
-                                        ).props("color=teal-8")
-                                        patientenfall_abbrechen = ui.button(
-                                            "Abbrechen", icon="close"
-                                        ).props("flat color=grey-7")
-                                    patientenfall_speichern.set_visibility(False)
-                                    patientenfall_abbrechen.set_visibility(False)
 
                             with ui.card().classes("arbeitskarte w-full p-5"):
                                 letzte_befunde_titel = ui.label(
@@ -611,6 +971,62 @@ def zeige_hauptseite() -> None:
                                     "rowData": [],
                                 }
                             ).classes("verlaufs-tabelle w-full")
+                            with ui.expansion(
+                                "Filterbare Befundliste",
+                                icon="view_list",
+                                value=False,
+                            ).props("header-class='text-teal-900 font-bold'").classes(
+                                "w-full border border-slate-200 rounded-lg mt-3"
+                            ):
+                                ui.label(
+                                    "Die Liste enthält ausschließlich bestätigte Befunde. "
+                                    "Leere Filter zeigen alle verfügbaren Einträge."
+                                ).classes("text-slate-600 px-2")
+                                with ui.row().classes("w-full gap-3 items-end flex-wrap"):
+                                    verlauf_filter_von = ui.input("Datum von").props(
+                                        "type=date outlined dense clearable"
+                                    ).classes("min-w-44")
+                                    verlauf_filter_bis = ui.input("Datum bis").props(
+                                        "type=date outlined dense clearable"
+                                    ).classes("min-w-44")
+                                    verlauf_filter_kategorien = ui.select(
+                                        options=[],
+                                        label="Kategorien",
+                                        multiple=True,
+                                    ).props("outlined dense use-chips clearable").classes(
+                                        "min-w-64 flex-1"
+                                    )
+                                    verlauf_filter_dokumenttypen = ui.select(
+                                        options=[],
+                                        label="Dokumenttypen",
+                                        multiple=True,
+                                    ).props("outlined dense use-chips clearable").classes(
+                                        "min-w-64 flex-1"
+                                    )
+                                    verlauf_filter_anwenden = ui.button(
+                                        "Filter anwenden", icon="filter_alt"
+                                    ).props("color=teal-8 unelevated")
+                                verlauf_liste_hinweis = ui.label("").classes("text-slate-600")
+                                verlauf_liste = ui.aggrid(
+                                    {
+                                        "defaultColDef": {
+                                            "resizable": True,
+                                            "sortable": True,
+                                            "filter": True,
+                                        },
+                                        "columnDefs": [
+                                            {"headerName": "Datum", "field": "datum", "width": 125},
+                                            {"headerName": "Fachgruppe", "field": "fachgruppe", "minWidth": 150},
+                                            {"headerName": "Kategorie", "field": "kategorie", "minWidth": 190},
+                                            {"headerName": "Wert", "field": "wert", "minWidth": 220, "flex": 1},
+                                            {"headerName": "Einheit", "field": "einheit", "width": 120},
+                                            {"headerName": "Qualität", "field": "qualitaet", "minWidth": 150},
+                                            {"headerName": "Dokumenttyp", "field": "dokumenttyp", "minWidth": 180},
+                                            {"headerName": "Quelldatei", "field": "dateiname", "minWidth": 210},
+                                        ],
+                                        "rowData": [],
+                                    }
+                                ).classes("ced-tabellenrahmen w-full")
 
                     # Alle weiteren Fachbereiche verwenden dasselbe dynamische
                     # Tabellenlayout. Lediglich die ausdrücklich erlaubten
@@ -642,6 +1058,36 @@ def zeige_hauptseite() -> None:
                                     "rowData": [],
                                 }
                             ).classes("verlaufs-tabelle w-full")
+                            with ui.expansion(
+                                "Zugeordnete Dokumente",
+                                icon="folder_open",
+                                value=False,
+                            ).props("header-class='text-teal-900 font-bold'").classes(
+                                "w-full border border-slate-200 rounded-lg mt-3"
+                            ):
+                                ui.label(
+                                    "Bestätigte Dokumente bleiben hier auch dann sichtbar, "
+                                    "wenn noch kein Fachparser einzelne Werte erzeugt hat."
+                                ).classes("text-slate-600 px-2")
+                                fachverlauf_dokumente = ui.aggrid(
+                                    {
+                                        "defaultColDef": {
+                                            "resizable": True,
+                                            "sortable": True,
+                                            "filter": True,
+                                            "wrapText": True,
+                                            "autoHeight": True,
+                                        },
+                                        "columnDefs": [
+                                            {"headerName": "Datum", "field": "datum", "width": 130},
+                                            {"headerName": "Befundklasse", "field": "fachgruppe", "minWidth": 160},
+                                            {"headerName": "Dokumenttyp", "field": "dokumenttyp", "minWidth": 190},
+                                            {"headerName": "Kurzfassung", "field": "kurzfassung", "minWidth": 360, "flex": 1},
+                                            {"headerName": "Quelldatei", "field": "dateiname", "minWidth": 220},
+                                        ],
+                                        "rowData": [],
+                                    }
+                                ).classes("ced-tabellenrahmen w-full")
 
     def setze_status(text: str, *, fehler: bool = False) -> None:
         """Zeigt den letzten Arbeitsschritt dauerhaft und ohne sensible Inhalte an.
@@ -661,12 +1107,48 @@ def zeige_hauptseite() -> None:
         if fehler:
             ced_pruefung_hinweis.classes(add="ced-fehler")
 
+    def setze_patientenabgleich_hinweis(text: str, farbe: str) -> None:
+        """Zeigt den lokalen Stammdatenabgleich als eindeutige Ampel an."""
+
+        for klasse in (
+            "ced-fehler",
+            "patientenabgleich-gruen",
+            "patientenabgleich-gelb",
+            "patientenabgleich-rot",
+        ):
+            dokument_patienten_hinweis.classes(remove=klasse)
+        dokument_patienten_hinweis.classes(add=f"patientenabgleich-{farbe}")
+        dokument_patienten_hinweis.text = text
+
+    async def setze_alle_tabellenzeilen(tabelle: object, wert: bool) -> None:
+        """Setzt sichtbare Übernahmekreuze nach einer ausdrücklichen Sammelaktion.
+
+        Die aktuell im Browser editierten Zeilen werden zuerst zurückgelesen. Damit
+        gehen manuelle Korrekturen nicht verloren. „Alle auswählen“ ist bewusst eine
+        Benutzeraktion und kein automatischer Fallback für unsichere Befunde.
+        """
+
+        try:
+            zeilen = await tabelle.get_client_data()
+        except TimeoutError:
+            setze_status(
+                "Die Prüftabelle konnte nicht gelesen werden. Bitte die letzte Zelle "
+                "verlassen und die Sammelauswahl erneut ausführen.",
+                fehler=True,
+            )
+            return
+        for zeile in zeilen:
+            zeile["uebernehmen"] = wert
+        tabelle.options["rowData"] = zeilen
+        tabelle.update()
+
     def zeige_einlesebereich() -> None:
         """Schließt medizinische Arbeitsansichten, die Seitenleiste bleibt bestehen."""
         ced_dialog.close()
         patientenansicht_dialog.close()
         verlauf_dialog.close()
         fachverlauf_dialog.close()
+        dokument_pruefdialog.close()
         setze_status("Dokumenteinlesung geöffnet")
 
     def aktualisiere_anbieter() -> None:
@@ -681,7 +1163,7 @@ def zeige_hauptseite() -> None:
         )
         if zustand.seiten:
             neuer_name = "UK-API" if zustand.anbieter == "uk" else "OpenAI"
-            lesen_schalter.text = f"Dokument mit {neuer_name} neu bearbeiten"
+            lesen_schalter.text = f"Neu analysieren mit {neuer_name}"
             setze_status(
                 f"Anbieter auf {neuer_name} gewechselt · Dokument bereit zur erneuten Verarbeitung"
             )
@@ -689,6 +1171,9 @@ def zeige_hauptseite() -> None:
     def setze_ced_pruefung_zurueck() -> None:
         """Entfernt temporäre CED-Werte, wenn Dokument oder Patient wechselt."""
         zustand.ced_befunde.clear()
+        zustand.labor_befunde.clear()
+        zustand.arztbrief_abschnitte.clear()
+        zustand.fachbefund_abschnitte.clear()
         zustand.gespeichertes_dokument_id = None
         zustand.duplikate_bestaetigt = False
         ced_tabelle.options["rowData"] = []
@@ -697,95 +1182,229 @@ def zeige_hauptseite() -> None:
         ced_speichern.disable()
         ced_speichern.text = "Geprüfte CED-Daten speichern"
         ced_navigation.disable()
+        labor_pruef_tabelle.options["rowData"] = []
+        labor_pruef_tabelle.update()
+        labor_pruef_tabelle.set_visibility(False)
+        labor_pruef_hinweis.text = ""
+        labor_pruef_hinweis.set_visibility(False)
+        arztbrief_pruef_tabelle.options["rowData"] = []
+        arztbrief_pruef_tabelle.update()
+        arztbrief_pruef_tabelle.set_visibility(False)
+        arztbrief_pruef_hinweis.text = ""
+        arztbrief_pruef_hinweis.set_visibility(False)
+        fachbefund_pruef_tabelle.options["rowData"] = []
+        fachbefund_pruef_tabelle.update()
+        fachbefund_pruef_tabelle.set_visibility(False)
+        fachbefund_pruef_hinweis.text = ""
+        fachbefund_pruef_hinweis.set_visibility(False)
+        labor_auswahlaktionen.set_visibility(False)
+        arztbrief_auswahlaktionen.set_visibility(False)
+        fachbefund_auswahlaktionen.set_visibility(False)
         ced_patientenkopf.text = "Noch kein Patient bestätigt"
         ced_dialog.close()
+        dokument_pruefdialog.close()
 
     # Nur der zuletzt geladene Formularstand wird gemerkt. So kann „Abbrechen“ ihn
     # wiederherstellen und unveränderte Felder werden nicht erneut versioniert.
-    stammdaten_original = {"erstdiagnose": "", "befallsmuster": ""}
-    patientenfall_original = {
+    stammdaten_original = {
+        "erstdiagnose": "",
+        "symptome_seit": "",
+        "diagnose_details": "",
+        "befallsmuster": "",
+        "erkrankungstyp": None,
+        "mc_lokalisation": None,
+        "mc_oberer_gi": False,
+        "mc_verhalten": None,
+        "mc_perianal": False,
+        "cu_ausdehnung": None,
+        "eim_auswahl": (),
+        "eim_weitere": "",
+    }
+    diagnosen_original = {
         "hauptdiagnose": "",
         "nebendiagnosen": "",
+    }
+    therapien_original = {
         "therapie_medikamentoes": "",
         "therapie_chirurgisch": "",
     }
 
-    def setze_patientenfall_bearbeitung(aktiv: bool) -> None:
-        """Gibt Diagnose- und Therapiefelder nur nach bewusstem Klick frei."""
-        felder = (
-            hauptdiagnose_ausgabe,
-            nebendiagnosen_ausgabe,
-            therapie_medikamentoes_ausgabe,
-            therapie_chirurgisch_ausgabe,
-        )
-        for feld in felder:
+    def setze_diagnosen_bearbeitung(aktiv: bool) -> None:
+        """Gibt ausschließlich Diagnosen und deren Hinweisfeld zur Bearbeitung frei."""
+        for feld in (hauptdiagnose_ausgabe, nebendiagnosen_ausgabe):
             feld.props(remove="readonly") if aktiv else feld.props(add="readonly")
-        patientenfall_bearbeiten.set_visibility(not aktiv)
-        patientenfall_speichern.set_visibility(aktiv)
-        patientenfall_abbrechen.set_visibility(aktiv)
+        diagnosen_bearbeiten.set_visibility(not aktiv)
+        diagnosen_speichern.set_visibility(aktiv)
+        diagnosen_abbrechen.set_visibility(aktiv)
 
-    def beginne_patientenfall_bearbeitung() -> None:
-        """Startet die manuelle, anschließend auditierte Fallbearbeitung."""
+    def beginne_diagnosen_bearbeitung() -> None:
+        """Startet nur die manuelle, anschließend auditierte Diagnosebearbeitung."""
         if zustand.patient_id is None:
             setze_status("Bitte zuerst einen Patienten auswählen.", fehler=True)
             return
-        setze_patientenfall_bearbeitung(True)
+        setze_diagnosen_bearbeitung(True)
 
-    def breche_patientenfall_bearbeitung_ab() -> None:
-        """Stellt den zuletzt aus der Datenbank geladenen Stand wieder her."""
-        hauptdiagnose_ausgabe.value = patientenfall_original["hauptdiagnose"]
-        nebendiagnosen_ausgabe.value = patientenfall_original["nebendiagnosen"]
-        therapie_medikamentoes_ausgabe.value = patientenfall_original[
-            "therapie_medikamentoes"
-        ]
-        therapie_chirurgisch_ausgabe.value = patientenfall_original[
-            "therapie_chirurgisch"
-        ]
-        setze_patientenfall_bearbeitung(False)
+    def breche_diagnosen_bearbeitung_ab() -> None:
+        """Verwirft ausschließlich ungespeicherte Diagnoseänderungen."""
+        hauptdiagnose_ausgabe.value = diagnosen_original["hauptdiagnose"]
+        nebendiagnosen_ausgabe.value = diagnosen_original["nebendiagnosen"]
+        setze_diagnosen_bearbeitung(False)
 
-    def speichere_patientenfall_aenderungen() -> None:
-        """Versioniert die geprüften Diagnose- und Therapieangaben atomar."""
+    def speichere_diagnosen_aenderungen() -> None:
+        """Versioniert ausschließlich die bewusst freigegebenen Diagnosefelder."""
         if zustand.patient_id is None:
             setze_status("Bitte zuerst einen Patienten auswählen.", fehler=True)
             return
         try:
             with get_session() as sitzung:
-                speichere_patientenfall(
+                speichere_diagnosen(
                     sitzung,
                     zustand.patient_id,
-                    PatientenfallEingabe(
+                    DiagnosenEingabe(
                         hauptdiagnose=str(hauptdiagnose_ausgabe.value or ""),
                         nebendiagnosen=tuple(
                             zeile.strip()
                             for zeile in str(nebendiagnosen_ausgabe.value or "").splitlines()
                             if zeile.strip()
                         ),
-                        therapie_medikamentoes=str(
-                            therapie_medikamentoes_ausgabe.value or ""
-                        ),
-                        therapie_chirurgisch=str(
-                            therapie_chirurgisch_ausgabe.value or ""
-                        ),
                     ),
                 )
         except (SQLAlchemyError, ValueError) as fehler:
-            setze_status(f"Patientenfall konnte nicht gespeichert werden: {fehler}", fehler=True)
+            setze_status(f"Diagnosen konnten nicht gespeichert werden: {fehler}", fehler=True)
             return
-        setze_patientenfall_bearbeitung(False)
+        setze_diagnosen_bearbeitung(False)
         oeffne_patientenansicht()
-        setze_status("Diagnosen und Therapieverlauf wurden versioniert gespeichert")
+        setze_status("Diagnosen wurden versioniert gespeichert")
+
+    def setze_therapien_bearbeitung(aktiv: bool) -> None:
+        """Gibt ausschließlich medikamentöse und chirurgische Therapien frei."""
+        for feld in (therapie_medikamentoes_ausgabe, therapie_chirurgisch_ausgabe):
+            feld.props(remove="readonly") if aktiv else feld.props(add="readonly")
+        therapien_bearbeiten.set_visibility(not aktiv)
+        therapien_speichern.set_visibility(aktiv)
+        therapien_abbrechen.set_visibility(aktiv)
+
+    def beginne_therapien_bearbeitung() -> None:
+        """Startet nur die manuelle, anschließend auditierte Therapiebearbeitung."""
+        if zustand.patient_id is None:
+            setze_status("Bitte zuerst einen Patienten auswählen.", fehler=True)
+            return
+        setze_therapien_bearbeitung(True)
+
+    def breche_therapien_bearbeitung_ab() -> None:
+        """Verwirft ausschließlich ungespeicherte Therapieänderungen."""
+        therapie_medikamentoes_ausgabe.value = therapien_original[
+            "therapie_medikamentoes"
+        ]
+        therapie_chirurgisch_ausgabe.value = therapien_original[
+            "therapie_chirurgisch"
+        ]
+        setze_therapien_bearbeitung(False)
+
+    def speichere_therapien_aenderungen() -> None:
+        """Versioniert ausschließlich die bewusst freigegebenen Therapiefelder."""
+        if zustand.patient_id is None:
+            setze_status("Bitte zuerst einen Patienten auswählen.", fehler=True)
+            return
+        medikamentoes = str(therapie_medikamentoes_ausgabe.value or "").strip()
+        chirurgisch = str(therapie_chirurgisch_ausgabe.value or "").strip()
+        # Unveränderte Felder erzeugen keine zusätzliche Version. Leeren löscht
+        # weiterhin keine frühere medizinische Angabe; dafür wäre ein eigener,
+        # ausdrücklich auditierter Löschvorgang erforderlich.
+        geaendert_medikamentoes = (
+            medikamentoes
+            if medikamentoes
+            and medikamentoes != therapien_original["therapie_medikamentoes"]
+            else None
+        )
+        geaendert_chirurgisch = (
+            chirurgisch
+            if chirurgisch and chirurgisch != therapien_original["therapie_chirurgisch"]
+            else None
+        )
+        if geaendert_medikamentoes is None and geaendert_chirurgisch is None:
+            setze_status(
+                "Keine neue ausgefüllte Therapieangabe; leere Felder löschen keine Historie.",
+                fehler=True,
+            )
+            return
+        try:
+            with get_session() as sitzung:
+                anzahl = speichere_therapien(
+                    sitzung,
+                    zustand.patient_id,
+                    TherapienEingabe(
+                        therapie_medikamentoes=geaendert_medikamentoes,
+                        therapie_chirurgisch=geaendert_chirurgisch,
+                    ),
+                )
+        except (SQLAlchemyError, ValueError) as fehler:
+            setze_status(f"Therapien konnten nicht gespeichert werden: {fehler}", fehler=True)
+            return
+        setze_therapien_bearbeitung(False)
+        oeffne_patientenansicht()
+        setze_status(f"{anzahl} Therapiefeld(er) wurden versioniert gespeichert")
 
     def setze_stammdaten_bearbeitung(aktiv: bool) -> None:
         """Schaltet die manuelle Bearbeitung sichtbar und nachvollziehbar um."""
         if aktiv:
             erstdiagnose_ausgabe.props(remove="readonly")
-            befallsmuster_ausgabe.props(remove="readonly")
+            symptome_seit_ausgabe.props(remove="readonly")
+            diagnose_details_ausgabe.props(remove="readonly")
+            eim_weitere_ausgabe.props(remove="readonly")
+            for auswahl in (
+                erkrankungstyp_ausgabe,
+                mc_lokalisation_ausgabe,
+                mc_oberer_gi_ausgabe,
+                mc_verhalten_ausgabe,
+                mc_perianal_ausgabe,
+                cu_ausdehnung_ausgabe,
+            ):
+                auswahl.enable()
+            for checkbox in eim_checkboxen.values():
+                checkbox.enable()
         else:
             erstdiagnose_ausgabe.props(add="readonly")
-            befallsmuster_ausgabe.props(add="readonly")
+            symptome_seit_ausgabe.props(add="readonly")
+            diagnose_details_ausgabe.props(add="readonly")
+            eim_weitere_ausgabe.props(add="readonly")
+            for auswahl in (
+                erkrankungstyp_ausgabe,
+                mc_lokalisation_ausgabe,
+                mc_oberer_gi_ausgabe,
+                mc_verhalten_ausgabe,
+                mc_perianal_ausgabe,
+                cu_ausdehnung_ausgabe,
+            ):
+                auswahl.disable()
+            for checkbox in eim_checkboxen.values():
+                checkbox.disable()
         stammdaten_bearbeiten.set_visibility(not aktiv)
         stammdaten_speichern.set_visibility(aktiv)
         stammdaten_abbrechen.set_visibility(aktiv)
+
+    def aktualisiere_phaenotypfelder(*, leere_unpassende: bool = False) -> None:
+        """Zeigt ausschließlich die zum gewählten CED-Typ passenden Eingaben.
+
+        Beim bewussten Wechsel des Erkrankungstyps werden nur die noch nicht
+        gespeicherten Eingabewerte der anderen Klassifikation geleert. Historische
+        Datenbankversionen bleiben erhalten und werden nicht stillschweigend gelöscht.
+        """
+
+        erkrankungstyp = str(erkrankungstyp_ausgabe.value or "")
+        ist_mc = erkrankungstyp == "Morbus Crohn"
+        ist_cu = erkrankungstyp == "Colitis ulcerosa"
+        mc_felder.set_visibility(ist_mc)
+        cu_felder.set_visibility(ist_cu)
+        if not leere_unpassende:
+            return
+        if ist_mc:
+            cu_ausdehnung_ausgabe.value = None
+        elif ist_cu:
+            mc_lokalisation_ausgabe.value = None
+            mc_oberer_gi_ausgabe.value = False
+            mc_verhalten_ausgabe.value = None
+            mc_perianal_ausgabe.value = False
 
     def beginne_stammdaten_bearbeitung() -> None:
         """Gibt Erstdiagnose und Befallsmuster erst nach bewusstem Klick frei."""
@@ -798,7 +1417,19 @@ def zeige_hauptseite() -> None:
     def breche_stammdaten_bearbeitung_ab() -> None:
         """Verwirft ausschließlich ungespeicherte Eingaben dieser Sitzung."""
         erstdiagnose_ausgabe.value = stammdaten_original["erstdiagnose"]
+        symptome_seit_ausgabe.value = stammdaten_original["symptome_seit"]
+        diagnose_details_ausgabe.value = stammdaten_original["diagnose_details"]
         befallsmuster_ausgabe.value = stammdaten_original["befallsmuster"]
+        erkrankungstyp_ausgabe.value = stammdaten_original["erkrankungstyp"]
+        mc_lokalisation_ausgabe.value = stammdaten_original["mc_lokalisation"]
+        mc_oberer_gi_ausgabe.value = stammdaten_original["mc_oberer_gi"]
+        mc_verhalten_ausgabe.value = stammdaten_original["mc_verhalten"]
+        mc_perianal_ausgabe.value = stammdaten_original["mc_perianal"]
+        cu_ausdehnung_ausgabe.value = stammdaten_original["cu_ausdehnung"]
+        aktualisiere_phaenotypfelder()
+        eim_weitere_ausgabe.value = stammdaten_original["eim_weitere"]
+        for name, checkbox in eim_checkboxen.items():
+            checkbox.value = name in stammdaten_original["eim_auswahl"]
         setze_stammdaten_bearbeitung(False)
         setze_status("Ungespeicherte Stammdatenänderungen wurden verworfen")
 
@@ -808,7 +1439,12 @@ def zeige_hauptseite() -> None:
             setze_status("Bitte zuerst links einen Patienten auswählen.", fehler=True)
             return
         erstdiagnose_text = str(erstdiagnose_ausgabe.value or "").strip()
-        befallsmuster_text = str(befallsmuster_ausgabe.value or "").strip()
+        symptome_seit_text = str(symptome_seit_ausgabe.value or "").strip()
+        diagnose_details_text = str(diagnose_details_ausgabe.value or "").strip()
+        eim_auswahl = tuple(
+            name for name, checkbox in eim_checkboxen.items() if checkbox.value
+        )
+        eim_weitere_text = str(eim_weitere_ausgabe.value or "").strip()
         try:
             geaenderte_erstdiagnose = (
                 date.fromisoformat(erstdiagnose_text)
@@ -819,13 +1455,51 @@ def zeige_hauptseite() -> None:
         except ValueError:
             setze_status("Bitte die Erstdiagnose vollständig eingeben.", fehler=True)
             return
-        geaendertes_befallsmuster = (
-            befallsmuster_text
-            if befallsmuster_text
-            and befallsmuster_text != stammdaten_original["befallsmuster"]
+        try:
+            geaenderte_symptome_seit = (
+                date.fromisoformat(symptome_seit_text)
+                if symptome_seit_text
+                and symptome_seit_text != stammdaten_original["symptome_seit"]
+                else None
+            )
+        except ValueError:
+            setze_status("Bitte 'Symptome seit' vollständig eingeben.", fehler=True)
+            return
+        geaenderte_details = (
+            diagnose_details_text
+            if diagnose_details_text != stammdaten_original["diagnose_details"]
             else None
         )
-        if geaenderte_erstdiagnose is None and geaendertes_befallsmuster is None:
+        aktuelle_phaenotypwerte = {
+            "erkrankungstyp": erkrankungstyp_ausgabe.value,
+            "mc_lokalisation": mc_lokalisation_ausgabe.value,
+            "mc_oberer_gi": bool(mc_oberer_gi_ausgabe.value),
+            "mc_verhalten": mc_verhalten_ausgabe.value,
+            "mc_perianal": bool(mc_perianal_ausgabe.value),
+            "cu_ausdehnung": cu_ausdehnung_ausgabe.value,
+        }
+        phaenotyp_geaendert = any(
+            aktuelle_phaenotypwerte[name] != stammdaten_original[name]
+            for name in aktuelle_phaenotypwerte
+        )
+        geaenderte_eim_auswahl = (
+            eim_auswahl
+            if eim_auswahl != stammdaten_original["eim_auswahl"]
+            else None
+        )
+        geaenderte_eim_weitere = (
+            eim_weitere_text
+            if eim_weitere_text != stammdaten_original["eim_weitere"]
+            else None
+        )
+        if (
+            geaenderte_erstdiagnose is None
+            and geaenderte_symptome_seit is None
+            and geaenderte_details is None
+            and not phaenotyp_geaendert
+            and geaenderte_eim_auswahl is None
+            and geaenderte_eim_weitere is None
+        ):
             setze_status(
                 "Keine neue ausgefüllte Angabe; leere Felder löschen keine Historie.",
                 fehler=True,
@@ -838,7 +1512,16 @@ def zeige_hauptseite() -> None:
                     zustand.patient_id,
                     ManuelleCEDStammdaten(
                         erstdiagnose=geaenderte_erstdiagnose,
-                        befallsmuster=geaendertes_befallsmuster,
+                        befallsmuster=None,
+                        eim_auswahl=geaenderte_eim_auswahl,
+                        eim_weitere=geaenderte_eim_weitere,
+                        diagnose_details=geaenderte_details,
+                        symptome_seit=geaenderte_symptome_seit,
+                        **(
+                            aktuelle_phaenotypwerte
+                            if phaenotyp_geaendert
+                            else {}
+                        ),
                     ),
                 )
         except (SQLAlchemyError, ValueError) as fehler:
@@ -860,41 +1543,79 @@ def zeige_hauptseite() -> None:
         patientenansicht_name.text = "Patientenübersicht"
         patientenansicht_stammdaten.text = ""
         erstdiagnose_ausgabe.value = ""
+        symptome_seit_ausgabe.value = ""
+        # Auch beim Zurücksetzen muss exakt dieselbe Referenz wie beim Aufbau der
+        # Oberfläche verwendet werden. Eine veraltete Feldbezeichnung wird von
+        # Python erst beim Aktivieren des Datenbankmodus als NameError sichtbar.
+        # Zum Debuggen deshalb die Referenzen in Aufbau, Laden und Zurücksetzen
+        # gemeinsam vergleichen, anstatt einen Alias oder Fallback einzuführen.
+        diagnose_details_ausgabe.value = ""
         befallsmuster_ausgabe.value = ""
-        stammdaten_original.update(erstdiagnose="", befallsmuster="")
+        erkrankungstyp_ausgabe.value = None
+        mc_lokalisation_ausgabe.value = None
+        mc_oberer_gi_ausgabe.value = False
+        mc_verhalten_ausgabe.value = None
+        mc_perianal_ausgabe.value = False
+        cu_ausdehnung_ausgabe.value = None
+        aktualisiere_phaenotypfelder()
+        eim_weitere_ausgabe.value = ""
+        for checkbox in eim_checkboxen.values():
+            checkbox.value = False
+        stammdaten_original.update(
+            erstdiagnose="",
+            symptome_seit="",
+            diagnose_details="",
+            befallsmuster="",
+            erkrankungstyp=None,
+            mc_lokalisation=None,
+            mc_oberer_gi=False,
+            mc_verhalten=None,
+            mc_perianal=False,
+            cu_ausdehnung=None,
+            eim_auswahl=(),
+            eim_weitere="",
+        )
         setze_stammdaten_bearbeitung(False)
         hauptdiagnose_ausgabe.value = ""
         nebendiagnosen_ausgabe.value = ""
         therapie_medikamentoes_ausgabe.value = ""
         therapie_chirurgisch_ausgabe.value = ""
-        patientenfall_original.update(
-            hauptdiagnose="",
-            nebendiagnosen="",
+        diagnosen_original.update(hauptdiagnose="", nebendiagnosen="")
+        therapien_original.update(
             therapie_medikamentoes="",
             therapie_chirurgisch="",
         )
-        setze_patientenfall_bearbeitung(False)
+        setze_diagnosen_bearbeitung(False)
+        setze_therapien_bearbeitung(False)
         letzte_befunde_tabelle.options["rowData"] = []
         letzte_befunde_tabelle.update()
         verlauf_tabelle.options["rowData"] = []
         verlauf_tabelle.update()
         fachverlauf_tabelle.options["rowData"] = []
         fachverlauf_tabelle.update()
+        fachverlauf_dokumente.options["rowData"] = []
+        fachverlauf_dokumente.update()
 
     def setze_patientenkopf(
         patient: Patient | None,
         *,
         synchronisiere_auswahl: bool = True,
     ) -> None:
-        """Synchronisiert aktive Zuordnung in Seitenleiste und CED-Prüfkopf.
+        """Synchronisiert die aktive Zuordnung in Navigation und Arbeitskopf.
 
-        Die Darstellung verwendet den gespeicherten Gesamtnamen, weil das aktuelle
-        Datenmodell Vor- und Nachname noch nicht getrennt führt. Eine automatische
-        Aufteilung würde bei zusammengesetzten Namen unzuverlässige Werte erzeugen.
+        Neue Patienten besitzen getrennte Vor- und Nachnamen und werden über
+        ``display_name`` einheitlich als „Nachname, Vorname“ dargestellt. Bei alten
+        Datensätzen bleibt der gespeicherte Gesamtname erhalten; er wird ausdrücklich
+        nicht automatisch zerlegt.
         """
         if patient is None:
             aktiver_patient_hinweis.text = "Aktiver Patient: keiner ausgewählt"
             ced_patientenkopf.text = "Noch kein Patient bestätigt"
+            if zustand.arbeitsmodus == DATENBANKMODUS:
+                hauptueberschrift.text = "CED-A-DOKU"
+            else:
+                hauptueberschrift.text = "Auslesen von Dokumenten"
+            hauptuntertitel.text = "Assistierte Auslesung medizinischer Dokumente"
             if synchronisiere_auswahl:
                 aktiver_patient_auswahl.value = None
                 aktiver_patient_auswahl.update()
@@ -910,9 +1631,79 @@ def zeige_hauptseite() -> None:
         ced_patientenkopf.text = (
             f"Nachname, Vorname: {patient.display_name} · Geburtsdatum: {geburtsdatum}"
         )
+        # Der aktive Patient bleibt so auch im Einlesebereich sichtbar. Der Kopf
+        # entspricht dem Aufbau der Fachansichten, ohne weitere Patientendaten oder
+        # aus dem Dokument geratene Angaben einzublenden.
+        hauptueberschrift.text = patient.display_name
+        hauptuntertitel.text = f"Geburtsdatum: {geburtsdatum} · Dokument einlesen"
         if synchronisiere_auswahl:
             aktiver_patient_auswahl.value = patient.id
             aktiver_patient_auswahl.update()
+
+    def aktualisiere_verlaufsliste(*, optionen_neu_laden: bool = False) -> None:
+        """Lädt die Längsansicht mit den ausdrücklich gewählten Filtern neu."""
+
+        if zustand.patient_id is None:
+            return
+        try:
+            datum_von = (
+                date.fromisoformat(str(verlauf_filter_von.value))
+                if verlauf_filter_von.value
+                else None
+            )
+            datum_bis = (
+                date.fromisoformat(str(verlauf_filter_bis.value))
+                if verlauf_filter_bis.value
+                else None
+            )
+        except ValueError:
+            setze_status("Datumsfilter bitte im Format JJJJ-MM-TT eingeben.", fehler=True)
+            return
+        if datum_von and datum_bis and datum_von > datum_bis:
+            setze_status("Der Beginn des Datumsfilters liegt nach seinem Ende.", fehler=True)
+            return
+        try:
+            with get_session() as sitzung:
+                if optionen_neu_laden:
+                    alle_zeilen = lade_befundliste(sitzung, zustand.patient_id)
+                    verlauf_filter_kategorien.options = sorted(
+                        {zeile.kategorie for zeile in alle_zeilen}
+                    )
+                    verlauf_filter_dokumenttypen.options = sorted(
+                        {
+                            zeile.dokumenttyp
+                            for zeile in alle_zeilen
+                            if zeile.dokumenttyp
+                        }
+                    )
+                    verlauf_filter_kategorien.update()
+                    verlauf_filter_dokumenttypen.update()
+                zeilen = lade_befundliste(
+                    sitzung,
+                    zustand.patient_id,
+                    datum_von=datum_von,
+                    datum_bis=datum_bis,
+                    kategorien=tuple(verlauf_filter_kategorien.value or ()),
+                    dokumenttypen=tuple(verlauf_filter_dokumenttypen.value or ()),
+                )
+        except (SQLAlchemyError, ValueError) as fehler:
+            setze_status(f"Befundliste konnte nicht geladen werden: {fehler}", fehler=True)
+            return
+        verlauf_liste.options["rowData"] = [
+            {
+                "datum": zeile.datum.strftime("%d.%m.%Y"),
+                "fachgruppe": zeile.fachgruppe,
+                "kategorie": zeile.kategorie,
+                "wert": zeile.wert,
+                "einheit": zeile.einheit or "",
+                "qualitaet": zeile.qualitaet,
+                "dokumenttyp": zeile.dokumenttyp or "nicht klassifiziert",
+                "dateiname": zeile.dateiname,
+            }
+            for zeile in zeilen
+        ]
+        verlauf_liste.update()
+        verlauf_liste_hinweis.text = f"{len(zeilen)} bestätigte Befundzeile(n)"
 
     def oeffne_klinischen_verlauf() -> None:
         """Zeigt alle bestätigten Fragebogenparameter kumulativ über die Zeit."""
@@ -958,6 +1749,14 @@ def zeige_hauptseite() -> None:
             for zeile in verlauf.zeilen
         ]
         verlauf_tabelle.update()
+        # Beim erneuten Öffnen – insbesondere nach einem Patientenwechsel – werden
+        # keine Filter aus einer vorherigen Ansicht übernommen. Das verhindert eine
+        # scheinbar leere Tabelle durch fachlich nicht mehr passende Auswahlwerte.
+        verlauf_filter_von.value = ""
+        verlauf_filter_bis.value = ""
+        verlauf_filter_kategorien.value = []
+        verlauf_filter_dokumenttypen.value = []
+        aktualisiere_verlaufsliste(optionen_neu_laden=True)
         verlauf_hinweis.text = (
             f"{len(verlauf.zeilen)} Parameter über {len(verlauf.daten)} Befundzeitpunkt(e)"
             if verlauf.daten
@@ -970,11 +1769,18 @@ def zeige_hauptseite() -> None:
         setze_status("Klinischen CED-Verlauf geöffnet")
 
     fachbereiche = {
+        # Findings und Dokumente verwenden dieselben kontrollierten Fachgruppen.
+        # Ein Virologiebefund wird dadurch unter Labor sichtbar, auch solange nur
+        # Dokument und Kurzfassung, aber noch keine Einzelparameter gespeichert sind.
         "labor": ("Laborverlauf", ("Labor",)),
         "calprotectin": ("Calprotectin-Verlauf", ("Calprotectin",)),
         "endoskopie": ("Endoskopiebefunde", ("Endoskopie",)),
         "sonografie": ("Sonografiebefunde", ("Sonografie",)),
-        "schnittbild": ("MRT- / CT-Befunde", ("MRT", "CT")),
+        "schnittbild": ("MRT- / CT-Befunde", ("MRT", "CT", "Röntgen", "Bildgebung")),
+        "weitere": (
+            "Weitere Befunde und Dokumente",
+            ("Arztbriefe", "Medikation", "Pathologie", "Funktionsdiagnostik", "Weitere Befunde"),
+        ),
     }
 
     def oeffne_fachverlauf(schluessel: str) -> None:
@@ -992,6 +1798,11 @@ def zeige_hauptseite() -> None:
             with get_session() as sitzung:
                 uebersicht = lade_patientenuebersicht(sitzung, zustand.patient_id)
                 fachverlauf = lade_fachverlauf(sitzung, zustand.patient_id, gruppen)
+                dokumente = lade_dokumentenarchiv(
+                    sitzung,
+                    zustand.patient_id,
+                    fachgruppen=gruppen,
+                )
         except (SQLAlchemyError, ValueError) as fehler:
             setze_status(f"Fachverlauf konnte nicht geladen werden: {fehler}", fehler=True)
             return
@@ -1024,11 +1835,27 @@ def zeige_hauptseite() -> None:
             for zeile in fachverlauf.zeilen
         ]
         fachverlauf_tabelle.update()
+        fachverlauf_dokumente.options["rowData"] = [
+            {
+                "datum": (
+                    dokument.dokumentdatum.strftime("%d.%m.%Y")
+                    if dokument.dokumentdatum
+                    else "nicht bestätigt"
+                ),
+                "fachgruppe": dokument.fachgruppe,
+                "dokumenttyp": dokument.dokumenttyp,
+                "kurzfassung": dokument.kurzfassung,
+                "dateiname": dokument.dateiname,
+            }
+            for dokument in dokumente
+        ]
+        fachverlauf_dokumente.update()
         fachverlauf_hinweis.text = (
             f"{len(fachverlauf.zeilen)} Parameter über "
-            f"{len(fachverlauf.daten)} Zeitpunkt(e)"
-            if fachverlauf.daten
-            else "Noch keine bestätigten Daten für diesen Fachbereich vorhanden"
+            f"{len(fachverlauf.daten)} Zeitpunkt(e) · "
+            f"{len(dokumente)} zugeordnete(s) Dokument(e)"
+            if fachverlauf.daten or dokumente
+            else "Noch keine bestätigten Daten oder Dokumente für diesen Fachbereich vorhanden"
         )
         ced_dialog.close()
         patientenansicht_dialog.close()
@@ -1082,21 +1909,52 @@ def zeige_hauptseite() -> None:
         )
         therapie_medikamentoes_ausgabe.value = uebersicht.therapie_medikamentoes or ""
         therapie_chirurgisch_ausgabe.value = uebersicht.therapie_chirurgisch or ""
-        patientenfall_original.update(
+        diagnosen_original.update(
             hauptdiagnose=str(hauptdiagnose_ausgabe.value or ""),
             nebendiagnosen=str(nebendiagnosen_ausgabe.value or ""),
+        )
+        therapien_original.update(
             therapie_medikamentoes=str(therapie_medikamentoes_ausgabe.value or ""),
             therapie_chirurgisch=str(therapie_chirurgisch_ausgabe.value or ""),
         )
-        setze_patientenfall_bearbeitung(False)
+        setze_diagnosen_bearbeitung(False)
+        setze_therapien_bearbeitung(False)
 
         erstdiagnose_ausgabe.value = (
             uebersicht.erstdiagnose.isoformat() if uebersicht.erstdiagnose else ""
         )
+        symptome_seit_ausgabe.value = (
+            uebersicht.symptome_seit.isoformat() if uebersicht.symptome_seit else ""
+        )
+        diagnose_details_ausgabe.value = uebersicht.diagnose_details or ""
         befallsmuster_ausgabe.value = uebersicht.befallsmuster or ""
+        erkrankungstyp_ausgabe.value = uebersicht.erkrankungstyp
+        mc_lokalisation_ausgabe.value = uebersicht.mc_lokalisation
+        mc_oberer_gi_ausgabe.value = uebersicht.mc_oberer_gi
+        mc_verhalten_ausgabe.value = uebersicht.mc_verhalten
+        mc_perianal_ausgabe.value = uebersicht.mc_perianal
+        cu_ausdehnung_ausgabe.value = uebersicht.cu_ausdehnung
+        aktualisiere_phaenotypfelder()
+        eim_weitere_ausgabe.value = uebersicht.eim_weitere or ""
+        for name, checkbox in eim_checkboxen.items():
+            checkbox.value = name in uebersicht.eim_auswahl
+            # NiceGUI hält den Wert clientseitig; das explizite Update macht bereits
+            # gespeicherte Kreuze unmittelbar sichtbar, auch wenn die Checkbox beim
+            # Laden schreibgeschützt ist.
+            checkbox.update()
         stammdaten_original.update(
             erstdiagnose=str(erstdiagnose_ausgabe.value or ""),
+            symptome_seit=str(symptome_seit_ausgabe.value or ""),
+            diagnose_details=str(diagnose_details_ausgabe.value or ""),
             befallsmuster=str(befallsmuster_ausgabe.value or ""),
+            erkrankungstyp=uebersicht.erkrankungstyp,
+            mc_lokalisation=uebersicht.mc_lokalisation,
+            mc_oberer_gi=uebersicht.mc_oberer_gi,
+            mc_verhalten=uebersicht.mc_verhalten,
+            mc_perianal=uebersicht.mc_perianal,
+            cu_ausdehnung=uebersicht.cu_ausdehnung,
+            eim_auswahl=tuple(uebersicht.eim_auswahl),
+            eim_weitere=str(eim_weitere_ausgabe.value or ""),
         )
         setze_stammdaten_bearbeitung(False)
 
@@ -1144,15 +2002,15 @@ def zeige_hauptseite() -> None:
         verlauf_navigation.enable()
         for fachschalter in fachnavigation_schalter.values():
             fachschalter.enable()
+        # Explizites enable/disable vermeidet einen widersprüchlichen Buttonzustand,
+        # wenn Optionen und Patientenauswahl während der Dokumentanalyse nacheinander
+        # aktualisiert werden. Für lokales Debugging dürfen nur diese booleschen
+        # Teilzustände geprüft werden, niemals Dokument- oder Patientendaten.
+        if zustand.datenzuordnung_moeglich:
+            ced_navigation.enable()
+        else:
+            ced_navigation.disable()
         ist_ced_fragebogen = zustand.dokumenttyp == Dokumenttyp.CED_FRAGEBOGEN.value
-        ced_navigation.set_enabled(
-            bool(
-                ist_ced_fragebogen
-                and zustand.strukturierte_darstellung.strip()
-                and zustand.patientenabgleich_erlaubt
-                and zustand.gespeichertes_dokument_id is None
-            )
-        )
         if ist_ced_fragebogen:
             ced_pruefung_hinweis.text = (
                 "Die Werte werden aus der vorhandenen strukturierten Darstellung gelesen. "
@@ -1163,7 +2021,7 @@ def zeige_hauptseite() -> None:
                 f"CED-Extraktion nicht gestartet: Dokumenttyp ist {zustand.dokumenttyp}."
             )
         else:
-            ced_pruefung_hinweis.text = "Bitte zunächst das Dokument auslesen."
+            ced_pruefung_hinweis.text = "Bitte zunächst das Dokument analysieren."
 
     def oeffne_ced_pruefung() -> None:
         """Schlägt das Datum vor, extrahiert die Werte und öffnet den Prüfscreen."""
@@ -1182,7 +2040,12 @@ def zeige_hauptseite() -> None:
         # überschrieben. Ohne eindeutigen Vorschlag bleibt das Pflichtfeld leer.
         if datumsvorschlag is not None and not befunddatum.value:
             befunddatum.value = datumsvorschlag.isoformat()
-        zustand.ced_befunde = parse_ced_fragebogen(zustand.strukturierte_darstellung)
+        # Die technische Prüfung ist bewusst ein eigener Schritt nach dem Parser.
+        # Sie verändert erkannte Werte nicht, sondern ergänzt ausschließlich
+        # nachvollziehbare Hinweise für die manuelle Freigabe.
+        zustand.ced_befunde = pruefe_technische_plausibilitaet(
+            parse_ced_fragebogen(zustand.strukturierte_darstellung)
+        )
         prioritaet = {
             "CONFLICT": 0,
             "UNREADABLE": 1,
@@ -1205,17 +2068,30 @@ def zeige_hauptseite() -> None:
                 "wert": befund.anzeigewert,
                 "einheit": befund.einheit or "",
                 "uebernehmen": befund.uebernehmen,
+                "pruefhinweis": befund.pruefhinweis,
                 "quelle": befund.quelltext,
             }
             for befund in sortierte_befunde
         ]
         ced_tabelle.update()
-        ced_speichern.set_enabled(bool(zustand.ced_befunde))
+        # Reine MISSING-Zeilen dürfen den Speicherschalter nicht aktivieren. Sie
+        # dokumentieren nur sichtbar, dass der Parser keine Angabe gefunden hat.
+        # Zum Debugging kann lokal die Anzahl übernehmbarer Zeilen geprüft werden;
+        # medizinische Werte gehören nicht in die Protokollausgabe.
+        ced_speichern.set_enabled(
+            any(befund.uebernehmen for befund in zustand.ced_befunde)
+        )
         neue_anzahl = sum(befund.neue_kategorie for befund in zustand.ced_befunde)
-        if not zustand.ced_befunde:
+        fehlende_anzahl = sum(
+            befund.qualitaet is ConfidenceStatus.MISSING
+            for befund in zustand.ced_befunde
+        )
+        erkannte_anzahl = len(zustand.ced_befunde) - fehlende_anzahl
+        if erkannte_anzahl == 0:
             ced_pruefung_hinweis.text = (
-                "Keine beschrifteten CED-Felder erkannt. Bitte die strukturierte Darstellung prüfen; "
-                "es werden keine Werte geraten oder automatisch ersetzt."
+                "Keine beschrifteten CED-Felder erkannt. Fehlende Standardfelder "
+                "werden als MISSING angezeigt und nicht zur Übernahme ausgewählt. "
+                "Bitte die strukturierte Darstellung prüfen."
             )
             setze_status("Keine CED-Felder für die Prüftabelle erkannt", fehler=True)
             patientenansicht_dialog.close()
@@ -1229,7 +2105,7 @@ def zeige_hauptseite() -> None:
             else "kein eindeutiges Befunddatum erkannt · manuelle Eingabe erforderlich"
         )
         ced_pruefung_hinweis.text = (
-            f"{len(zustand.ced_befunde)} Feld(er) erkannt"
+            f"{erkannte_anzahl} Feld(er) erkannt · {fehlende_anzahl} Standardfeld(er) fehlen"
             + (
                 f" · {neue_anzahl} neue Kategorie(n) sind zunächst von der Übernahme ausgeschlossen"
                 if neue_anzahl
@@ -1242,6 +2118,34 @@ def zeige_hauptseite() -> None:
         verlauf_dialog.close()
         fachverlauf_dialog.close()
         ced_dialog.open()
+
+    def lerne_aus_gespeichertem_dokument(dokument_id: int) -> None:
+        """Ergänzt nach erfolgreicher Speicherung ein datensparsames Lernsignal.
+
+        Die erfolgreiche Patientenzuordnung ist bereits die fachliche Bestätigung;
+        eine weitere Checkbox wäre redundant. Gespeichert werden ausschließlich
+        konservativ erkannte Überschriften, niemals Werte oder vollständiger Text.
+        Bleibt kein sicheres Strukturmerkmal, wird bewusst nichts ergänzt.
+        """
+
+        merkmale = erstelle_patientenfreie_lernmerkmale(
+            zustand.strukturierte_darstellung
+        )
+        if not zustand.dokumenttyp or not merkmale:
+            return
+        try:
+            with get_session() as sitzung:
+                ergaenze_bestaetigtes_beispiel(
+                    sitzung,
+                    dokumenttyp_name=zustand.dokumenttyp,
+                    beispielmerkmale=merkmale,
+                    dokument_id=dokument_id,
+                )
+        except (SQLAlchemyError, ValueError):
+            # Das Dokument ist bereits atomar gespeichert. Ein optionales Lernsignal
+            # darf diesen Erfolg nicht zurückrollen. Zum Debuggen nur Exception-Typ
+            # und Klassen-ID prüfen, niemals Merkmale oder Patientendaten loggen.
+            return
 
     async def speichere_gepruefte_ced_daten() -> None:
         """Liest den sichtbaren Tabellenstand und speichert nur markierte Zeilen.
@@ -1351,6 +2255,7 @@ def zeige_hauptseite() -> None:
             original_name=" + ".join(zustand.dokumentnamen) or "CED-Fragebogen",
             rohe_ki_antwort=zustand.rohe_ki_antwort,
             kis_vorschlag=zustand.kis_vorschlag,
+            kis_vorschlag_ausfuehrlich=zustand.kis_vorschlag_ausfuehrlich,
             provider=provider_name,
             modell=modell,
             befunde=tuple(freigegebene),
@@ -1366,6 +2271,7 @@ def zeige_hauptseite() -> None:
             setze_status(fehlermeldung, fehler=True)
             return
         zustand.gespeichertes_dokument_id = dokument_id
+        lerne_aus_gespeichertem_dokument(dokument_id)
         zustand.ced_befunde.clear()
         zustand.duplikate_bestaetigt = False
         ced_tabelle.options["rowData"] = []
@@ -1396,12 +2302,17 @@ def zeige_hauptseite() -> None:
         """
         if zustand.arbeitsmodus != DATENBANKMODUS:
             return
-        zustand.patient_id = None
+        # Die bewusst gewählte Patienten-ID bleibt beim Einfügen und Analysieren
+        # eines neuen Dokuments erhalten. Nur wenn der Datensatz nicht mehr in der
+        # Datenbank existiert, wird die Auswahl weiter unten sichtbar aufgehoben.
+        aktive_patienten_id = zustand.patient_id
         zustand.patientenabgleich_erlaubt = False
         setze_ced_pruefung_zurueck()
         setze_patientenansicht_zurueck()
         zustand.erkannte_patientendaten = erkenne_patientendaten(
-            zustand.ausgelesener_inhalt
+            "\n".join(
+                (zustand.ausgelesener_inhalt, zustand.strukturierte_darstellung)
+            )
         )
         erkannt = zustand.erkannte_patientendaten
         neue_patienten_id.value = erkannt.externe_id or ""
@@ -1423,7 +2334,13 @@ def zeige_hauptseite() -> None:
 
         optionen: dict[int, str] = {}
         for patiententreffer in trefferliste:
-            kennzeichnung = "⚠" if patiententreffer.widerspruch else "Vorschlag"
+            kennzeichnung = (
+                "🔴 Widerspruch"
+                if patiententreffer.widerspruch
+                else "🟢 Sicher"
+                if patiententreffer.status in {"Eindeutiger Treffer", "Wahrscheinlicher Vorschlag"}
+                else "🟡 Unsicher"
+            )
             optionen[patiententreffer.patient_id] = (
                 f"{kennzeichnung}: {patiententreffer.bezeichnung} · {patiententreffer.status}"
             )
@@ -1434,11 +2351,24 @@ def zeige_hauptseite() -> None:
                     f"{patient.birth_date.strftime('%d.%m.%Y') if patient.birth_date else 'ohne Geburtsdatum'}"
                 )
         aktiver_patient_auswahl.options = optionen
-        aktiver_patient_auswahl.value = None
+        aktiver_patient_auswahl.value = (
+            aktive_patienten_id if aktive_patienten_id in optionen else None
+        )
         aktiver_patient_auswahl.update()
-        setze_patientenkopf(None)
 
-        if not zustand.ausgelesener_inhalt:
+        if not patienten:
+            # Eine leere Liste ist kein Darstellungsfehler des Auswahlfelds: In der
+            # aktuell verbundenen SQLite-Datei existiert dann tatsächlich kein
+            # Patient. Besonders in Codespaces deutet das meist auf einen neuen
+            # Container oder einen abweichenden CED_DATABASE_PATH hin. Zum Debuggen
+            # ausschließlich den konfigurierten Dateipfad prüfen; Patientendaten
+            # gehören nicht in Konsolen-Logs.
+            dokument_patienten_hinweis.text = (
+                "Keine Patienten in der aktuellen Datenbank. Für synthetische "
+                "Testfälle im Projektordner ausführen: "
+                "PYTHONPATH=. python scripts/seed_demo_data.py"
+            )
+        elif not zustand.ausgelesener_inhalt:
             dokument_patienten_hinweis.text = (
                 "Patient auswählen; die Auswahl aktiviert dessen Fallansichten unmittelbar."
             )
@@ -1470,7 +2400,15 @@ def zeige_hauptseite() -> None:
                 f"Geburtsdatum: {erkannt.geburtsdatum.strftime('%d.%m.%Y') if erkannt.geburtsdatum else 'nicht erkannt'}. "
                 "Kein passender Bestandspatient; Auswahl prüfen oder neuen Patienten anlegen."
             )
-        aktualisiere_ced_bereitschaft()
+        if aktive_patienten_id in optionen:
+            # Die vorhandene Auswahl wird erneut gegen die nun erkannten
+            # Dokumentstammdaten geprüft. Ein Widerspruch löscht den Patienten nicht,
+            # sperrt aber weiterhin zuverlässig die Dokumentzuordnung.
+            aktiviere_patientenauswahl()
+        else:
+            zustand.patient_id = None
+            setze_patientenkopf(None, synchronisiere_auswahl=False)
+            aktualisiere_ced_bereitschaft()
 
     def ordne_daten_patient_zu() -> None:
         """Öffnet die Prüfung nur, wenn tatsächlich neue Daten zuordenbar sind."""
@@ -1483,13 +2421,373 @@ def zeige_hauptseite() -> None:
         if not zustand.patientenabgleich_erlaubt:
             setze_status("Dokumentdaten passen nicht zum aktiven Patienten.", fehler=True)
             return
-        if zustand.dokumenttyp != Dokumenttyp.CED_FRAGEBOGEN.value:
-            setze_status("Für diesen Dokumenttyp sind noch keine Daten zuordenbar.", fehler=True)
-            return
         if zustand.gespeichertes_dokument_id is not None:
             setze_status("Die Daten dieses Dokuments wurden bereits gespeichert.", fehler=True)
             return
-        oeffne_ced_pruefung()
+        with get_session() as sitzung:
+            vorhandene_zuordnungen = finde_vorhandene_dokumentzuordnungen(
+                sitzung, zustand.rohe_ki_antwort
+            )
+        if vorhandene_zuordnungen:
+            fremde_patienten = {
+                zuordnung.patient_id
+                for zuordnung in vorhandene_zuordnungen
+                if zuordnung.patient_id != zustand.patient_id
+            }
+            if fremde_patienten:
+                setze_status(
+                    "Zuordnung gesperrt: Derselbe vollständig ausgelesene Dokumentinhalt "
+                    "ist bereits einem anderen Patienten zugeordnet. Bitte Patient und "
+                    "Originaldokument prüfen.",
+                    fehler=True,
+                )
+            else:
+                setze_status(
+                    "Zuordnung gesperrt: Dieses Dokument ist beim aktiven Patienten "
+                    "bereits archiviert.",
+                    fehler=True,
+                )
+            return
+        if zustand.dokumenttyp == Dokumenttyp.CED_FRAGEBOGEN.value:
+            oeffne_ced_pruefung()
+            return
+        with get_session() as sitzung:
+            patient = sitzung.get(Patient, zustand.patient_id)
+        if patient is None:
+            setze_status("Der ausgewählte Patient ist nicht mehr vorhanden.", fehler=True)
+            return
+        datumsvorschlag = erkenne_befunddatum(
+            zustand.ausgelesener_inhalt, zustand.strukturierte_darstellung
+        )
+        dokument_pruef_patient.text = (
+            f"Patient: {patient.display_name} · Geburtsdatum: "
+            f"{patient.birth_date.strftime('%d.%m.%Y') if patient.birth_date else 'nicht hinterlegt'}"
+        )
+        dokument_pruef_typ.value = zustand.dokumenttyp
+        dokument_pruef_datum.value = datumsvorschlag.isoformat() if datumsvorschlag else ""
+        dokument_pruef_text.value = zustand.strukturierte_darstellung
+        ist_laborpfad = zustand.dokumenttyp in LABORDOKUMENTTYPEN
+        ist_arztbrief = zustand.dokumenttyp == Dokumenttyp.ARZTBRIEF.value
+        ist_fachbefund = zustand.dokumenttyp in {
+            Dokumenttyp.ENDOSKOPIE.value,
+            Dokumenttyp.SONOGRAFIE.value,
+        }
+        labor_pruef_hinweis.set_visibility(ist_laborpfad)
+        labor_pruef_tabelle.set_visibility(ist_laborpfad)
+        labor_auswahlaktionen.set_visibility(ist_laborpfad)
+        arztbrief_pruef_hinweis.set_visibility(ist_arztbrief)
+        arztbrief_pruef_tabelle.set_visibility(ist_arztbrief)
+        arztbrief_auswahlaktionen.set_visibility(ist_arztbrief)
+        fachbefund_pruef_hinweis.set_visibility(ist_fachbefund)
+        fachbefund_pruef_tabelle.set_visibility(ist_fachbefund)
+        fachbefund_auswahlaktionen.set_visibility(ist_fachbefund)
+        if ist_laborpfad:
+            # Nur die strukturierte Darstellung wird geparst. Ein unbeschrifteter
+            # Rohtext wird nicht ersatzweise interpretiert. Bei leerer Tabelle kann
+            # zum Debuggen die KI-Struktur auf eindeutige Tabellen- oder Doppelpunkt-
+            # Zeilen geprüft werden, ohne Patientendaten zu protokollieren.
+            with get_session() as sitzung:
+                bekannte_kategorien = tuple(
+                    (kategorie.name, kategorie.typical_unit, kategorie.group_name)
+                    for kategorie in sitzung.scalars(
+                        select(FindingCategory).where(
+                            FindingCategory.group_name.in_(("Labor", "Calprotectin"))
+                        )
+                    )
+                )
+            zustand.labor_befunde = parse_laborbefund(
+                zustand.strukturierte_darstellung,
+                zustand.dokumenttyp,
+                bestehende_kategorien=bekannte_kategorien,
+            )
+            labor_pruef_tabelle.options["rowData"] = [
+                {
+                    "status": (
+                        "Neue Kategorie · prüfen"
+                        if befund.neue_kategorie
+                        else befund.qualitaet.value
+                    ),
+                    "kategorie": befund.kategorie,
+                    "datum": (
+                        befund.befunddatum.isoformat()
+                        if befund.befunddatum
+                        else (datumsvorschlag.isoformat() if datumsvorschlag else "")
+                    ),
+                    "wert": befund.anzeigewert,
+                    "einheit": befund.einheit or "",
+                    "referenz": befund.referenzbereich or "",
+                    "fachgruppe": befund.fachgruppe,
+                    "uebernehmen": befund.uebernehmen,
+                    "pruefhinweis": befund.pruefhinweis,
+                    "quelle": befund.quelltext,
+                }
+                for befund in zustand.labor_befunde
+            ]
+            labor_pruef_tabelle.update()
+            erkannte_messdaten = {
+                befund.befunddatum
+                for befund in zustand.labor_befunde
+                if befund.befunddatum is not None
+            }
+            if datumsvorschlag is None and erkannte_messdaten:
+                # Bei einer expliziten mehrspaltigen Laborhistorie ist das jüngste
+                # vorhandene Abnahmedatum der Vorschlag für das Dokumentdatum. Es
+                # bleibt im sichtbaren Pflichtfeld manuell korrigierbar.
+                dokument_pruef_datum.value = max(erkannte_messdaten).isoformat()
+            neue_anzahl = sum(befund.neue_kategorie for befund in zustand.labor_befunde)
+            labor_pruef_hinweis.text = (
+                f"{len(zustand.labor_befunde)} Laborzeile(n) erkannt"
+                + (
+                    f" · {neue_anzahl} neue Kategorie(n) zunächst ausgeschlossen"
+                    if neue_anzahl
+                    else ""
+                )
+                + ". Werte, Einheiten und Referenzbereiche vor der Übernahme prüfen."
+            )
+            dokument_pruef_speichern.text = "Geprüfte Laborwerte speichern"
+            dokument_pruef_speichern.set_enabled(
+                bool(zustand.labor_befunde)
+            )
+        else:
+            zustand.labor_befunde.clear()
+            labor_pruef_tabelle.options["rowData"] = []
+            labor_pruef_tabelle.update()
+        if ist_arztbrief:
+            zustand.arztbrief_abschnitte = parse_arztbrief(
+                zustand.strukturierte_darstellung
+            )
+            arztbrief_pruef_tabelle.options["rowData"] = [
+                {
+                    "kategorie": abschnitt.kategorie,
+                    "inhalt": abschnitt.inhalt,
+                    "quelle": abschnitt.quelltext,
+                    "uebernehmen": abschnitt.uebernehmen,
+                }
+                for abschnitt in zustand.arztbrief_abschnitte
+            ]
+            arztbrief_pruef_tabelle.update()
+            arztbrief_pruef_hinweis.text = (
+                f"{len(zustand.arztbrief_abschnitte)} gegliederte(r) Abschnitt(e) erkannt. "
+                "Nur ausdrücklich ausgewählte Abschnitte werden strukturiert gespeichert."
+            )
+            dokument_pruef_speichern.text = "Arztbrief und ausgewählte Abschnitte speichern"
+            dokument_pruef_speichern.enable()
+        else:
+            zustand.arztbrief_abschnitte.clear()
+            arztbrief_pruef_tabelle.options["rowData"] = []
+            arztbrief_pruef_tabelle.update()
+        if ist_fachbefund:
+            with get_session() as sitzung:
+                uebersicht = lade_patientenuebersicht(sitzung, zustand.patient_id)
+            zustand.fachbefund_abschnitte = parse_fachbefund(
+                zustand.strukturierte_darstellung,
+                zustand.dokumenttyp,
+                erkrankungstyp=uebersicht.erkrankungstyp,
+            )
+            fachbefund_pruef_tabelle.options["rowData"] = [
+                {
+                    "kategorie": abschnitt.kategorie,
+                    "inhalt": abschnitt.inhalt,
+                    "quelle": abschnitt.quelltext,
+                    "uebernehmen": abschnitt.uebernehmen,
+                    "pruefhinweis": abschnitt.pruefhinweis,
+                }
+                for abschnitt in zustand.fachbefund_abschnitte
+            ]
+            fachbefund_pruef_tabelle.update()
+            fachbefund_pruef_hinweis.text = (
+                f"{len(zustand.fachbefund_abschnitte)} strukturierte(r) Abschnitt(e) erkannt. "
+                "Aktivitätsscores werden nur übernommen, niemals berechnet."
+            )
+            dokument_pruef_speichern.text = "Fachbefund und ausgewählte Abschnitte speichern"
+            dokument_pruef_speichern.enable()
+        else:
+            zustand.fachbefund_abschnitte.clear()
+            fachbefund_pruef_tabelle.options["rowData"] = []
+            fachbefund_pruef_tabelle.update()
+        if not ist_laborpfad and not ist_arztbrief and not ist_fachbefund:
+            dokument_pruef_speichern.text = "Dokument bestätigt zuordnen"
+            dokument_pruef_speichern.enable()
+        ced_dialog.close()
+        patientenansicht_dialog.close()
+        verlauf_dialog.close()
+        fachverlauf_dialog.close()
+        dokument_pruefdialog.open()
+        setze_status(
+            "Patient, Dokumentdatum und erkannte Informationen bitte vor der Zuordnung prüfen"
+        )
+
+    async def speichere_allgemeine_dokumentzuordnung() -> None:
+        """Archiviert einen Nicht-CED-Befund erst nach Patient- und Datumsbestätigung."""
+        if zustand.patient_id is None:
+            setze_status("Bitte zuerst einen Patienten auswählen.", fehler=True)
+            return
+        try:
+            dokumentdatum = date.fromisoformat(dokument_pruef_datum.value or "")
+        except ValueError:
+            setze_status("Bitte ein vollständiges Dokumentdatum bestätigen.", fehler=True)
+            return
+        provider_name = "UK-API" if zustand.ergebnis_anbieter == "uk" else "OpenAI"
+        modell = (
+            einstellungen.uk_model
+            if zustand.ergebnis_anbieter == "uk"
+            else einstellungen.openai_model
+        )
+        try:
+            with get_session() as sitzung:
+                if zustand.dokumenttyp in LABORDOKUMENTTYPEN:
+                    tabellenzeilen = await labor_pruef_tabelle.get_client_data()
+                    freigegebene: list[FreigegebenerLaborwert] = []
+                    for zeile in tabellenzeilen:
+                        if not zeile.get("uebernehmen"):
+                            continue
+                        kategorie = str(zeile.get("kategorie") or "").strip()
+                        datum_text = str(zeile.get("datum") or "").strip()
+                        # Ein leerer Zeilenwert übernimmt ausschließlich das oben
+                        # ausdrücklich bestätigte Dokumentdatum. Bei einer
+                        # mehrspaltigen Historie steht dagegen jedes erkannte Datum
+                        # sichtbar in der Zeile und kann einzeln korrigiert werden.
+                        try:
+                            zeilendatum = (
+                                date.fromisoformat(datum_text)
+                                if datum_text
+                                else dokumentdatum
+                            )
+                        except ValueError as fehler:
+                            raise ValueError(
+                                "Jede ausgewählte Laborzeile benötigt ein vollständiges Befunddatum."
+                            ) from fehler
+                        wert = str(zeile.get("wert") or "").strip()
+                        einheit = str(zeile.get("einheit") or "").strip()
+                        referenz = str(zeile.get("referenz") or "").strip()
+                        # Der sichtbare, gegebenenfalls editierte Wert wird erneut
+                        # durch denselben deterministischen Parser gelesen. Es gibt
+                        # keinen Rückgriff auf den alten KI-Wert.
+                        erneut = parse_laborbefund(
+                            f"| {kategorie} | {wert} | {einheit} | {referenz} |",
+                            zustand.dokumenttyp,
+                        )
+                        if len(erneut) != 1:
+                            raise ValueError(
+                                "Eine ausgewählte Laborzeile konnte nicht eindeutig geprüft werden."
+                            )
+                        geprueft = erneut[0]
+                        status_text = str(zeile.get("status") or "")
+                        qualitaet = (
+                            ConfidenceStatus.UNCERTAIN
+                            if status_text == "Neue Kategorie · prüfen" or geprueft.neue_kategorie
+                            else ConfidenceStatus(status_text)
+                        )
+                        freigegebene.append(
+                            FreigegebenerLaborwert(
+                                kategorie=kategorie,
+                                anzeigewert=wert,
+                                numerischer_wert=geprueft.numerischer_wert,
+                                einheit=einheit or None,
+                                referenzbereich=referenz or None,
+                                befunddatum=zeilendatum,
+                                quelltext=str(zeile.get("quelle") or "").strip(),
+                                fachgruppe=geprueft.fachgruppe,
+                                qualitaet=qualitaet,
+                            )
+                        )
+                    dokument_id = speichere_laborpruefung(
+                        sitzung,
+                        LaborSpeicherauftrag(
+                            patient_id=zustand.patient_id,
+                            dokumenttyp=zustand.dokumenttyp,
+                            befunddatum=dokumentdatum,
+                            original_name=" + ".join(zustand.dokumentnamen) or "Laborbefund",
+                            rohe_ki_antwort=zustand.rohe_ki_antwort,
+                            kis_vorschlag=zustand.kis_vorschlag,
+                            kis_vorschlag_ausfuehrlich=zustand.kis_vorschlag_ausfuehrlich,
+                            provider=provider_name,
+                            modell=modell,
+                            befunde=tuple(freigegebene),
+                        ),
+                    )
+                else:
+                    dokumentbefunde: tuple[FreigegebenerDokumentbefund, ...] = ()
+                    if zustand.dokumenttyp == Dokumenttyp.ARZTBRIEF.value:
+                        briefzeilen = await arztbrief_pruef_tabelle.get_client_data()
+                        dokumentbefunde = tuple(
+                            FreigegebenerDokumentbefund(
+                                kategorie=str(zeile.get("kategorie") or "").strip(),
+                                inhalt=str(zeile.get("inhalt") or "").strip(),
+                                quelltext=str(zeile.get("quelle") or "").strip(),
+                                fachgruppe="Arztbriefe",
+                            )
+                            for zeile in briefzeilen
+                            if zeile.get("uebernehmen")
+                        )
+                    elif zustand.dokumenttyp in {
+                        Dokumenttyp.ENDOSKOPIE.value,
+                        Dokumenttyp.SONOGRAFIE.value,
+                    }:
+                        fachzeilen = await fachbefund_pruef_tabelle.get_client_data()
+                        fachgruppe = (
+                            "Endoskopie"
+                            if zustand.dokumenttyp == Dokumenttyp.ENDOSKOPIE.value
+                            else "Sonografie"
+                        )
+                        dokumentbefunde = tuple(
+                            FreigegebenerDokumentbefund(
+                                kategorie=str(zeile.get("kategorie") or "").strip(),
+                                inhalt=str(zeile.get("inhalt") or "").strip(),
+                                quelltext=str(zeile.get("quelle") or "").strip(),
+                                fachgruppe=fachgruppe,
+                            )
+                            for zeile in fachzeilen
+                            if zeile.get("uebernehmen")
+                        )
+                    dokument_id = speichere_allgemeines_dokument(
+                        sitzung,
+                        DokumentSpeicherauftrag(
+                            patient_id=zustand.patient_id,
+                            dokumenttyp=zustand.dokumenttyp,
+                            dokumentdatum=dokumentdatum,
+                            original_name=" + ".join(zustand.dokumentnamen) or "Dokument",
+                            rohe_ki_antwort=zustand.rohe_ki_antwort,
+                            kis_vorschlag=zustand.kis_vorschlag,
+                            kis_vorschlag_ausfuehrlich=zustand.kis_vorschlag_ausfuehrlich,
+                            provider=provider_name,
+                            modell=modell,
+                            befunde=dokumentbefunde,
+                        ),
+                    )
+        except TimeoutError:
+            setze_status(
+                "Geprüfte Inhalte konnten nicht aus der Tabelle gelesen werden. "
+                "Bitte die letzte Zelle verlassen und erneut speichern.",
+                fehler=True,
+            )
+            return
+        except (SQLAlchemyError, ValueError) as fehler:
+            setze_status(f"Dokument konnte nicht zugeordnet werden: {fehler}", fehler=True)
+            return
+        zustand.gespeichertes_dokument_id = dokument_id
+        lerne_aus_gespeichertem_dokument(dokument_id)
+        dokument_pruefdialog.close()
+        ced_navigation.disable()
+        if zustand.dokumenttyp in LABORDOKUMENTTYPEN:
+            fachschluessel = (
+                "calprotectin"
+                if zustand.dokumenttyp == Dokumenttyp.CALPROTECTIN.value
+                else "labor"
+            )
+            oeffne_fachverlauf(fachschluessel)
+            setze_status("Geprüfte Laborwerte gespeichert · Fachansicht geöffnet")
+        elif zustand.dokumenttyp == Dokumenttyp.ARZTBRIEF.value:
+            oeffne_fachverlauf("weitere")
+            setze_status("Arztbrief und bestätigte Abschnitte gespeichert · Weitere Befunde geöffnet")
+        elif zustand.dokumenttyp == Dokumenttyp.ENDOSKOPIE.value:
+            oeffne_fachverlauf("endoskopie")
+            setze_status("Endoskopiebefund und bestätigte Abschnitte gespeichert")
+        elif zustand.dokumenttyp == Dokumenttyp.SONOGRAFIE.value:
+            oeffne_fachverlauf("sonografie")
+            setze_status("Sonografiebefund und bestätigte Abschnitte gespeichert")
+        else:
+            setze_status("Dokument wurde dem bestätigten Patienten zugeordnet")
 
     def aktiviere_patientenauswahl(
         ereignis: events.ValueChangeEventArguments | None = None,
@@ -1512,30 +2810,23 @@ def zeige_hauptseite() -> None:
             if patient is None:
                 setze_status("Der ausgewählte Patient ist nicht mehr vorhanden.", fehler=True)
                 return
-            treffer = ermittle_patiententreffer(
-                zustand.erkannte_patientendaten, [patient]
-            )
         zustand.patient_id = ausgewaehlte_id
         setze_patientenkopf(patient, synchronisiere_auswahl=False)
-        erkannt = zustand.erkannte_patientendaten
-        widerspruch = bool(
-            erkannt.ausreichend_fuer_vorschlag
-            and (not treffer or treffer[0].widerspruch)
+        abgleich = pruefe_aktiven_patienten(zustand.erkannte_patientendaten, patient)
+        zustand.patientenabgleich_erlaubt = abgleich.zuordnung_erlaubt
+        setze_patientenabgleich_hinweis(
+            f"{abgleich.status}: " + " · ".join(abgleich.gruende),
+            abgleich.farbe,
         )
-        zustand.patientenabgleich_erlaubt = not widerspruch
-        if widerspruch:
-            dokument_patienten_hinweis.text = (
-                "WARNUNG: Der aktive Patient passt nicht zu den Stammdaten des Dokuments."
-            )
-            dokument_patienten_hinweis.classes(add="ced-fehler")
+        if abgleich.zuordnung_erlaubt:
             setze_status(
-                "Patient aktiv · Dokumentzuordnung wegen Abweichung gesperrt",
-                fehler=True,
+                "Patient ausgewählt · Stammdatenabgleich vor Zuordnung beachten"
             )
         else:
-            dokument_patienten_hinweis.classes(remove="ced-fehler")
-            dokument_patienten_hinweis.text = f"Aktiver Patient: {patient.display_name}"
-            setze_status("Patient ausgewählt und aktiviert")
+            setze_status(
+                "Zuordnung gesperrt: " + " · ".join(abgleich.gruende),
+                fehler=True,
+            )
         aktualisiere_ced_bereitschaft()
 
     def wechsle_neuer_patient_formular() -> None:
@@ -1635,6 +2926,7 @@ def zeige_hauptseite() -> None:
         datenbank_schalter.text = "Datenbankmodus beenden"
         datenbank_status.text = "Datenbank: aktiviert · geschützter Modus"
         hauptueberschrift.text = "CED-A-DOKU"
+        hauptuntertitel.text = "Assistierte Auslesung medizinischer Dokumente"
         datenbank_navigation_titel.set_visibility(True)
         aktiver_patient_auswahl.set_visibility(True)
         dokument_patienten_hinweis.set_visibility(True)
@@ -1651,13 +2943,27 @@ def zeige_hauptseite() -> None:
         aktualisiere_patientenvorschlaege()
 
     def aktualisiere_ergebnisanzeige() -> None:
-        """Zeigt exakt die gewählte, bereits geprüfte Antwortvariante an."""
+        """Zeigt die gewählte Variante; nur KIS-Vorschläge sind editierbar."""
         varianten = {
             "rohtext": zustand.ausgelesener_inhalt,
             "strukturiert": zustand.strukturierte_darstellung,
-            "zusammenfassung": zustand.kis_vorschlag,
+            "kis_kompakt": zustand.kis_vorschlag,
+            "kis_ausfuehrlich": zustand.kis_vorschlag_ausfuehrlich,
         }
         ergebnis_ausgabe.value = varianten[str(ergebnis_auswahl.value)]
+        if str(ergebnis_auswahl.value).startswith("kis_"):
+            ergebnis_ausgabe.props(remove="readonly")
+        else:
+            ergebnis_ausgabe.props(add="readonly")
+
+    def uebernehme_kis_bearbeitung() -> None:
+        """Hält ausschließlich die sichtbare KIS-Fassung im Sitzungszustand aktuell."""
+
+        auswahl = str(ergebnis_auswahl.value)
+        if auswahl == "kis_kompakt":
+            zustand.kis_vorschlag = str(ergebnis_ausgabe.value or "")
+        elif auswahl == "kis_ausfuehrlich":
+            zustand.kis_vorschlag_ausfuehrlich = str(ergebnis_ausgabe.value or "")
 
     def verschiebe_seite(index: int, richtung: int) -> None:
         """Verschiebt eine sichtbare Vorschau zur manuellen Reihenfolgekorrektur."""
@@ -1714,15 +3020,18 @@ def zeige_hauptseite() -> None:
         zustand.ausgelesener_inhalt = ""
         zustand.strukturierte_darstellung = ""
         zustand.kis_vorschlag = ""
+        zustand.kis_vorschlag_ausfuehrlich = ""
         zustand.rohe_ki_antwort = ""
+        zustand.transkription = None
+        zustand.klassifikationsvorschlag = None
+        zustand.klassifikation_bestaetigt = False
         zustand.letzter_fehler = ""
         zustand.ergebnis_anbieter = ""
-        zustand.patient_id = None
         zustand.patientenabgleich_erlaubt = False
         dokumenttyp_ausgabe.value = ""
         ergebnis_ausgabe.value = ""
         ergebnis_auswahl.value = "rohtext"
-        lesen_schalter.text = "Dokument auslesen"
+        lesen_schalter.text = "Dokument analysieren"
         upload.reset()
         aktualisiere_vorschauen()
         if zustand.arbeitsmodus == DATENBANKMODUS:
@@ -1747,15 +3056,18 @@ def zeige_hauptseite() -> None:
         zustand.ausgelesener_inhalt = ""
         zustand.strukturierte_darstellung = ""
         zustand.kis_vorschlag = ""
+        zustand.kis_vorschlag_ausfuehrlich = ""
         zustand.rohe_ki_antwort = ""
+        zustand.transkription = None
+        zustand.klassifikationsvorschlag = None
+        zustand.klassifikation_bestaetigt = False
         zustand.letzter_fehler = ""
         zustand.ergebnis_anbieter = ""
-        zustand.patient_id = None
         zustand.patientenabgleich_erlaubt = False
         dokumenttyp_ausgabe.value = ""
         ergebnis_ausgabe.value = ""
         ergebnis_auswahl.value = "rohtext"
-        lesen_schalter.text = "Dokument auslesen"
+        lesen_schalter.text = "Dokument analysieren"
         setze_status("Dokument wird importiert und für die Vorschau vorbereitet …")
         try:
             wurzel = Path(zustand.temporaerer_ordner.name)
@@ -1793,6 +3105,103 @@ def zeige_hauptseite() -> None:
         ]
         uebernehme_dokumente(dateien)
 
+    def melde_zwischenablageproblem(ereignis: events.GenericEventArguments) -> None:
+        """Erklärt einen fehlenden Bilddatenstrom ohne medizinische Inhalte zu loggen."""
+
+        typen = ", ".join(str(wert) for wert in ereignis.args.get("typen", []))
+        setze_status(
+            "Die Zwischenablage enthielt kein vom Browser bereitgestelltes Bild. "
+            f"Bereitgestellte Formate: {typen or 'keine'}. Bitte den Ausschnitt erneut "
+            "als Bild kopieren oder als PNG/JPG hochladen.",
+            fehler=True,
+        )
+
+    def verwende_nur_text() -> None:
+        """Behält bei einer unsicheren Klassifikation ausschließlich den Rohtext."""
+
+        zustand.dokumenttyp = ""
+        zustand.strukturierte_darstellung = ""
+        zustand.kis_vorschlag = ""
+        zustand.kis_vorschlag_ausfuehrlich = ""
+        zustand.rohe_ki_antwort = ""
+        zustand.klassifikation_bestaetigt = False
+        dokumenttyp_ausgabe.value = ""
+        klassifikations_dialog.close()
+        aktualisiere_ergebnisanzeige()
+        aktualisiere_ced_bereitschaft()
+        setze_status(
+            "Transkript wird nur kontextfrei verwendet · keine Patientenzuordnung und Speicherung"
+        )
+
+    async def strukturiere_bestaetigte_klasse(dokumentklasse: str) -> None:
+        """Startet erst nach Nutzerentscheidung die medizinische Strukturierung."""
+
+        if zustand.transkription is None:
+            setze_status("Keine Transkription zur Klassifikation vorhanden.", fehler=True)
+            return
+        anbieter_name = "UK-API" if zustand.anbieter == "uk" else "OpenAI"
+        ki_anbieter = LocalAPIProvider(einstellungen) if zustand.anbieter == "uk" else CloudAPIProvider(einstellungen)
+        klassifikations_dialog.close()
+        lesen_schalter.disable()
+        try:
+            setze_status(f"{anbieter_name}: bestätigte Klasse wird medizinisch strukturiert …")
+            ergebnis = await run.io_bound(
+                ki_anbieter.structure_transcription,
+                zustand.transkription.gesamttext,
+                dokumentklasse,
+            )
+            zustand.dokumenttyp = dokumentklasse
+            zustand.ausgelesener_inhalt = ergebnis.ausgelesener_inhalt
+            zustand.strukturierte_darstellung = ergebnis.strukturierte_darstellung
+            zustand.kis_vorschlag = ergebnis.kis_vorschlag
+            zustand.kis_vorschlag_ausfuehrlich = ergebnis.kis_vorschlag_ausfuehrlich
+            zustand.rohe_ki_antwort = ergebnis.rohe_ki_antwort
+            zustand.klassifikation_bestaetigt = True
+            zustand.ergebnis_anbieter = zustand.anbieter
+            dokumenttyp_ausgabe.value = dokumentklasse
+            aktualisiere_ergebnisanzeige()
+            if zustand.arbeitsmodus == DATENBANKMODUS:
+                aktualisiere_patientenvorschlaege()
+                aktualisiere_ced_bereitschaft()
+            lesen_schalter.text = f"Neu analysieren mit {anbieter_name}"
+            setze_status("Dokumentklasse zugeordnet · medizinisches Ergebnis ungeprüft")
+        except (AIProviderError, DokumentAntwortFehler, ValueError) as fehler:
+            setze_status(f"Strukturierung fehlgeschlagen: {fehler}", fehler=True)
+        finally:
+            lesen_schalter.enable()
+
+    async def bestaetige_vorhandene_klasse() -> None:
+        klasse = str(klassifikations_klasse.value or "").strip()
+        if not klasse:
+            setze_status("Bitte eine vorhandene Dokumentklasse auswählen.", fehler=True)
+            return
+        await strukturiere_bestaetigte_klasse(klasse)
+
+    async def bestaetige_neue_klasse() -> None:
+        """Persistiert Definition und erstes Lernsignal nur nach dem Schalterklick."""
+
+        try:
+            with get_session() as sitzung:
+                aehnliche = finde_aehnliche_klassen(sitzung, str(neue_klasse_name.value or ""))
+                if aehnliche:
+                    aehnliche_klassen_hinweis.text = (
+                        "Ähnliche Klassen vorhanden: " + ", ".join(aehnliche)
+                        + ". Bitte prüfen; eine Zusammenführung erfolgt nicht automatisch."
+                    )
+                    aehnliche_klassen_hinweis.update()
+                dokumenttyp = lege_dokumentklasse_an(
+                    sitzung,
+                    name=str(neue_klasse_name.value or ""),
+                    fachgruppe=str(neue_klasse_gruppe.value or ""),
+                    beschreibung=str(neue_klasse_beschreibung.value or ""),
+                    klassifikationsmerkmale=str(neue_klasse_merkmale.value or ""),
+                    beispielmerkmale=str(neue_klasse_merkmale.value or ""),
+                )
+        except (ValueError, SQLAlchemyError) as fehler:
+            setze_status(f"Neue Dokumentklasse nicht angelegt: {fehler}", fehler=True)
+            return
+        await strukturiere_bestaetigte_klasse(dokumenttyp.name)
+
     async def lese_dokument() -> None:
         """Bearbeitet erhaltene Seiten erneut mit dem gerade gewählten Anbieter.
 
@@ -1816,21 +3225,59 @@ def zeige_hauptseite() -> None:
                 if zustand.anbieter == "uk"
                 else CloudAPIProvider(einstellungen)
             )
-            # ``run.io_bound`` hält die Oberfläche reaktionsfähig. Es ist kein
-            # Fallback: Aufgerufen wird ausschließlich der oben ausgewählte Provider.
-            ergebnis = await run.io_bound(ki_anbieter.process_document, list(zustand.seiten))
-            zustand.dokumenttyp = ergebnis.dokumenttyp.value
-            zustand.ausgelesener_inhalt = ergebnis.ausgelesener_inhalt
-            zustand.strukturierte_darstellung = ergebnis.strukturierte_darstellung
-            zustand.kis_vorschlag = ergebnis.kis_vorschlag
-            zustand.rohe_ki_antwort = ergebnis.rohe_ki_antwort
+            # Jede Analyse beginnt mit derselben originalnahen Transkription. Erst
+            # danach entscheidet der Katalogvorschlag, ob medizinische Strukturierung
+            # sinnvoll ist; der Benutzer muss keinen Modus vorab festlegen.
+            transkript = await run.io_bound(
+                ki_anbieter.transcribe_document, list(zustand.seiten)
+            )
+            zustand.transkription = transkript
+            zustand.ausgelesener_inhalt = transkript.gesamttext
             zustand.ergebnis_anbieter = zustand.anbieter
-            dokumenttyp_ausgabe.value = zustand.dokumenttyp
             aktualisiere_ergebnisanzeige()
-            if zustand.arbeitsmodus == DATENBANKMODUS:
-                aktualisiere_patientenvorschlaege()
-            lesen_schalter.text = f"Dokument mit {anbieter_name} neu bearbeiten"
-            setze_status(f"{anbieter_name}: Verarbeitung abgeschlossen · Ergebnis ungeprüft")
+            with get_session() as sitzung:
+                klassen = liste_dokumentklassen(sitzung)
+            vorschlag = await run.io_bound(
+                ki_anbieter.classify_transcription, transkript, klassen
+            )
+            zustand.klassifikationsvorschlag = vorschlag
+            if vorschlag.status is Klassifikationsstatus.NICHT_MEDIZINISCH:
+                zustand.dokumenttyp = ""
+                dokumenttyp_ausgabe.value = ""
+                lesen_schalter.text = f"Neu auslesen mit {anbieter_name}"
+                setze_status(
+                    "Text ausgelesen · kein medizinisches Dokument erkannt; "
+                    "keine Patientenzuordnung oder Datenbankspeicherung"
+                )
+                return
+            if (
+                vorschlag.status is Klassifikationsstatus.EINDEUTIG
+                and vorschlag.vorgeschlagene_klasse
+            ):
+                # Eine eindeutige vorhandene Klasse benötigt keine zusätzliche
+                # Bestätigung. Patient, Datum und Befundwerte bleiben unverändert
+                # im nachgelagerten Prüf- und Speicherprozess kontrolliert.
+                await strukturiere_bestaetigte_klasse(vorschlag.vorgeschlagene_klasse)
+                return
+            klassenoptionen = {klasse.name: klasse.anzeigename for klasse in klassen}
+            klassifikations_klasse.options = klassenoptionen
+            klassifikations_klasse.value = vorschlag.vorgeschlagene_klasse
+            klassifikations_klasse.update()
+            klassifikations_hinweis.text = (
+                f"Status: {vorschlag.status.value}. {vorschlag.begruendung} "
+                "Bitte eine bestehende Klasse bestätigen oder eine neue Klasse kontrolliert anlegen."
+            )
+            neue_klasse_name.value = vorschlag.neue_klasse_vorschlag or ""
+            neue_klasse_gruppe.value = (
+                vorschlag.vorgeschlagene_fachgruppe
+                if vorschlag.vorgeschlagene_fachgruppe in ERLAUBTE_FACHGRUPPEN
+                else None
+            )
+            neue_klasse_beschreibung.value = vorschlag.vorgeschlagene_beschreibung or ""
+            neue_klasse_merkmale.value = vorschlag.vorgeschlagene_merkmale or ""
+            klassifikations_dialog.open()
+            lesen_schalter.text = f"Neu analysieren mit {anbieter_name}"
+            setze_status("Transkription abgeschlossen · Dokumentklasse muss bestätigt werden")
         except (ConfigurationError, AIProviderError, DokumentAntwortFehler, OSError, ValueError) as fehler:
             # Debugging: Endpunkt, Modell und Secret-Verfügbarkeit prüfen. Es gibt
             # absichtlich keinen Fallback; Schlüssel und Dokumentinhalt nie loggen.
@@ -1851,35 +3298,64 @@ def zeige_hauptseite() -> None:
         setze_status("Angezeigten Text in die Zwischenablage kopiert")
 
     anbieter_auswahl.on_value_change(lambda _: aktualisiere_anbieter())
+    klasse_bestaetigen.on_click(bestaetige_vorhandene_klasse)
+    neue_klasse_anlegen.on_click(bestaetige_neue_klasse)
     datenbank_schalter.text = "CED-Datenbank aktivieren"
     datenbank_schalter.on_click(aktualisiere_datenbankmodus)
     aktiver_patient_auswahl.on_value_change(aktiviere_patientenauswahl)
+    erkrankungstyp_ausgabe.on_value_change(
+        lambda _: aktualisiere_phaenotypfelder(leere_unpassende=True)
+    )
     neuer_patient_schalter.on_click(wechsle_neuer_patient_formular)
     patient_anlegen.on_click(lege_patient_an)
     ced_speichern.on_click(speichere_gepruefte_ced_daten)
+    ced_alle_auswaehlen.on_click(lambda: setze_alle_tabellenzeilen(ced_tabelle, True))
+    ced_alle_abwaehlen.on_click(lambda: setze_alle_tabellenzeilen(ced_tabelle, False))
+    labor_alle_auswaehlen.on_click(
+        lambda: setze_alle_tabellenzeilen(labor_pruef_tabelle, True)
+    )
+    labor_alle_abwaehlen.on_click(
+        lambda: setze_alle_tabellenzeilen(labor_pruef_tabelle, False)
+    )
+    arztbrief_alle_auswaehlen.on_click(
+        lambda: setze_alle_tabellenzeilen(arztbrief_pruef_tabelle, True)
+    )
+    arztbrief_alle_abwaehlen.on_click(
+        lambda: setze_alle_tabellenzeilen(arztbrief_pruef_tabelle, False)
+    )
+    fachbefund_alle_auswaehlen.on_click(
+        lambda: setze_alle_tabellenzeilen(fachbefund_pruef_tabelle, True)
+    )
+    fachbefund_alle_abwaehlen.on_click(
+        lambda: setze_alle_tabellenzeilen(fachbefund_pruef_tabelle, False)
+    )
+    dokument_pruef_speichern.on_click(speichere_allgemeine_dokumentzuordnung)
     ced_navigation.on_click(ordne_daten_patient_zu)
     einlesen_navigation.on_click(zeige_einlesebereich)
     patientenansicht_navigation.on_click(oeffne_patientenansicht)
     stammdaten_bearbeiten.on_click(beginne_stammdaten_bearbeitung)
     stammdaten_speichern.on_click(speichere_patientenstammdaten)
     stammdaten_abbrechen.on_click(breche_stammdaten_bearbeitung_ab)
-    patientenfall_bearbeiten.on_click(beginne_patientenfall_bearbeitung)
-    patientenfall_speichern.on_click(speichere_patientenfall_aenderungen)
-    patientenfall_abbrechen.on_click(breche_patientenfall_bearbeitung_ab)
+    diagnosen_bearbeiten.on_click(beginne_diagnosen_bearbeitung)
+    diagnosen_speichern.on_click(speichere_diagnosen_aenderungen)
+    diagnosen_abbrechen.on_click(breche_diagnosen_bearbeitung_ab)
+    therapien_bearbeiten.on_click(beginne_therapien_bearbeitung)
+    therapien_speichern.on_click(speichere_therapien_aenderungen)
+    therapien_abbrechen.on_click(breche_therapien_bearbeitung_ab)
     verlauf_navigation.on_click(oeffne_klinischen_verlauf)
+    verlauf_filter_anwenden.on_click(lambda: aktualisiere_verlaufsliste())
     for fachschluessel, fachschalter in fachnavigation_schalter.items():
         fachschalter.on_click(
             lambda _, schluessel=fachschluessel: oeffne_fachverlauf(schluessel)
         )
     upload.on_upload(uebernehme_datei)
-    neu_schalter.on_click(beginne_neues_dokument)
-    alles_loeschen_schalter.on_click(
-        lambda: setze_leeren_zustand("Alle Dokumente und Ergebnisse wurden gelöscht")
-    )
+    dokument_verwerfen_schalter.on_click(beginne_neues_dokument)
     lesen_schalter.on_click(lese_dokument)
     ergebnis_auswahl.on_value_change(lambda _: aktualisiere_ergebnisanzeige())
+    ergebnis_ausgabe.on_value_change(lambda _: uebernehme_kis_bearbeitung())
     kopieren_schalter.on_click(kopiere_ergebnis)
     ui.on("abgelegte_dateien", uebernehme_abgelegte_dateien)
+    ui.on("zwischenablage_ohne_bild", melde_zwischenablageproblem)
 
     # Der Browser liest ausschließlich Bildobjekte aus einem echten Paste-Ereignis.
     # Zusätzlich fängt die Seite Datei-Drops außerhalb des sichtbaren Uploaders ab.
@@ -1911,11 +3387,29 @@ def zeige_hauptseite() -> None:
             // AG-Grid-Zellen das Ereignis sonst vor dem Dokument-Handler abfangen
             // können. Zum Debugging MIME-Typen in den Browserwerkzeugen prüfen,
             // niemals Bildinhalt oder Base64-Daten protokollieren.
-            const bilder = [...(event.clipboardData?.items || [])]
-                .filter(eintrag => eintrag.kind === 'file' && eintrag.type.startsWith('image/'))
+            const istBilddatei = datei => datei && (
+                datei.type.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp)$/i.test(datei.name || '')
+            );
+            const ausItems = [...(event.clipboardData?.items || [])]
+                .filter(eintrag => eintrag.kind === 'file')
                 .map(eintrag => eintrag.getAsFile())
-                .filter(datei => datei !== null);
-            if (!bilder.length) return;
+                .filter(istBilddatei);
+            const ausDateien = [...(event.clipboardData?.files || [])].filter(istBilddatei);
+            // Manche Screenshot-Werkzeuge melden einen leeren oder generischen
+            // MIME-Typ und stellen das Bild nur über clipboardData.files bereit.
+            // Chromium kann dasselbe Clipboard-Bild als zwei unterschiedliche
+            // File-Wrapper in beiden Listen anbieten. Objektidentität reicht dann
+            // nicht zur Entdopplung. Deshalb hat die Item-Liste Vorrang; nur wenn
+            // sie kein Bild enthält, wird die Dateiliste verwendet. Ein inhaltlicher
+            // oder patientenbezogener Bildvergleich findet ausdrücklich nicht statt.
+            const bilder = ausItems.length ? ausItems : ausDateien;
+            if (!bilder.length) {
+                if (event.target.closest('input, textarea, [contenteditable="true"]')) return;
+                emitEvent('zwischenablage_ohne_bild', {
+                    typen: [...(event.clipboardData?.types || [])],
+                });
+                return;
+            }
             event.preventDefault();
             event.stopPropagation();
             const gelesen = await Promise.all(bilder.map((bild, index) =>
