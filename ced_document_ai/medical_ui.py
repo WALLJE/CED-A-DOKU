@@ -723,6 +723,28 @@ def zeige_hauptseite() -> None:
                                         ).props("flat color=grey-7")
                                     diagnosen_speichern.set_visibility(False)
                                     diagnosen_abbrechen.set_visibility(False)
+                                    ui.separator().classes("my-3")
+                                    ui.label("Therapieverlauf").classes("bereichstitel")
+                                    therapie_medikamentoes_ausgabe = ui.textarea(
+                                        "Medikamentös",
+                                        placeholder="noch kein bestätigter Verlauf",
+                                    ).props("outlined dense readonly").classes("w-full")
+                                    therapie_chirurgisch_ausgabe = ui.textarea(
+                                        "Chirurgisch",
+                                        placeholder="noch kein bestätigter Verlauf",
+                                    ).props("outlined dense readonly").classes("w-full")
+                                    with ui.row().classes("w-full gap-2 flex-wrap"):
+                                        therapien_bearbeiten = ui.button(
+                                            "Therapien bearbeiten", icon="edit"
+                                        ).props("outline color=teal-8")
+                                        therapien_speichern = ui.button(
+                                            "Therapien speichern", icon="save"
+                                        ).props("color=teal-8")
+                                        therapien_abbrechen = ui.button(
+                                            "Abbrechen", icon="close"
+                                        ).props("flat color=grey-7")
+                                    therapien_speichern.set_visibility(False)
+                                    therapien_abbrechen.set_visibility(False)
                                 with ui.card().classes("arbeitskarte flex-1 p-5"):
                                     ui.label("CED-Stammdaten").classes("bereichstitel")
                                     # Erst der bewusste Bearbeitungsschalter gibt die
@@ -752,36 +774,40 @@ def zeige_hauptseite() -> None:
                                         ["Morbus Crohn", "Colitis ulcerosa"],
                                         label="CED-Erkrankungstyp",
                                     ).props("outlined dense disable").classes("w-full")
-                                    mc_lokalisation_ausgabe = ui.select(
-                                        {
-                                            "L1": "L1 · Ileum",
-                                            "L2": "L2 · Kolon",
-                                            "L3": "L3 · Ileokolon",
-                                        },
-                                        label="Morbus Crohn: Lokalisation",
-                                    ).props("outlined dense disable").classes("w-full")
-                                    mc_oberer_gi_ausgabe = ui.checkbox(
-                                        "L4 · oberer Gastrointestinaltrakt zusätzlich betroffen"
-                                    ).props("color=teal-8 disable").classes("font-medium")
-                                    mc_verhalten_ausgabe = ui.select(
-                                        {
-                                            "B1": "B1 · nicht stenosierend, nicht penetrierend",
-                                            "B2": "B2 · stenosierend",
-                                            "B3": "B3 · penetrierend / fistulierend",
-                                        },
-                                        label="Morbus Crohn: Verhalten",
-                                    ).props("outlined dense disable").classes("w-full")
-                                    mc_perianal_ausgabe = ui.checkbox(
-                                        "p · perianales Fistelleiden zusätzlich"
-                                    ).props("color=teal-8 disable").classes("font-medium")
-                                    cu_ausdehnung_ausgabe = ui.select(
-                                        {
-                                            "E1": "E1 · Proktitis",
-                                            "E2": "E2 · linksseitige Colitis",
-                                            "E3": "E3 · ausgedehnte Colitis",
-                                        },
-                                        label="Colitis ulcerosa: Ausdehnung",
-                                    ).props("outlined dense disable").classes("w-full")
+                                    with ui.column().classes("w-full gap-2") as mc_felder:
+                                        mc_lokalisation_ausgabe = ui.select(
+                                            {
+                                                "L1": "L1 · Ileum",
+                                                "L2": "L2 · Kolon",
+                                                "L3": "L3 · Ileokolon",
+                                            },
+                                            label="Morbus Crohn: Lokalisation",
+                                        ).props("outlined dense disable").classes("w-full")
+                                        mc_oberer_gi_ausgabe = ui.checkbox(
+                                            "L4 · oberer Gastrointestinaltrakt zusätzlich betroffen"
+                                        ).props("color=teal-8 disable").classes("font-medium")
+                                        mc_verhalten_ausgabe = ui.select(
+                                            {
+                                                "B1": "B1 · nicht stenosierend, nicht penetrierend",
+                                                "B2": "B2 · stenosierend",
+                                                "B3": "B3 · penetrierend / fistulierend",
+                                            },
+                                            label="Morbus Crohn: Verhalten",
+                                        ).props("outlined dense disable").classes("w-full")
+                                        mc_perianal_ausgabe = ui.checkbox(
+                                            "p · perianales Fistelleiden zusätzlich"
+                                        ).props("color=teal-8 disable").classes("font-medium")
+                                    with ui.column().classes("w-full gap-2") as cu_felder:
+                                        cu_ausdehnung_ausgabe = ui.select(
+                                            {
+                                                "E1": "E1 · Proktitis",
+                                                "E2": "E2 · linksseitige Colitis",
+                                                "E3": "E3 · ausgedehnte Colitis",
+                                            },
+                                            label="Colitis ulcerosa: Ausdehnung",
+                                        ).props("outlined dense disable").classes("w-full")
+                                    mc_felder.set_visibility(False)
+                                    cu_felder.set_visibility(False)
                                     befallsmuster_ausgabe = ui.input(
                                         "Codiertes Befallsmuster",
                                         value="",
@@ -815,32 +841,6 @@ def zeige_hauptseite() -> None:
                                         ).props("flat color=grey-7")
                                     stammdaten_speichern.set_visibility(False)
                                     stammdaten_abbrechen.set_visibility(False)
-
-                            with ui.row().classes(
-                                "w-full gap-4 items-stretch flex-wrap lg:flex-nowrap"
-                            ):
-                                with ui.card().classes("arbeitskarte w-full p-5"):
-                                    ui.label("Therapieverlauf").classes("bereichstitel")
-                                    therapie_medikamentoes_ausgabe = ui.textarea(
-                                        "Medikamentös",
-                                        placeholder="noch kein bestätigter Verlauf",
-                                    ).props("outlined dense readonly").classes("w-full")
-                                    therapie_chirurgisch_ausgabe = ui.textarea(
-                                        "Chirurgisch",
-                                        placeholder="noch kein bestätigter Verlauf",
-                                    ).props("outlined dense readonly").classes("w-full")
-                                    with ui.row().classes("w-full gap-2 flex-wrap"):
-                                        therapien_bearbeiten = ui.button(
-                                            "Therapien bearbeiten", icon="edit"
-                                        ).props("outline color=teal-8")
-                                        therapien_speichern = ui.button(
-                                            "Therapien speichern", icon="save"
-                                        ).props("color=teal-8")
-                                        therapien_abbrechen = ui.button(
-                                            "Abbrechen", icon="close"
-                                        ).props("flat color=grey-7")
-                                    therapien_speichern.set_visibility(False)
-                                    therapien_abbrechen.set_visibility(False)
 
                             with ui.card().classes("arbeitskarte w-full p-5"):
                                 letzte_befunde_titel = ui.label(
@@ -1321,6 +1321,29 @@ def zeige_hauptseite() -> None:
         stammdaten_speichern.set_visibility(aktiv)
         stammdaten_abbrechen.set_visibility(aktiv)
 
+    def aktualisiere_phaenotypfelder(*, leere_unpassende: bool = False) -> None:
+        """Zeigt ausschließlich die zum gewählten CED-Typ passenden Eingaben.
+
+        Beim bewussten Wechsel des Erkrankungstyps werden nur die noch nicht
+        gespeicherten Eingabewerte der anderen Klassifikation geleert. Historische
+        Datenbankversionen bleiben erhalten und werden nicht stillschweigend gelöscht.
+        """
+
+        erkrankungstyp = str(erkrankungstyp_ausgabe.value or "")
+        ist_mc = erkrankungstyp == "Morbus Crohn"
+        ist_cu = erkrankungstyp == "Colitis ulcerosa"
+        mc_felder.set_visibility(ist_mc)
+        cu_felder.set_visibility(ist_cu)
+        if not leere_unpassende:
+            return
+        if ist_mc:
+            cu_ausdehnung_ausgabe.value = None
+        elif ist_cu:
+            mc_lokalisation_ausgabe.value = None
+            mc_oberer_gi_ausgabe.value = False
+            mc_verhalten_ausgabe.value = None
+            mc_perianal_ausgabe.value = False
+
     def beginne_stammdaten_bearbeitung() -> None:
         """Gibt Erstdiagnose und Befallsmuster erst nach bewusstem Klick frei."""
         if zustand.patient_id is None:
@@ -1341,6 +1364,7 @@ def zeige_hauptseite() -> None:
         mc_verhalten_ausgabe.value = stammdaten_original["mc_verhalten"]
         mc_perianal_ausgabe.value = stammdaten_original["mc_perianal"]
         cu_ausdehnung_ausgabe.value = stammdaten_original["cu_ausdehnung"]
+        aktualisiere_phaenotypfelder()
         eim_weitere_ausgabe.value = stammdaten_original["eim_weitere"]
         for name, checkbox in eim_checkboxen.items():
             checkbox.value = name in stammdaten_original["eim_auswahl"]
@@ -1471,6 +1495,7 @@ def zeige_hauptseite() -> None:
         mc_verhalten_ausgabe.value = None
         mc_perianal_ausgabe.value = False
         cu_ausdehnung_ausgabe.value = None
+        aktualisiere_phaenotypfelder()
         eim_weitere_ausgabe.value = ""
         for checkbox in eim_checkboxen.values():
             checkbox.value = False
@@ -1847,6 +1872,7 @@ def zeige_hauptseite() -> None:
         mc_verhalten_ausgabe.value = uebersicht.mc_verhalten
         mc_perianal_ausgabe.value = uebersicht.mc_perianal
         cu_ausdehnung_ausgabe.value = uebersicht.cu_ausdehnung
+        aktualisiere_phaenotypfelder()
         eim_weitere_ausgabe.value = uebersicht.eim_weitere or ""
         for name, checkbox in eim_checkboxen.items():
             checkbox.value = name in uebersicht.eim_auswahl
@@ -3058,6 +3084,9 @@ def zeige_hauptseite() -> None:
     datenbank_schalter.text = "CED-Datenbank aktivieren"
     datenbank_schalter.on_click(aktualisiere_datenbankmodus)
     aktiver_patient_auswahl.on_value_change(aktiviere_patientenauswahl)
+    erkrankungstyp_ausgabe.on_value_change(
+        lambda _: aktualisiere_phaenotypfelder(leere_unpassende=True)
+    )
     neuer_patient_schalter.on_click(wechsle_neuer_patient_formular)
     patient_anlegen.on_click(lege_patient_an)
     ced_speichern.on_click(speichere_gepruefte_ced_daten)
@@ -3149,9 +3178,12 @@ def zeige_hauptseite() -> None:
             const ausDateien = [...(event.clipboardData?.files || [])].filter(istBilddatei);
             // Manche Screenshot-Werkzeuge melden einen leeren oder generischen
             // MIME-Typ und stellen das Bild nur über clipboardData.files bereit.
-            // Objektidentität verhindert, dass derselbe Blob aus beiden Listen
-            // doppelt übernommen wird; Bildähnlichkeit wird ausdrücklich nie geprüft.
-            const bilder = [...new Set([...ausItems, ...ausDateien])];
+            // Chromium kann dasselbe Clipboard-Bild als zwei unterschiedliche
+            // File-Wrapper in beiden Listen anbieten. Objektidentität reicht dann
+            // nicht zur Entdopplung. Deshalb hat die Item-Liste Vorrang; nur wenn
+            // sie kein Bild enthält, wird die Dateiliste verwendet. Ein inhaltlicher
+            // oder patientenbezogener Bildvergleich findet ausdrücklich nicht statt.
+            const bilder = ausItems.length ? ausItems : ausDateien;
             if (!bilder.length) {
                 if (event.target.closest('input, textarea, [contenteditable="true"]')) return;
                 emitEvent('zwischenablage_ohne_bild', {

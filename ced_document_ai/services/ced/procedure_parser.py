@@ -3,7 +3,7 @@
 Die KI liefert zuvor eine originalnahe, beschriftete Darstellung. Dieses Modul
 ordnet ausschließlich vollständig bekannte Feldbezeichnungen zu. Es ergänzt weder
 einen Aktivitätsscore noch eine Diagnose und berechnet insbesondere keinen SES-CD
-oder UC-EIS aus beschreibendem Freitext.
+oder UC-EIS aus beschreibendem Freitext. Gleiches gilt für den CDEIS.
 """
 
 from __future__ import annotations
@@ -30,8 +30,13 @@ _ENDOSKOPIE_FELDER = {
     "histologie": "Histologie",
     "ses-cd": "SES-CD",
     "ses cd": "SES-CD",
+    "sescd": "SES-CD",
+    "cdeis": "CDEIS",
+    "cdeis-score": "CDEIS",
+    "cdeis score": "CDEIS",
     "uc-eis": "UC-EIS",
     "uc eis": "UC-EIS",
+    "uceis": "UC-EIS",
     "empfehlung": "Empfehlung",
 }
 _SONOGRAFIE_FELDER = {
@@ -80,8 +85,8 @@ def parse_fachbefund(
             continue
         hinweis = ""
         uebernehmen = True
-        if kategorie == "SES-CD" and erkrankungstyp == "Colitis ulcerosa":
-            hinweis = "SES-CD gehört zur Aktivitätsbeurteilung bei Morbus Crohn."
+        if kategorie in {"SES-CD", "CDEIS"} and erkrankungstyp == "Colitis ulcerosa":
+            hinweis = f"{kategorie} gehört zur Aktivitätsbeurteilung bei Morbus Crohn."
             uebernehmen = False
         elif kategorie == "UC-EIS" and erkrankungstyp == "Morbus Crohn":
             hinweis = "UC-EIS gehört zur Aktivitätsbeurteilung bei Colitis ulcerosa."

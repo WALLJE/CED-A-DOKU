@@ -185,3 +185,31 @@ def test_therapien_koennen_ohne_diagnoseaenderung_versioniert_werden(tmp_path) -
         assert list(sitzung.scalars(select(Diagnosis))) == []
         assert uebersicht.therapie_medikamentoes == "Synthetische Medikation"
         assert uebersicht.therapie_chirurgisch == "Keine Operation"
+
+
+@pytest.mark.parametrize(
+    "stammdaten",
+    [
+        ManuelleCEDStammdaten(
+            erstdiagnose=None,
+            befallsmuster=None,
+            erkrankungstyp="Morbus Crohn",
+            cu_ausdehnung="E2",
+        ),
+        ManuelleCEDStammdaten(
+            erstdiagnose=None,
+            befallsmuster=None,
+            erkrankungstyp="Colitis ulcerosa",
+            mc_lokalisation="L3",
+        ),
+    ],
+)
+def test_widerspruechliche_phaenotypfelder_werden_abgewiesen(tmp_path, stammdaten) -> None:
+    fabrik = initialize_database(Settings(database_path=tmp_path / "inkonsistent.sqlite3"))
+    with fabrik() as sitzung:
+        patient = Patient(external_id="TEST-KONSISTENZ", name="Konsistenz Beispiel")
+        sitzung.add(patient)
+        sitzung.commit()
+
+        with pytest.raises(ValueError, match="nicht mit"):
+            speichere_manuelle_stammdaten(sitzung, patient.id, stammdaten)

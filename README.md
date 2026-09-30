@@ -93,7 +93,9 @@ zu **„Neu analysieren mit …“**. Der erkannte Dokumenttyp bleibt unverände
 im Bereich „Dokumenterkennung“ sichtbar.
 
 Beim Einfügen aus der Zwischenablage werden Bilddateien sowohl aus den Clipboard-
-Items als auch aus der Dateiliste des Browsers gelesen. Es findet dabei weder ein
+Items und – falls dort kein Bild vorliegt – aus der Dateiliste des Browsers gelesen.
+Damit übernimmt Chromium denselben Screenshot nicht doppelt, wenn es ihn parallel
+über beide Schnittstellen als verschiedene Dateiobjekte meldet. Es findet weder ein
 Bildähnlichkeitsvergleich noch eine patientenübergreifende Duplikatunterdrückung
 statt. Liefert das Betriebssystem nur Text oder HTML statt Bildbytes, zeigt die App
 die tatsächlich angebotenen Zwischenablageformate als technischen Hinweis an.
@@ -466,6 +468,12 @@ gespeichert werden. Endoskopie und Sonografie besitzen nun
 ebenfalls einen deterministischen Abschnitts- und Freigabepfad; SES-CD wird für
 Morbus Crohn und UC-EIS für Colitis ulcerosa verwendet, aber niemals aus Freitext
 berechnet.
+
+In den CED-Stammdaten werden Morbus-Crohn-Parameter und die Colitis-Ausdehnung nur
+für den jeweils ausgewählten Erkrankungstyp eingeblendet. Auch der Speicherdienst
+weist widersprüchliche Kombinationen ab. Der endoskopische Parser übernimmt neben
+SES-CD und UC-EIS auch einen ausdrücklich dokumentierten CDEIS; keiner dieser Scores
+wird aus beschreibendem Befundtext berechnet.
 
 Der vollständige Soll-Ist-Abgleich, die noch offenen Punkte der bisherigen drei
 Iterationen und die neu priorisierte Roadmap stehen in

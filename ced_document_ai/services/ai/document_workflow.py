@@ -82,7 +82,8 @@ Dokumenttypspezifische strukturierte Darstellung:
   Beurteilung nur übernehmen, wenn sie im Dokument enthalten ist.
 - Endoskopie: vorhandene Angaben jeweils in einer eigenen Zeile unter Untersuchung,
   Befund, Beurteilung, Histologie und Empfehlung ausgeben. Einen im Original
-  ausdrücklich angegebenen SES-CD bei Morbus Crohn als `SES-CD: ...` und einen
+  ausdrücklich angegebenen SES-CD bei Morbus Crohn als `SES-CD: ...`, einen
+  ausdrücklich angegebenen CDEIS als `CDEIS: ...` und einen
   ausdrücklich angegebenen UC-EIS bei Colitis ulcerosa als `UC-EIS: ...` übernehmen.
   Scores niemals aus Freitext berechnen oder bei fehlender Angabe ergänzen.
 - Sonografie: vorhandene Angaben jeweils in einer eigenen Zeile unter Untersuchung,
@@ -118,12 +119,6 @@ Bearbeite das gesamte Dokument strikt in dieser Reihenfolge:
 4. Strukturiere den ausgelesenen Inhalt passend zu diesem Dokumenttyp.
 5. Erstelle ausschließlich aus dem ausgelesenen Inhalt einen kompakten und einen
    ausführlichen KIS-Vorschlag. Beide dürfen keine neue medizinische Aussage enthalten.
-
-Stelle in der STRUKTURIERTEN DARSTELLUNG vor den fachlichen Inhalten vorhandene
-Zuordnungsmerkmale jeweils in einer eigenen beschrifteten Zeile dar: Patienten-ID,
-Vorname, Nachname, Name, Geburtsdatum sowie das passend beschriftete Dokumentdatum
-(zum Beispiel Befunddatum, Entnahmedatum, Untersuchungsdatum oder Berichtsdatum).
-Nur im Original eindeutig vorhandene Angaben übernehmen; nichts ergänzen oder raten.
 
 Stelle in der STRUKTURIERTEN DARSTELLUNG vor den fachlichen Inhalten vorhandene
 Zuordnungsmerkmale jeweils in einer eigenen beschrifteten Zeile dar: Patienten-ID,

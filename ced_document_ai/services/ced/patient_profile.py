@@ -209,6 +209,21 @@ def speichere_manuelle_stammdaten(
     """
     if sitzung.get(Patient, patient_id) is None:
         raise ValueError("Der bestätigte Patient ist nicht mehr vorhanden.")
+    if stammdaten.erkrankungstyp == "Morbus Crohn" and stammdaten.cu_ausdehnung:
+        raise ValueError(
+            "Eine Colitis-Ausdehnung kann nicht mit Morbus Crohn gespeichert werden."
+        )
+    if stammdaten.erkrankungstyp == "Colitis ulcerosa" and any(
+        (
+            stammdaten.mc_lokalisation,
+            stammdaten.mc_oberer_gi,
+            stammdaten.mc_verhalten,
+            stammdaten.mc_perianal,
+        )
+    ):
+        raise ValueError(
+            "Morbus-Crohn-Parameter können nicht mit Colitis ulcerosa gespeichert werden."
+        )
     befallsmuster = (stammdaten.befallsmuster or "").strip()
     if stammdaten.erkrankungstyp in {"Morbus Crohn", "Colitis ulcerosa"}:
         berechneter_code = bilde_befallsmuster_code(stammdaten)

@@ -44,8 +44,8 @@ Wichtige Zustandsvariablen in `Sitzungszustand` sind `seiten`, `dokumentnamen`,
   Mikrobiologie und Calprotectin.
 - `letter_parser.py`: vorhandene, ausdrücklich überschriebene Arztbriefabschnitte.
 - `procedure_parser.py`: beschriftete Endoskopie- und Sonografieabschnitte. SES-CD
-  wird nur für Morbus Crohn, UC-EIS nur für Colitis ulcerosa als passend markiert;
-  kein Score wird aus Freitext berechnet.
+  und CDEIS werden nur für Morbus Crohn, UC-EIS nur für Colitis ulcerosa als passend
+  markiert; kein Score wird aus Freitext berechnet.
 - `document_categories.py`: kontrollierte Zuordnung von Dokumenttypen zu sichtbaren
   Fachgruppen.
 - `patient_overview.py`: ausschließlich lesende Patienten-, Pivot-, Archiv- und
