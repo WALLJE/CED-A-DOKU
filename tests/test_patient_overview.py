@@ -5,18 +5,64 @@ from datetime import date
 from ced_document_ai.config.settings import Settings
 from ced_document_ai.database.database import initialize_database
 from ced_document_ai.database.models import (
+    AIResult,
     ConfidenceStatus,
     Diagnosis,
     Document,
     Finding,
     FindingCategory,
     Patient,
+    DocumentType,
 )
 from ced_document_ai.services.ced.patient_overview import (
     berechne_alter,
     lade_klinischen_verlauf,
+    lade_befundliste,
+    lade_dokumentenarchiv,
     lade_patientenuebersicht,
 )
+
+
+def test_virologiedokument_bleibt_im_laborarchiv_sichtbar(tmp_path) -> None:
+    fabrik = initialize_database(Settings(database_path=tmp_path / "archiv.sqlite3"))
+    with fabrik() as sitzung:
+        patient = Patient(external_id="TEST-VIRO", name="Viro Beispiel")
+        dokumenttyp = DocumentType(name="Laborbefund")
+        sitzung.add_all([patient, dokumenttyp])
+        sitzung.flush()
+        dokument = Document(
+            patient_id=patient.id,
+            document_type_id=dokumenttyp.id,
+            original_name="virologie.pdf",
+            document_date=date(2026, 9, 19),
+            confirmed=True,
+        )
+        sitzung.add(dokument)
+        sitzung.flush()
+        sitzung.add(
+            AIResult(
+                document_id=dokument.id,
+                raw_ai_response="Synthetische Rohantwort",
+                kis_summary_compact="Virologische Untersuchung ohne Einzelwertspeicherung.",
+                model="TEST",
+                provider="TEST",
+            )
+        )
+        sitzung.commit()
+
+        laborarchiv = lade_dokumentenarchiv(
+            sitzung, patient.id, fachgruppen=("Labor",)
+        )
+        weitere_befunde = lade_dokumentenarchiv(
+            sitzung, patient.id, fachgruppen=("Weitere Befunde",)
+        )
+
+    assert len(laborarchiv) == 1
+    assert laborarchiv[0].fachgruppe == "Labor"
+    assert laborarchiv[0].dokumenttyp == "Laborbefund"
+    assert laborarchiv[0].dateiname == "virologie.pdf"
+    assert laborarchiv[0].kurzfassung.startswith("Virologische Untersuchung")
+    assert weitere_befunde == ()
 
 
 def test_alter_wird_am_stichtag_korrekt_berechnet() -> None:
@@ -176,3 +222,67 @@ def test_mehrere_werte_am_selben_tag_werden_nicht_ueberschrieben(tmp_path) -> No
         verlauf = lade_klinischen_verlauf(sitzung, patient.id)
 
     assert verlauf.zeilen[0].werte == ((date(2026, 9, 13), "70 kg | 71 kg"),)
+
+
+def test_befundliste_filtert_datum_kategorie_und_dokumenttyp(tmp_path) -> None:
+    fabrik = initialize_database(Settings(database_path=tmp_path / "befundliste.sqlite3"))
+    with fabrik() as sitzung:
+        patient = Patient(external_id="TEST-LISTE", name="Liste Beispiel")
+        labor_typ = DocumentType(name="Laborbefund")
+        brief_typ = DocumentType(name="Arztbrief")
+        crp = FindingCategory(name="CRP", group_name="Labor")
+        diagnose = FindingCategory(name="Diagnosen", group_name="Arztbriefe")
+        sitzung.add_all([patient, labor_typ, brief_typ, crp, diagnose])
+        sitzung.flush()
+        labor = Document(
+            patient_id=patient.id,
+            document_type_id=labor_typ.id,
+            original_name="labor.pdf",
+            confirmed=True,
+        )
+        brief = Document(
+            patient_id=patient.id,
+            document_type_id=brief_typ.id,
+            original_name="brief.pdf",
+            confirmed=True,
+        )
+        sitzung.add_all([labor, brief])
+        sitzung.flush()
+        sitzung.add_all(
+            [
+                Finding(
+                    patient_id=patient.id,
+                    document_id=labor.id,
+                    category_id=crp.id,
+                    finding_date=date(2026, 1, 15),
+                    numeric_value=8.5,
+                    unit="mg/l",
+                    confidence_status=ConfidenceStatus.HIGH_CONFIDENCE,
+                    confirmed_by_user=True,
+                ),
+                Finding(
+                    patient_id=patient.id,
+                    document_id=brief.id,
+                    category_id=diagnose.id,
+                    finding_date=date(2026, 2, 20),
+                    text_value="Bestätigte Diagnose",
+                    confidence_status=ConfidenceStatus.HIGH_CONFIDENCE,
+                    confirmed_by_user=True,
+                ),
+            ]
+        )
+        sitzung.commit()
+
+        zeilen = lade_befundliste(
+            sitzung,
+            patient.id,
+            datum_von=date(2026, 1, 1),
+            datum_bis=date(2026, 1, 31),
+            kategorien=("CRP",),
+            dokumenttypen=("Laborbefund",),
+        )
+
+    assert len(zeilen) == 1
+    assert zeilen[0].kategorie == "CRP"
+    assert zeilen[0].wert == "8.5"
+    assert zeilen[0].dokumenttyp == "Laborbefund"

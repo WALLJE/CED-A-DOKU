@@ -32,6 +32,7 @@ def _auftrag(patient_id: int) -> CEDSpeicherauftrag:
         original_name="synthetischer-testbogen.pdf",
         rohe_ki_antwort="Ausschließlich synthetische KI-Testantwort",
         kis_vorschlag="Synthetischer KIS-Testtext",
+        kis_vorschlag_ausfuehrlich="Ausführlicher synthetischer KIS-Testtext",
         provider="Test-Provider",
         modell="Test-Modell",
         befunde=(
