@@ -25,6 +25,7 @@ from ced_document_ai.database.models import (
     Patient,
     PatientCEDAttribute,
 )
+from ced_document_ai.services.ced.document_categories import ermittle_dokumentfachgruppe
 from ced_document_ai.services.ced.patient_profile import (
     BEFALLSMUSTER,
     CED_ERKRANKUNGSTYP,

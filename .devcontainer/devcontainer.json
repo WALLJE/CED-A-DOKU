@@ -1,0 +1,21 @@
+{
+  // Das Projekt verwendet vorerst Python 3.13. NiceGUI 2.x lädt `vbuild`; dessen
+  // aktuelle Version greift noch auf `pkgutil.find_loader` zu. Python 3.14 hat
+  // diese Funktion entfernt und beendet den Programmstart deshalb bereits beim
+  // Import von NiceGUI mit einem AttributeError. Die feste 3.13-Basis verhindert,
+  // dass ein neu gebauter Codespace unbemerkt auf die inkompatible 3.14-Version
+  // wechselt. Sobald `vbuild` Python 3.14 unterstützt, kann diese Zeile nach einem
+  // erfolgreichen Import- und Unit-Test gezielt aktualisiert werden.
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.13-bookworm",
+
+  // Codespaces führt diesen Befehl genau einmal nach dem Erstellen des Containers
+  // im Projektverzeichnis aus. Dadurch werden NiceGUI und alle weiteren in
+  // requirements.txt festgelegten Abhängigkeiten mit demselben Python-Interpreter
+  // installiert, der anschließend über `python main.py` verwendet wird.
+  //
+  // Falls die Installation fehlschlägt, zeigt das Codespaces-Erstellungsprotokoll
+  // die vollständige pip-Ausgabe. Zur Diagnose kann derselbe Befehl im Terminal
+  // erneut ausgeführt werden; ein alternativer UI- oder Server-Fallback ist bewusst
+  // nicht konfiguriert.
+  "postCreateCommand": "python -m pip install --upgrade pip && python -m pip install -r requirements.txt"
+}

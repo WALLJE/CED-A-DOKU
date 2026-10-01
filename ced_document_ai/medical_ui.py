@@ -116,6 +116,8 @@ from ced_document_ai.services.documents.converter import (
 
 LESEMODUS = "Nur Dokument einlesen"
 DATENBANKMODUS = "Einlesen und in CED-Datenbank verarbeiten"
+TEXTMODUS = "Nur sichtbaren Text auslesen"
+MEDIZINMODUS = "Medizinisches Dokument analysieren"
 
 
 @dataclass
@@ -126,6 +128,7 @@ class Sitzungszustand:
     # Eine optionale CED_AI_PROVIDER-Variable verändert die sichtbare Vorauswahl nicht.
     arbeitsmodus: str = LESEMODUS
     anbieter: str = "uk"
+    analysemodus: str = TEXTMODUS
     seiten: list[Path] = field(default_factory=list)
     dokumentnamen: list[str] = field(default_factory=list)
     # Die vier Werte gehören immer zu genau demselben Dokument. Sie werden beim
