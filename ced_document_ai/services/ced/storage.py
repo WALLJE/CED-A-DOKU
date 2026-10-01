@@ -24,6 +24,7 @@ from ced_document_ai.database.models import (
     FindingCategory,
     Patient,
 )
+from ced_document_ai.services.ced.document_type_service import stelle_standardklassen_sicher
 
 
 @dataclass(frozen=True)
@@ -50,6 +51,7 @@ class CEDSpeicherauftrag:
     provider: str
     modell: str
     befunde: tuple[FreigegebenerBefund, ...]
+    kis_vorschlag_ausfuehrlich: str = ""
 
 
 def finde_befundduplikate(
@@ -89,13 +91,11 @@ def finde_befundduplikate(
 
 
 def _ermittle_oder_erstelle_dokumenttyp(sitzung: Session) -> DocumentType:
-    """Legt den festen CED-Dokumenttyp idempotent, aber keinen Ersatztyp an."""
+    """Liest den festen CED-Dokumenttyp ausschließlich aus dem aktiven Katalog."""
     name = "CED-Patientenfragebogen"
     dokumenttyp = sitzung.scalar(select(DocumentType).where(DocumentType.name == name))
-    if dokumenttyp is None:
-        dokumenttyp = DocumentType(name=name, prompt_text=None)
-        sitzung.add(dokumenttyp)
-        sitzung.flush()
+    if dokumenttyp is None or not dokumenttyp.active:
+        raise ValueError("Die CED-Dokumentklasse ist nicht im aktiven Katalog vorhanden.")
     return dokumenttyp
 
 
@@ -109,8 +109,11 @@ def _ermittle_oder_erstelle_kategorie(
     if kategorie is None:
         kategorie = FindingCategory(
             name=name,
+            display_name=name,
             group_name="CED-Fragebogen",
             typical_unit=einheit,
+            sort_order=100,
+            active=True,
         )
         sitzung.add(kategorie)
         sitzung.flush()
@@ -135,6 +138,7 @@ def speichere_ced_pruefung(sitzung: Session, auftrag: CEDSpeicherauftrag) -> int
         if not befund.kategorie.strip() or not befund.anzeigewert.strip():
             raise ValueError("Kategorie und Wert müssen für jede übernommene Zeile gefüllt sein.")
 
+    stelle_standardklassen_sicher(sitzung)
     # ``begin_nested`` ist auch dann sicher nutzbar, wenn SQLAlchemy durch die
     # vorherige Patientenprüfung bereits eine Lesetransaktion begonnen hat. Ein
     # Fehler rollt sämtliche hier erzeugten Datensätze gemeinsam zurück.
@@ -144,6 +148,7 @@ def speichere_ced_pruefung(sitzung: Session, auftrag: CEDSpeicherauftrag) -> int
             patient_id=auftrag.patient_id,
             document_type_id=dokumenttyp.id,
             original_name=auftrag.original_name,
+            document_date=auftrag.befunddatum,
             confirmed=False,
         )
         sitzung.add(dokument)
@@ -154,7 +159,7 @@ def speichere_ced_pruefung(sitzung: Session, auftrag: CEDSpeicherauftrag) -> int
                 document_id=dokument.id,
                 raw_ai_response=auftrag.rohe_ki_antwort,
                 kis_summary_compact=auftrag.kis_vorschlag,
-                kis_summary_detailed=None,
+                kis_summary_detailed=auftrag.kis_vorschlag_ausfuehrlich or None,
                 model=auftrag.modell,
                 provider=auftrag.provider,
             )

@@ -59,6 +59,46 @@ class DocumentType(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(150), unique=True)
     prompt_text: Mapped[str | None] = mapped_column(Text)
+    display_name: Mapped[str | None] = mapped_column(String(150))
+    group_name: Mapped[str | None] = mapped_column(String(150))
+    group_id: Mapped[int | None] = mapped_column(ForeignKey("document_groups.id"))
+    parser_key: Mapped[str | None] = mapped_column(String(100))
+    sort_order: Mapped[int] = mapped_column(Integer, default=100)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    user_created: Mapped[bool] = mapped_column(Boolean, default=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    classification_hints: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class DocumentGroup(Base):
+    """Persistente Navigations- und Sortiergruppe für ganze Dokumente."""
+
+    __tablename__ = "document_groups"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(100), unique=True)
+    display_name: Mapped[str] = mapped_column(String(150), unique=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=100)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class DocumentTypeExample(Base):
+    """Vom Benutzer bestätigtes, patientenfreies Lernsignal einer Dokumentklasse.
+
+    Gespeichert werden nur eine kurze, vom Benutzer prüfbare Merkmalsbeschreibung
+    und die Herkunft. Der vollständige Dokumenttext wird hier absichtlich nicht
+    dupliziert. Neue Beispiele erweitern den Katalog; bestehende Definitionen
+    werden niemals unbemerkt überschrieben.
+    """
+
+    __tablename__ = "document_type_examples"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_type_id: Mapped[int] = mapped_column(ForeignKey("document_types.id"))
+    feature_description: Mapped[str] = mapped_column(Text)
+    source_document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id"))
+    confirmed_by_user: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class Document(Base):
@@ -68,6 +108,7 @@ class Document(Base):
     document_type_id: Mapped[int | None] = mapped_column(ForeignKey("document_types.id"))
     original_name: Mapped[str] = mapped_column(String(500))
     imported_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    document_date: Mapped[date | None] = mapped_column(Date)
     confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
@@ -77,6 +118,19 @@ class FindingCategory(Base):
     name: Mapped[str] = mapped_column(String(200), unique=True)
     group_name: Mapped[str] = mapped_column(String(150))
     typical_unit: Mapped[str | None] = mapped_column(String(50))
+    display_name: Mapped[str | None] = mapped_column(String(200))
+    sort_order: Mapped[int] = mapped_column(Integer, default=100)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class FindingCategoryAlias(Base):
+    """Kontrollierte Schreibvariante genau einer strukturierten Befundkategorie."""
+
+    __tablename__ = "finding_category_aliases"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    category_id: Mapped[int] = mapped_column(ForeignKey("finding_categories.id"))
+    alias: Mapped[str] = mapped_column(String(200), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class Finding(Base):

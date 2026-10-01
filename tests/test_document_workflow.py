@@ -11,6 +11,8 @@ from ced_document_ai.services.ai.document_workflow import (
     FORMATVORGABEN,
     WORKFLOW_PROMPT,
     parse_dokumentantwort,
+    parse_klassifikationsantwort,
+    Klassifikationsstatus,
 )
 from ced_document_ai.services.ai.providers import OpenAICompatibleProvider
 
@@ -25,8 +27,11 @@ Kein Fieber, CRP 12 mg/l.
 STRUKTURIERTE DARSTELLUNG:
 Diagnosen: Colitis ulcerosa
 
-KIS-VORSCHLAG:
+KIS-VORSCHLAG KOMPAKT:
 Kein Fieber; CRP 12 mg/l.
+
+KIS-VORSCHLAG AUSFÜHRLICH:
+Kein Fieber. CRP 12 mg/l.
 """
 
 
@@ -35,11 +40,12 @@ def test_alle_dokumenttypen_werden_geparst(dokumenttyp: Dokumenttyp) -> None:
     assert parse_dokumentantwort(_antwort(dokumenttyp)).dokumenttyp is dokumenttyp
 
 
-def test_vier_abschnitte_bleiben_getrennt_und_leerzeilen_sind_erlaubt() -> None:
+def test_fuenf_abschnitte_bleiben_getrennt_und_leerzeilen_sind_erlaubt() -> None:
     ergebnis = parse_dokumentantwort("\n\n" + _antwort() + "\n\n")
     assert ergebnis.ausgelesener_inhalt == "Kein Fieber, CRP 12 mg/l."
     assert ergebnis.strukturierte_darstellung == "Diagnosen: Colitis ulcerosa"
     assert ergebnis.kis_vorschlag == "Kein Fieber; CRP 12 mg/l."
+    assert ergebnis.kis_vorschlag_ausfuehrlich == "Kein Fieber. CRP 12 mg/l."
     assert ergebnis.rohe_ki_antwort.startswith("\n\nDOKUMENTTYP:")
 
 
@@ -49,7 +55,8 @@ def test_vier_abschnitte_bleiben_getrennt_und_leerzeilen_sind_erlaubt() -> None:
         ("DOKUMENTTYP", "Pflichtabschnitt fehlt: DOKUMENTTYP"),
         ("AUSGELESENER INHALT", "Pflichtabschnitt fehlt: AUSGELESENER INHALT"),
         ("STRUKTURIERTE DARSTELLUNG", "Pflichtabschnitt fehlt: STRUKTURIERTE DARSTELLUNG"),
-        ("KIS-VORSCHLAG", "Pflichtabschnitt fehlt: KIS-VORSCHLAG"),
+        ("KIS-VORSCHLAG KOMPAKT", "Pflichtabschnitt fehlt: KIS-VORSCHLAG KOMPAKT"),
+        ("KIS-VORSCHLAG AUSFÜHRLICH", "Pflichtabschnitt fehlt: KIS-VORSCHLAG AUSFÜHRLICH"),
     ],
 )
 def test_fehlender_abschnitt_ist_fehler(abschnitt: str, meldung: str) -> None:
@@ -67,6 +74,56 @@ def test_unbekannter_typ_hat_keinen_fallback() -> None:
         parse_dokumentantwort(_antwort().replace("Arztbrief", "Entlassschein", 1))
 
 
+def test_unsichere_klassifikation_akzeptiert_nur_katalogklassen() -> None:
+    antwort = """STATUS: UNSICHER
+VORGESCHLAGENE KLASSE: MRT-Befund
+ALTERNATIVEN: CT-Befund|Bildgebender Befund
+BEGRÜNDUNG: Radiologischer Fließtext ohne eindeutige Modalitätsbezeichnung.
+NEUE KLASSE:
+NEUE FACHGRUPPE:
+NEUE BESCHREIBUNG:
+NEUE MERKMALE:
+"""
+    ergebnis = parse_klassifikationsantwort(
+        antwort, ("MRT-Befund", "CT-Befund", "Bildgebender Befund")
+    )
+    assert ergebnis.status is Klassifikationsstatus.UNSICHER
+    assert ergebnis.alternativen == ("CT-Befund", "Bildgebender Befund")
+
+
+def test_unbekannte_ki_klasse_wird_nicht_stillschweigend_angelegt() -> None:
+    antwort = """STATUS: EINDEUTIG
+VORGESCHLAGENE KLASSE: Erfundenes Spezialdokument
+ALTERNATIVEN:
+BEGRÜNDUNG: Angebliche Merkmale.
+NEUE KLASSE:
+NEUE FACHGRUPPE:
+NEUE BESCHREIBUNG:
+NEUE MERKMALE:
+"""
+    with pytest.raises(DokumentAntwortFehler, match="nicht bestätigte Klassen"):
+        parse_klassifikationsantwort(antwort, ("Arztbrief",))
+
+
+def test_neue_klasse_enthaelt_vorschlag_fuer_definition_und_fachgruppe() -> None:
+    antwort = """STATUS: MEDIZINISCH_UNKLASSIFIZIERT
+VORGESCHLAGENE KLASSE:
+ALTERNATIVEN: Funktionsdiagnostischer Befund
+BEGRÜNDUNG: Strukturierter medizinischer Messbericht ohne passende Spezialklasse.
+NEUE KLASSE: Gefäßdiagnostischer Befund
+NEUE FACHGRUPPE: Funktionsdiagnostik
+NEUE BESCHREIBUNG: Bericht einer vaskulären Funktionsuntersuchung.
+NEUE MERKMALE: Untersuchung; Gefäßregion; Messverfahren; Beurteilung
+"""
+    ergebnis = parse_klassifikationsantwort(
+        antwort, ("Funktionsdiagnostischer Befund",)
+    )
+    assert ergebnis.status is Klassifikationsstatus.MEDIZINISCH_UNKLASSIFIZIERT
+    assert ergebnis.neue_klasse_vorschlag == "Gefäßdiagnostischer Befund"
+    assert ergebnis.vorgeschlagene_fachgruppe == "Funktionsdiagnostik"
+    assert ergebnis.vorgeschlagene_merkmale.startswith("Untersuchung")
+
+
 def test_leerer_abschnitt_ist_fehler() -> None:
     text = _antwort().replace("Kein Fieber, CRP 12 mg/l.", "", 1)
     with pytest.raises(DokumentAntwortFehler, match="Pflichtabschnitt ist leer"):
@@ -78,7 +135,9 @@ def test_doppelte_und_falsche_reihenfolge_sind_fehler() -> None:
         parse_dokumentantwort(_antwort() + "\nDOKUMENTTYP:\nArztbrief")
     teile = _antwort().split("\n\n")
     with pytest.raises(DokumentAntwortFehler, match="widersprüchlich angeordnet"):
-        parse_dokumentantwort("\n\n".join([teile[0], teile[2], teile[1], teile[3]]))
+        parse_dokumentantwort(
+            "\n\n".join([teile[0], teile[2], teile[1], teile[3], teile[4]])
+        )
 
 
 def test_prompt_enthaelt_vorlagen_und_sicherheitsregeln() -> None:
@@ -157,6 +216,7 @@ def test_einzelbild_erzeugt_alle_ansichten_mit_genau_einer_bildanfrage(
     assert ergebnis.ausgelesener_inhalt == "Kein Fieber, CRP 12 mg/l."
     assert ergebnis.strukturierte_darstellung == "Diagnosen: Colitis ulcerosa"
     assert ergebnis.kis_vorschlag == "Kein Fieber; CRP 12 mg/l."
+    assert ergebnis.kis_vorschlag_ausfuehrlich == "Kein Fieber. CRP 12 mg/l."
 
 
 def test_parserfehler_startet_keine_weitere_anfrage(tmp_path: Path) -> None:
