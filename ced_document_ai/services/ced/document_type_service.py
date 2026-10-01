@@ -15,15 +15,31 @@ import re
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ced_document_ai.database.models import AuditLog, DocumentType, DocumentTypeExample
-from ced_document_ai.services.ced.document_categories import DOKUMENTKLASSEN
-
-
-ERLAUBTE_FACHGRUPPEN = (
-    "CED-Fragebogen", "Labor", "Calprotectin", "Endoskopie", "Sonografie",
-    "MRT", "CT", "Röntgen", "Bildgebung", "Pathologie",
-    "Funktionsdiagnostik", "Arztbriefe", "Medikation", "Weitere Befunde",
+from ced_document_ai.database.models import (
+    AuditLog,
+    DocumentGroup,
+    DocumentType,
+    DocumentTypeExample,
 )
+from ced_document_ai.services.ced.document_categories import (
+    DOKUMENTKLASSEN,
+    STANDARD_FACHGRUPPEN,
+)
+from ced_document_ai.services.ced.finding_catalog import stelle_befundkatalog_sicher
+
+
+# Kompatibilitätswert für externe Aufrufer. Die Anwendung selbst lädt Fachgruppen
+# über ``liste_fachgruppen`` aus SQLite; diese Seed-Namen entscheiden nicht mehr über
+# Sichtbarkeit oder Reihenfolge zur Laufzeit.
+ERLAUBTE_FACHGRUPPEN = tuple(gruppe.anzeigename for gruppe in STANDARD_FACHGRUPPEN)
+
+
+@dataclass(frozen=True)
+class Fachgruppendaten:
+    id: int
+    schluessel: str
+    anzeigename: str
+    reihenfolge: int
 
 
 @dataclass(frozen=True)
@@ -42,6 +58,22 @@ class Dokumentklassendaten:
 def stelle_standardklassen_sicher(sitzung: Session) -> None:
     """Legt fehlende Standardklassen an, ohne bestehende Definitionen zu ändern."""
 
+    vorhandene_gruppen = {
+        gruppe.display_name: gruppe
+        for gruppe in sitzung.scalars(select(DocumentGroup))
+    }
+    for standardgruppe in STANDARD_FACHGRUPPEN:
+        if standardgruppe.anzeigename not in vorhandene_gruppen:
+            gruppe = DocumentGroup(
+                key=standardgruppe.schluessel,
+                display_name=standardgruppe.anzeigename,
+                sort_order=standardgruppe.reihenfolge,
+                active=True,
+            )
+            sitzung.add(gruppe)
+            sitzung.flush()
+            vorhandene_gruppen[gruppe.display_name] = gruppe
+
     vorhandene = {
         dokumenttyp.name: dokumenttyp
         for dokumenttyp in sitzung.scalars(select(DocumentType))
@@ -53,6 +85,9 @@ def stelle_standardklassen_sicher(sitzung: Session) -> None:
                 name=standard.dokumenttyp,
                 display_name=standard.dokumenttyp,
                 group_name=standard.fachgruppe,
+                group_id=vorhandene_gruppen[standard.fachgruppe].id,
+                parser_key=standard.parser_schluessel,
+                sort_order=standard.reihenfolge,
                 active=True,
                 user_created=False,
                 prompt_text=None,
@@ -67,11 +102,34 @@ def stelle_standardklassen_sicher(sitzung: Session) -> None:
                 dokumenttyp.display_name = standard.dokumenttyp
             if not dokumenttyp.group_name:
                 dokumenttyp.group_name = standard.fachgruppe
+            if dokumenttyp.group_id is None:
+                dokumenttyp.group_id = vorhandene_gruppen[standard.fachgruppe].id
+            if not dokumenttyp.parser_key:
+                dokumenttyp.parser_key = standard.parser_schluessel
             if not dokumenttyp.description:
                 dokumenttyp.description = standard.beschreibung
             if not dokumenttyp.classification_hints:
                 dokumenttyp.classification_hints = standard.merkmale
+    stelle_befundkatalog_sicher(sitzung)
     sitzung.commit()
+
+
+def liste_fachgruppen(sitzung: Session, *, nur_aktive: bool = True) -> tuple[Fachgruppendaten, ...]:
+    """Liest Navigation und Reihenfolge ausschließlich aus der Katalogtabelle."""
+
+    stelle_standardklassen_sicher(sitzung)
+    abfrage = select(DocumentGroup).order_by(DocumentGroup.sort_order, DocumentGroup.display_name)
+    if nur_aktive:
+        abfrage = abfrage.where(DocumentGroup.active.is_(True))
+    return tuple(
+        Fachgruppendaten(
+            id=gruppe.id,
+            schluessel=gruppe.key,
+            anzeigename=gruppe.display_name,
+            reihenfolge=gruppe.sort_order,
+        )
+        for gruppe in sitzung.scalars(abfrage)
+    )
 
 
 def liste_dokumentklassen(sitzung: Session, *, nur_aktive: bool = True) -> tuple[Dokumentklassendaten, ...]:
@@ -81,7 +139,7 @@ def liste_dokumentklassen(sitzung: Session, *, nur_aktive: bool = True) -> tuple
     # vermeidet Seiteneffekte beim reinen Datenbankaufbau und hält Tests/Importe, die
     # eigene Dokumenttypen anlegen, unabhängig von der Anwendungsinitialisierung.
     stelle_standardklassen_sicher(sitzung)
-    abfrage = select(DocumentType).order_by(DocumentType.name)
+    abfrage = select(DocumentType).order_by(DocumentType.sort_order, DocumentType.name)
     if nur_aktive:
         abfrage = abfrage.where(DocumentType.active.is_(True))
     ergebnis: list[Dokumentklassendaten] = []
@@ -132,11 +190,18 @@ def lege_dokumentklasse_an(
 ) -> DocumentType:
     """Legt eine vom Benutzer bestätigte Klasse samt erstem Beispiel atomar an."""
 
+    stelle_standardklassen_sicher(sitzung)
     bereinigt = " ".join(name.split())
     if len(bereinigt) < 3:
         raise ValueError("Der Name der neuen Dokumentklasse ist zu kurz.")
-    if fachgruppe not in ERLAUBTE_FACHGRUPPEN:
-        raise ValueError("Die gewählte Fachgruppe ist nicht im kontrollierten Katalog enthalten.")
+    gruppe = sitzung.scalar(
+        select(DocumentGroup).where(
+            DocumentGroup.display_name == fachgruppe,
+            DocumentGroup.active.is_(True),
+        )
+    )
+    if gruppe is None:
+        raise ValueError("Die gewählte Fachgruppe ist nicht im aktiven Katalog enthalten.")
     if sitzung.scalar(select(DocumentType).where(DocumentType.name == bereinigt)):
         raise ValueError("Eine Dokumentklasse mit diesem Namen existiert bereits.")
     if not beschreibung.strip() or not klassifikationsmerkmale.strip():
@@ -149,6 +214,9 @@ def lege_dokumentklasse_an(
             name=bereinigt,
             display_name=bereinigt,
             group_name=fachgruppe,
+            group_id=gruppe.id,
+            parser_key=None,
+            sort_order=100,
             active=True,
             user_created=True,
             description=beschreibung.strip(),

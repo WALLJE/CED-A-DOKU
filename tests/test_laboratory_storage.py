@@ -59,7 +59,9 @@ def test_bestaetigter_virologiewert_wird_atomar_gespeichert(tmp_path) -> None:
         dokument_id = speichere_laborpruefung(sitzung, _auftrag(patient.id))
         dokument = sitzung.get(Document, dokument_id)
         befund = sitzung.scalar(select(Finding))
-        kategorie = sitzung.scalar(select(FindingCategory))
+        kategorie = sitzung.scalar(
+            select(FindingCategory).where(FindingCategory.name == "CMV-PCR")
+        )
 
         assert dokument is not None and dokument.confirmed
         assert dokument.document_date == date(2026, 9, 19)

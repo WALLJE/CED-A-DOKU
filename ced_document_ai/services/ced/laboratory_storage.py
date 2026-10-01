@@ -19,6 +19,7 @@ from ced_document_ai.database.models import (
     Patient,
 )
 from ced_document_ai.services.ced.laboratory_parser import LABORDOKUMENTTYPEN
+from ced_document_ai.services.ced.document_type_service import stelle_standardklassen_sicher
 
 
 @dataclass(frozen=True)
@@ -75,14 +76,13 @@ def speichere_laborpruefung(sitzung: Session, auftrag: LaborSpeicherauftrag) -> 
         if befund.fachgruppe not in {"Labor", "Calprotectin"}:
             raise ValueError("Die Befundgruppe ist für den Laborpfad nicht zugelassen.")
 
+    stelle_standardklassen_sicher(sitzung)
     with sitzung.begin_nested():
         dokumenttyp = sitzung.scalar(
             select(DocumentType).where(DocumentType.name == auftrag.dokumenttyp)
         )
-        if dokumenttyp is None:
-            dokumenttyp = DocumentType(name=auftrag.dokumenttyp, prompt_text=None)
-            sitzung.add(dokumenttyp)
-            sitzung.flush()
+        if dokumenttyp is None or not dokumenttyp.active:
+            raise ValueError("Die Labor-Dokumentklasse ist nicht im aktiven Katalog vorhanden.")
         dokument = Document(
             patient_id=auftrag.patient_id,
             document_type_id=dokumenttyp.id,
@@ -111,8 +111,11 @@ def speichere_laborpruefung(sitzung: Session, auftrag: LaborSpeicherauftrag) -> 
             if kategorie is None:
                 kategorie = FindingCategory(
                     name=freigegeben.kategorie.strip(),
+                    display_name=freigegeben.kategorie.strip(),
                     group_name=freigegeben.fachgruppe,
                     typical_unit=(freigegeben.einheit or "").strip() or None,
+                    sort_order=100,
+                    active=True,
                 )
                 sitzung.add(kategorie)
                 sitzung.flush()

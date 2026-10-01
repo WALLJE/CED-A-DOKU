@@ -18,7 +18,7 @@ from ced_document_ai.database.models import (
     FindingCategory,
     Patient,
 )
-from ced_document_ai.services.ced.document_categories import DOKUMENTKLASSEN
+from ced_document_ai.services.ced.document_type_service import stelle_standardklassen_sicher
 
 
 @dataclass(frozen=True)
@@ -87,25 +87,11 @@ def speichere_allgemeines_dokument(
         raise ValueError("Der bestätigte Patient ist nicht mehr vorhanden.")
     if not auftrag.dokumenttyp.strip() or not auftrag.original_name.strip():
         raise ValueError("Dokumenttyp und Dokumentname sind verpflichtend.")
+    stelle_standardklassen_sicher(sitzung)
     with sitzung.begin_nested():
         dokumenttyp = sitzung.scalar(
             select(DocumentType).where(DocumentType.name == auftrag.dokumenttyp)
         )
-        if dokumenttyp is None:
-            standard = next(
-                (eintrag for eintrag in DOKUMENTKLASSEN if eintrag.dokumenttyp == auftrag.dokumenttyp),
-                None,
-            )
-            if standard is not None:
-                dokumenttyp = DocumentType(
-                    name=standard.dokumenttyp,
-                    display_name=standard.dokumenttyp,
-                    group_name=standard.fachgruppe,
-                    active=True,
-                    user_created=False,
-                )
-                sitzung.add(dokumenttyp)
-                sitzung.flush()
         if dokumenttyp is None or not dokumenttyp.active:
             raise ValueError(
                 "Die Dokumentklasse ist nicht bestätigt oder nicht aktiv. "
@@ -141,8 +127,11 @@ def speichere_allgemeines_dokument(
             if kategorie is None:
                 kategorie = FindingCategory(
                     name=freigegeben.kategorie.strip(),
+                    display_name=freigegeben.kategorie.strip(),
                     group_name=freigegeben.fachgruppe,
                     typical_unit=None,
+                    sort_order=100,
+                    active=True,
                 )
                 sitzung.add(kategorie)
                 sitzung.flush()

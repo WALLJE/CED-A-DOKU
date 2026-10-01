@@ -18,6 +18,7 @@ from ced_document_ai.database.models import (
     AIResult,
     Diagnosis,
     Document,
+    DocumentGroup,
     DocumentType,
     Finding,
     FindingCategory,
@@ -148,18 +149,17 @@ def lade_dokumentenarchiv(
     if sitzung.get(Patient, patient_id) is None:
         raise ValueError("Der bestätigte Patient ist nicht mehr vorhanden.")
     zeilen = sitzung.execute(
-        select(Document, DocumentType, AIResult)
+        select(Document, DocumentType, DocumentGroup, AIResult)
         .join(DocumentType, Document.document_type_id == DocumentType.id)
+        .join(DocumentGroup, DocumentType.group_id == DocumentGroup.id)
         .outerjoin(AIResult, AIResult.document_id == Document.id)
         .where(Document.patient_id == patient_id, Document.confirmed.is_(True))
         .order_by(Document.document_date.desc(), Document.id.desc())
     )
     dokumente: list[ArchiviertesDokument] = []
     erlaubte_gruppen = set(fachgruppen) if fachgruppen is not None else None
-    for dokument, dokumenttyp, ki_ergebnis in zeilen:
-        fachgruppe = ermittle_dokumentfachgruppe(
-            dokumenttyp.name, gespeicherte_fachgruppe=dokumenttyp.group_name
-        )
+    for dokument, dokumenttyp, dokumentgruppe, ki_ergebnis in zeilen:
+        fachgruppe = dokumentgruppe.display_name
         if erlaubte_gruppen is not None and fachgruppe not in erlaubte_gruppen:
             continue
         dokumente.append(
@@ -230,7 +230,11 @@ def lade_patientenuebersicht(
                 Finding.confirmed_by_user.is_(True),
                 FindingCategory.group_name == "CED-Fragebogen",
             )
-            .order_by(Finding.finding_date.desc(), FindingCategory.name)
+            .order_by(
+                Finding.finding_date.desc(),
+                FindingCategory.sort_order,
+                FindingCategory.name,
+            )
         )
     )
     letztes_datum = befundzeilen[0][0].finding_date if befundzeilen else None
@@ -364,7 +368,11 @@ def lade_klinischen_verlauf(sitzung: Session, patient_id: int) -> KlinischerVerl
                 Finding.confirmed_by_user.is_(True),
                 FindingCategory.group_name == "CED-Fragebogen",
             )
-            .order_by(FindingCategory.name, Finding.finding_date)
+            .order_by(
+                FindingCategory.sort_order,
+                FindingCategory.name,
+                Finding.finding_date,
+            )
         )
     )
     daten = tuple(sorted({befund.finding_date for befund, _ in eintraege}))
@@ -429,7 +437,12 @@ def lade_befundliste(
         abfrage = abfrage.where(DocumentType.name.in_(dokumenttypen))
 
     eintraege = sitzung.execute(
-        abfrage.order_by(Finding.finding_date.desc(), FindingCategory.name, Finding.id)
+        abfrage.order_by(
+            Finding.finding_date.desc(),
+            FindingCategory.sort_order,
+            FindingCategory.name,
+            Finding.id,
+        )
     )
     return tuple(
         Befundlistenzeile(
@@ -472,7 +485,11 @@ def lade_fachverlauf(
                 Finding.confirmed_by_user.is_(True),
                 FindingCategory.group_name.in_(gruppen),
             )
-            .order_by(FindingCategory.name, Finding.finding_date)
+            .order_by(
+                FindingCategory.sort_order,
+                FindingCategory.name,
+                Finding.finding_date,
+            )
         )
     )
     daten = tuple(sorted({befund.finding_date for befund, _ in eintraege}))

@@ -44,11 +44,18 @@ from ced_document_ai.services.ced.document_categories import (
 from ced_document_ai.services.ced.document_type_service import (
     Dokumentklassendaten,
     ERLAUBTE_FACHGRUPPEN,
+    Fachgruppendaten,
     ergaenze_bestaetigtes_beispiel,
     erstelle_patientenfreie_lernmerkmale,
     finde_aehnliche_klassen,
     lege_dokumentklasse_an,
     liste_dokumentklassen,
+    liste_fachgruppen,
+)
+from ced_document_ai.services.ced.finding_catalog import (
+    STANDARD_BEFUNDKATEGORIEN,
+    StandardBefundkategorie,
+    stelle_befundkatalog_sicher,
 )
 from ced_document_ai.services.ced.laboratory_parser import (
     LABORDOKUMENTTYPEN,
@@ -130,11 +137,16 @@ __all__ = [
     "ermittle_dokumentfachgruppe",
     "Dokumentklassendaten",
     "ERLAUBTE_FACHGRUPPEN",
+    "Fachgruppendaten",
     "ergaenze_bestaetigtes_beispiel",
     "erstelle_patientenfreie_lernmerkmale",
     "finde_aehnliche_klassen",
     "lege_dokumentklasse_an",
     "liste_dokumentklassen",
+    "liste_fachgruppen",
+    "STANDARD_BEFUNDKATEGORIEN",
+    "StandardBefundkategorie",
+    "stelle_befundkatalog_sicher",
     "LABORDOKUMENTTYPEN",
     "ExtrahierterLaborwert",
     "parse_laborbefund",

@@ -24,7 +24,13 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from ced_document_ai.config.settings import ConfigurationError, Settings
 from ced_document_ai.database.database import get_session, initialize_database
-from ced_document_ai.database.models import ConfidenceStatus, FindingCategory, Patient
+from ced_document_ai.database.models import (
+    ConfidenceStatus,
+    DocumentType,
+    FindingCategory,
+    FindingCategoryAlias,
+    Patient,
+)
 from ced_document_ai.services.ai.providers import (
     AIProviderError,
     CloudAPIProvider,
@@ -38,12 +44,12 @@ from ced_document_ai.services.ai.document_workflow import (
     TranskriptionsErgebnis,
 )
 from ced_document_ai.services.ced.document_type_service import (
-    ERLAUBTE_FACHGRUPPEN,
     ergaenze_bestaetigtes_beispiel,
     erstelle_patientenfreie_lernmerkmale,
     finde_aehnliche_klassen,
     lege_dokumentklasse_an,
     liste_dokumentklassen,
+    liste_fachgruppen,
 )
 from ced_document_ai.services.ced.patient_matching import (
     ErkanntePatientendaten,
@@ -93,7 +99,6 @@ from ced_document_ai.services.ced.procedure_parser import (
     parse_fachbefund,
 )
 from ced_document_ai.services.ced.laboratory_parser import (
-    LABORDOKUMENTTYPEN,
     ExtrahierterLaborwert,
     parse_laborbefund,
 )
@@ -129,6 +134,7 @@ class Sitzungszustand:
     # Die vier Werte gehören immer zu genau demselben Dokument. Sie werden beim
     # nächsten Upload gemeinsam gelöscht, sodass keine alten Ergebnisse stehen bleiben.
     dokumenttyp: str = ""
+    parser_schluessel: str = ""
     ausgelesener_inhalt: str = ""
     strukturierte_darstellung: str = ""
     kis_vorschlag: str = ""
@@ -194,6 +200,11 @@ def zeige_hauptseite() -> None:
     """Erzeugt die medizinische Arbeitsfläche mit separater Administration."""
     einstellungen = Settings.from_environment()
     zustand = Sitzungszustand()
+    with get_session() as katalog_sitzung:
+        # Navigation und Neuanlage verwenden die persistente Tabelle. Die Seed-
+        # Konstanten sind an dieser Stelle ausdrücklich keine Laufzeitquelle.
+        fachgruppen_katalog = liste_fachgruppen(katalog_sitzung)
+    aktive_fachgruppen = tuple(gruppe.anzeigename for gruppe in fachgruppen_katalog)
 
     # Die Farben orientieren sich an klinischen Informationssystemen: viel Weiß,
     # zurückhaltendes Grau und Petrol als eindeutige Aktions- und Orientierungsfarbe.
@@ -501,7 +512,7 @@ def zeige_hauptseite() -> None:
                                     "outlined"
                                 ).classes("w-full")
                                 neue_klasse_gruppe = ui.select(
-                                    list(ERLAUBTE_FACHGRUPPEN), label="Fachgruppe"
+                                    list(aktive_fachgruppen), label="Fachgruppe"
                                 ).props("outlined").classes("w-full")
                                 neue_klasse_beschreibung = ui.textarea(
                                     "Beschreibung der Dokumentklasse"
@@ -2013,7 +2024,7 @@ def zeige_hauptseite() -> None:
             ced_navigation.enable()
         else:
             ced_navigation.disable()
-        ist_ced_fragebogen = zustand.dokumenttyp == Dokumenttyp.CED_FRAGEBOGEN.value
+        ist_ced_fragebogen = zustand.parser_schluessel == "ced_questionnaire"
         if ist_ced_fragebogen:
             ced_pruefung_hinweis.text = (
                 "Die Werte werden aus der vorhandenen strukturierten Darstellung gelesen. "
@@ -2451,7 +2462,7 @@ def zeige_hauptseite() -> None:
                     fehler=True,
                 )
             return
-        if zustand.dokumenttyp == Dokumenttyp.CED_FRAGEBOGEN.value:
+        if zustand.parser_schluessel == "ced_questionnaire":
             oeffne_ced_pruefung()
             return
         with get_session() as sitzung:
@@ -2469,12 +2480,9 @@ def zeige_hauptseite() -> None:
         dokument_pruef_typ.value = zustand.dokumenttyp
         dokument_pruef_datum.value = datumsvorschlag.isoformat() if datumsvorschlag else ""
         dokument_pruef_text.value = zustand.strukturierte_darstellung
-        ist_laborpfad = zustand.dokumenttyp in LABORDOKUMENTTYPEN
-        ist_arztbrief = zustand.dokumenttyp == Dokumenttyp.ARZTBRIEF.value
-        ist_fachbefund = zustand.dokumenttyp in {
-            Dokumenttyp.ENDOSKOPIE.value,
-            Dokumenttyp.SONOGRAFIE.value,
-        }
+        ist_laborpfad = zustand.parser_schluessel == "laboratory"
+        ist_arztbrief = zustand.parser_schluessel == "letter"
+        ist_fachbefund = zustand.parser_schluessel in {"endoscopy", "sonography"}
         labor_pruef_hinweis.set_visibility(ist_laborpfad)
         labor_pruef_tabelle.set_visibility(ist_laborpfad)
         labor_auswahlaktionen.set_visibility(ist_laborpfad)
@@ -2490,13 +2498,24 @@ def zeige_hauptseite() -> None:
             # zum Debuggen die KI-Struktur auf eindeutige Tabellen- oder Doppelpunkt-
             # Zeilen geprüft werden, ohne Patientendaten zu protokollieren.
             with get_session() as sitzung:
-                bekannte_kategorien = tuple(
-                    (kategorie.name, kategorie.typical_unit, kategorie.group_name)
-                    for kategorie in sitzung.scalars(
-                        select(FindingCategory).where(
-                            FindingCategory.group_name.in_(("Labor", "Calprotectin"))
-                        )
+                katalogkategorien = tuple(sitzung.scalars(
+                    select(FindingCategory).where(
+                        FindingCategory.group_name.in_(("Labor", "Calprotectin")),
+                        FindingCategory.active.is_(True),
                     )
+                ))
+                bekannte_kategorien = tuple(
+                    (
+                        kategorie.name,
+                        kategorie.typical_unit,
+                        kategorie.group_name,
+                        tuple(sitzung.scalars(
+                            select(FindingCategoryAlias.alias).where(
+                                FindingCategoryAlias.category_id == kategorie.id
+                            )
+                        )),
+                    )
+                    for kategorie in katalogkategorien
                 )
             zustand.labor_befunde = parse_laborbefund(
                 zustand.strukturierte_darstellung,
@@ -2638,7 +2657,7 @@ def zeige_hauptseite() -> None:
         )
         try:
             with get_session() as sitzung:
-                if zustand.dokumenttyp in LABORDOKUMENTTYPEN:
+                if zustand.parser_schluessel == "laboratory":
                     tabellenzeilen = await labor_pruef_tabelle.get_client_data()
                     freigegebene: list[FreigegebenerLaborwert] = []
                     for zeile in tabellenzeilen:
@@ -2711,7 +2730,7 @@ def zeige_hauptseite() -> None:
                     )
                 else:
                     dokumentbefunde: tuple[FreigegebenerDokumentbefund, ...] = ()
-                    if zustand.dokumenttyp == Dokumenttyp.ARZTBRIEF.value:
+                    if zustand.parser_schluessel == "letter":
                         briefzeilen = await arztbrief_pruef_tabelle.get_client_data()
                         dokumentbefunde = tuple(
                             FreigegebenerDokumentbefund(
@@ -2723,14 +2742,11 @@ def zeige_hauptseite() -> None:
                             for zeile in briefzeilen
                             if zeile.get("uebernehmen")
                         )
-                    elif zustand.dokumenttyp in {
-                        Dokumenttyp.ENDOSKOPIE.value,
-                        Dokumenttyp.SONOGRAFIE.value,
-                    }:
+                    elif zustand.parser_schluessel in {"endoscopy", "sonography"}:
                         fachzeilen = await fachbefund_pruef_tabelle.get_client_data()
                         fachgruppe = (
                             "Endoskopie"
-                            if zustand.dokumenttyp == Dokumenttyp.ENDOSKOPIE.value
+                            if zustand.parser_schluessel == "endoscopy"
                             else "Sonografie"
                         )
                         dokumentbefunde = tuple(
@@ -2772,7 +2788,7 @@ def zeige_hauptseite() -> None:
         lerne_aus_gespeichertem_dokument(dokument_id)
         dokument_pruefdialog.close()
         ced_navigation.disable()
-        if zustand.dokumenttyp in LABORDOKUMENTTYPEN:
+        if zustand.parser_schluessel == "laboratory":
             fachschluessel = (
                 "calprotectin"
                 if zustand.dokumenttyp == Dokumenttyp.CALPROTECTIN.value
@@ -2780,13 +2796,13 @@ def zeige_hauptseite() -> None:
             )
             oeffne_fachverlauf(fachschluessel)
             setze_status("Geprüfte Laborwerte gespeichert · Fachansicht geöffnet")
-        elif zustand.dokumenttyp == Dokumenttyp.ARZTBRIEF.value:
+        elif zustand.parser_schluessel == "letter":
             oeffne_fachverlauf("weitere")
             setze_status("Arztbrief und bestätigte Abschnitte gespeichert · Weitere Befunde geöffnet")
-        elif zustand.dokumenttyp == Dokumenttyp.ENDOSKOPIE.value:
+        elif zustand.parser_schluessel == "endoscopy":
             oeffne_fachverlauf("endoskopie")
             setze_status("Endoskopiebefund und bestätigte Abschnitte gespeichert")
-        elif zustand.dokumenttyp == Dokumenttyp.SONOGRAFIE.value:
+        elif zustand.parser_schluessel == "sonography":
             oeffne_fachverlauf("sonografie")
             setze_status("Sonografiebefund und bestätigte Abschnitte gespeichert")
         else:
@@ -3020,6 +3036,7 @@ def zeige_hauptseite() -> None:
         zustand.seiten.clear()
         zustand.dokumentnamen.clear()
         zustand.dokumenttyp = ""
+        zustand.parser_schluessel = ""
         zustand.ausgelesener_inhalt = ""
         zustand.strukturierte_darstellung = ""
         zustand.kis_vorschlag = ""
@@ -3056,6 +3073,7 @@ def zeige_hauptseite() -> None:
         # Das vorhandene Ergebnis wird zurückgesetzt, weil es nicht mehr zur nun
         # erweiterten Seitenmenge passt; bereits geladene Seiten bleiben erhalten.
         zustand.dokumenttyp = ""
+        zustand.parser_schluessel = ""
         zustand.ausgelesener_inhalt = ""
         zustand.strukturierte_darstellung = ""
         zustand.kis_vorschlag = ""
@@ -3123,6 +3141,7 @@ def zeige_hauptseite() -> None:
         """Behält bei einer unsicheren Klassifikation ausschließlich den Rohtext."""
 
         zustand.dokumenttyp = ""
+        zustand.parser_schluessel = ""
         zustand.strukturierte_darstellung = ""
         zustand.kis_vorschlag = ""
         zustand.kis_vorschlag_ausfuehrlich = ""
@@ -3154,6 +3173,16 @@ def zeige_hauptseite() -> None:
                 dokumentklasse,
             )
             zustand.dokumenttyp = dokumentklasse
+            with get_session() as katalog_sitzung:
+                katalogtyp = katalog_sitzung.scalar(
+                    select(DocumentType).where(
+                        DocumentType.name == dokumentklasse,
+                        DocumentType.active.is_(True),
+                    )
+                )
+            if katalogtyp is None:
+                raise ValueError("Die Dokumentklasse fehlt im aktiven Katalog.")
+            zustand.parser_schluessel = katalogtyp.parser_key or ""
             zustand.ausgelesener_inhalt = ergebnis.ausgelesener_inhalt
             zustand.strukturierte_darstellung = ergebnis.strukturierte_darstellung
             zustand.kis_vorschlag = ergebnis.kis_vorschlag
@@ -3246,6 +3275,7 @@ def zeige_hauptseite() -> None:
             zustand.klassifikationsvorschlag = vorschlag
             if vorschlag.status is Klassifikationsstatus.NICHT_MEDIZINISCH:
                 zustand.dokumenttyp = ""
+                zustand.parser_schluessel = ""
                 dokumenttyp_ausgabe.value = ""
                 lesen_schalter.text = f"Neu auslesen mit {anbieter_name}"
                 setze_status(
@@ -3273,7 +3303,7 @@ def zeige_hauptseite() -> None:
             neue_klasse_name.value = vorschlag.neue_klasse_vorschlag or ""
             neue_klasse_gruppe.value = (
                 vorschlag.vorgeschlagene_fachgruppe
-                if vorschlag.vorgeschlagene_fachgruppe in ERLAUBTE_FACHGRUPPEN
+                if vorschlag.vorgeschlagene_fachgruppe in aktive_fachgruppen
                 else None
             )
             neue_klasse_beschreibung.value = vorschlag.vorgeschlagene_beschreibung or ""

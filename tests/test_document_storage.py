@@ -88,7 +88,9 @@ def test_arztbriefabschnitt_wird_nur_nach_freigabe_gespeichert(tmp_path) -> None
         )
 
         befund = sitzung.scalar(select(Finding))
-        kategorie = sitzung.scalar(select(FindingCategory))
+        kategorie = sitzung.scalar(
+            select(FindingCategory).where(FindingCategory.name == "Diagnosen")
+        )
         assert befund is not None and befund.document_id == dokument_id
         assert befund.text_value == "Morbus Crohn (ED 06/2024)"
         assert kategorie is not None and kategorie.group_name == "Arztbriefe"
@@ -144,4 +146,8 @@ def test_unbestaetigte_neue_dokumentklasse_wird_nicht_implizit_angelegt(tmp_path
                 ),
             )
         assert sitzung.scalar(select(func.count()).select_from(Document)) == 0
-        assert sitzung.scalar(select(func.count()).select_from(FindingCategory)) == 0
+        assert sitzung.scalar(
+            select(func.count()).select_from(FindingCategory).where(
+                FindingCategory.name == "Von der KI erfundene Klasse"
+            )
+        ) == 0

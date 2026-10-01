@@ -61,10 +61,25 @@ class DocumentType(Base):
     prompt_text: Mapped[str | None] = mapped_column(Text)
     display_name: Mapped[str | None] = mapped_column(String(150))
     group_name: Mapped[str | None] = mapped_column(String(150))
+    group_id: Mapped[int | None] = mapped_column(ForeignKey("document_groups.id"))
+    parser_key: Mapped[str | None] = mapped_column(String(100))
+    sort_order: Mapped[int] = mapped_column(Integer, default=100)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     user_created: Mapped[bool] = mapped_column(Boolean, default=False)
     description: Mapped[str | None] = mapped_column(Text)
     classification_hints: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class DocumentGroup(Base):
+    """Persistente Navigations- und Sortiergruppe für ganze Dokumente."""
+
+    __tablename__ = "document_groups"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(100), unique=True)
+    display_name: Mapped[str] = mapped_column(String(150), unique=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=100)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -103,6 +118,19 @@ class FindingCategory(Base):
     name: Mapped[str] = mapped_column(String(200), unique=True)
     group_name: Mapped[str] = mapped_column(String(150))
     typical_unit: Mapped[str | None] = mapped_column(String(50))
+    display_name: Mapped[str | None] = mapped_column(String(200))
+    sort_order: Mapped[int] = mapped_column(Integer, default=100)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class FindingCategoryAlias(Base):
+    """Kontrollierte Schreibvariante genau einer strukturierten Befundkategorie."""
+
+    __tablename__ = "finding_category_aliases"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    category_id: Mapped[int] = mapped_column(ForeignKey("finding_categories.id"))
+    alias: Mapped[str] = mapped_column(String(200), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class Finding(Base):

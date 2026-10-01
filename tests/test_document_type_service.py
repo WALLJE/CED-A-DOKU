@@ -11,6 +11,7 @@ from ced_document_ai.services.ced.document_type_service import (
     finde_aehnliche_klassen,
     lege_dokumentklasse_an,
     liste_dokumentklassen,
+    liste_fachgruppen,
 )
 
 
@@ -36,7 +37,7 @@ def test_neue_klasse_und_lernbeispiele_bleiben_persistent(tmp_path) -> None:
         geladen = next(k for k in liste_dokumentklassen(sitzung) if k.name == klasse.name)
         assert geladen.fachgruppe == "Funktionsdiagnostik"
         assert len(geladen.beispiele) == 2
-        assert sitzung.scalar(select(func.count(FindingCategory.id))) == 0
+        assert sitzung.scalar(select(func.count(FindingCategory.id))) > 0
         assert sitzung.scalar(select(func.count(DocumentTypeExample.id))) == 2
         assert "Gefäßdiagnostischer Befund" in finde_aehnliche_klassen(
             sitzung, "Gefässdiagnostischer Befund"
@@ -77,6 +78,9 @@ def test_standardklassen_besitzen_definition_und_merkmale(tmp_path) -> None:
         klassen = liste_dokumentklassen(sitzung)
         assert klassen
         assert all(klasse.beschreibung and klasse.merkmale for klasse in klassen)
+        gruppen = liste_fachgruppen(sitzung)
+        assert gruppen[0].anzeigename == "CED-Fragebogen"
+        assert gruppen[-1].anzeigename == "Weitere Befunde"
 
 
 def test_lernmerkmale_enthalten_ueberschriften_aber_keine_patientenwerte() -> None:

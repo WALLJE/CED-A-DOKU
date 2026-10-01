@@ -19,8 +19,9 @@ def test_haeufige_dokumenttypen_haben_eindeutige_fachgruppen() -> None:
     assert ermittle_dokumentfachgruppe("Arztbrief") == "Arztbriefe"
 
 
-def test_neuer_praeziser_typ_bleibt_erhalten_und_wird_sichtbar_gesammelt() -> None:
-    assert ermittle_dokumentfachgruppe("Humangenetischer Befund") == "Weitere Befunde"
+def test_neuer_typ_erhaelt_keinen_stillen_gruppenfallback() -> None:
+    with pytest.raises(ValueError, match="keine persistente Fachgruppe"):
+        ermittle_dokumentfachgruppe("Humangenetischer Befund")
 
 
 def test_leerer_dokumenttyp_wird_nicht_stillschweigend_klassifiziert() -> None:

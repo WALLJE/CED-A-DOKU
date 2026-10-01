@@ -19,6 +19,13 @@ Lernsignal. Namen, Geburtsdaten, IDs, Messwerte und vollständige Texte werden d
 nicht übernommen. Dokumentklassen dienen der Sortierung; medizinische Einzelwerte
 werden weiterhin nur durch einen passenden Fachparser und den Prüfprozess gespeichert.
 
+Fachgruppen, Dokumentklassen, deren Reihenfolge und Parserzuordnung sowie
+Befundkategorien und bekannte Synonyme werden persistent in SQLite geführt. Die im
+Quellcode dokumentierten Standardwerte dienen nur zur einmaligen, idempotenten
+Initialisierung fehlender Katalogeinträge. Für Navigation, Sortierung und Erkennung
+liest die Anwendung anschließend die Tabellen; unbekannte Klassen erhalten keinen
+stillschweigenden Sammelgruppen-Fallback.
+
 ## API-Schlüssel eintragen
 
 Die API-Schlüssel werden beim Programmstart mit `python-dotenv` aus einer lokalen

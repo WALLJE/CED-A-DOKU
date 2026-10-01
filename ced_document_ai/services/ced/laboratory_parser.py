@@ -205,7 +205,9 @@ def parse_laborbefund(
     text: str,
     dokumenttyp: str,
     *,
-    bestehende_kategorien: tuple[tuple[str, str | None, str], ...] = (),
+    bestehende_kategorien: tuple[
+        tuple[str, str | None, str] | tuple[str, str | None, str, tuple[str, ...]], ...
+    ] = (),
 ) -> list[ExtrahierterLaborwert]:
     """Parst beschriftete Laborzeilen und markiert Konflikte nachvollziehbar.
 
@@ -218,11 +220,14 @@ def parse_laborbefund(
     # Bereits bestätigte dynamische Kategorien werden zusätzlich zum festen
     # Anfangskatalog berücksichtigt. Erwartet werden Name, typische Einheit und
     # Fachgruppe. Andere Gruppen werden nicht in den Laborpfad hineingezogen.
-    vorhandene_aliasdaten = {
-        _normalisiere(name): (name, einheit, gruppe)
-        for name, einheit, gruppe in bestehende_kategorien
-        if gruppe in {"Labor", "Calprotectin"} and name.strip()
-    }
+    vorhandene_aliasdaten: dict[str, tuple[str, str | None, str]] = {}
+    for eintrag in bestehende_kategorien:
+        name, einheit, gruppe = eintrag[:3]
+        aliase = eintrag[3] if len(eintrag) == 4 else ()
+        if gruppe not in {"Labor", "Calprotectin"} or not name.strip():
+            continue
+        for bezeichnung in (name, *aliase):
+            vorhandene_aliasdaten[_normalisiere(bezeichnung)] = (name, einheit, gruppe)
     ergebnisse: list[ExtrahierterLaborwert] = []
     positionen: dict[tuple[str, date | None], list[int]] = {}
     # Manche Laborblätter enthalten mehrere historische Messspalten. Die explizit
@@ -332,7 +337,10 @@ def _ergaenze_laborwert(
     normalisiert = _normalisiere(parameter)
     if normalisiert in _METADATEN:
         return
-    katalog = _ALIASDATEN.get(normalisiert) or vorhandene_aliasdaten.get(normalisiert)
+    # Die Anwendung übergibt den persistenten Katalog einschließlich Synonymen.
+    # Der kleine Codekatalog bleibt nur für isolierte Parsernutzung und Tests ohne
+    # Datenbanksitzung erhalten; zur Laufzeit hat SQLite ausdrücklich Vorrang.
+    katalog = vorhandene_aliasdaten.get(normalisiert) or _ALIASDATEN.get(normalisiert)
     if katalog is None:
         kategorie = parameter
         typische_einheit = None

@@ -29,6 +29,23 @@ implementierten Fachparser keine strukturierten Findings. Zum Debuggen dürfen A
 der Klassen, Status und Antwortformat geprüft werden; Transkripte und Patientendaten
 gehören nicht in Logs.
 
+## Persistente Kataloge und technische Parser
+
+- `document_groups` definiert sichtbare Fachgruppen, Aktivstatus und Reihenfolge.
+- `document_types` verweist über `group_id` auf eine Fachgruppe und enthält mit
+  `parser_key` ausschließlich den kontrollierten Schlüssel eines implementierten
+  Fachparsers.
+- `finding_categories` enthält Anzeigename, Gruppe, typische Einheit, Aktivstatus
+  und Sortierung einzelner Befundparameter.
+- `finding_category_aliases` enthält kontrollierte Schreibvarianten.
+
+Die Konstanten in `document_categories.py` und `finding_catalog.py` sind nur
+idempotente Seed-Daten. Laufzeitnavigation, Sortierung, Klassenwahl und Laboraliase
+werden aus SQLite geladen. Parseralgorithmen wie Tabellenzerlegung, Datumsparser,
+Konflikterkennung und medizinische Plausibilitätsregeln bleiben bewusst im Code.
+Ein unbekannter `parser_key` wird niemals dynamisch ausgeführt und führt nicht zu
+einem allgemeinen Parser-Fallback.
+
 ## Einstieg und Laufzeit
 
 - `main.py` ruft `ced_document_ai.medical_ui.starte_anwendung()` auf.

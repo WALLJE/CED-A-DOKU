@@ -17,8 +17,10 @@ def test_initialize_database_creates_required_tables(tmp_path: Path) -> None:
         "patients",
         "documents",
         "document_types",
+        "document_groups",
         "document_type_examples",
         "finding_categories",
+        "finding_category_aliases",
         "findings",
         "diagnoses",
         "patient_ced_attributes",
@@ -73,5 +75,21 @@ def test_initialize_database_ergaenzt_dokumentklassen_metadaten(tmp_path: Path) 
     }
     assert {
         "display_name", "group_name", "active", "user_created", "description",
-        "classification_hints", "created_at",
+        "classification_hints", "created_at", "group_id", "parser_key", "sort_order",
     }.issubset(spalten)
+
+
+def test_initialize_database_ergaenzt_befundkatalog_metadaten(tmp_path: Path) -> None:
+    datenbankpfad = tmp_path / "alte_befundkategorien.sqlite3"
+    with sqlite3.connect(datenbankpfad) as verbindung:
+        verbindung.execute(
+            "CREATE TABLE finding_categories (id INTEGER PRIMARY KEY, "
+            "name VARCHAR(200) UNIQUE NOT NULL, group_name VARCHAR(150) NOT NULL, "
+            "typical_unit VARCHAR(50))"
+        )
+    fabrik = initialize_database(Settings(database_path=datenbankpfad))
+    spalten = {
+        spalte["name"]
+        for spalte in inspect(fabrik.kw["bind"]).get_columns("finding_categories")
+    }
+    assert {"display_name", "sort_order", "active"}.issubset(spalten)
